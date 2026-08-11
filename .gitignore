@@ -32,6 +32,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...except the template every clone copies from — see docs/SETUP.md
+!.env.example
 
 # vercel
 .vercel
@@ -39,3 +41,20 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local screenshots from scripts/screenshot.mjs
+/.screenshots
+
+# playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
+# editor
+.vscode/
+.idea/
+
+# windows
+Thumbs.db
+desktop.ini
