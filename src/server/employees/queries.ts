@@ -1,0 +1,227 @@
+import "server-only";
+
+import { and, asc, count, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
+
+import { db } from "@/db";
+import {
+  client,
+  employee,
+  employeeAddress,
+  employeeDeployment,
+  employeeEmployment,
+  gender,
+  level,
+  position,
+  team,
+} from "@/db/schema";
+import { authorize } from "@/lib/session";
+
+import type { EmployeeDetail, EmployeeFilters, EmployeeListResult } from "./types";
+
+const DEFAULT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 100;
+
+function buildWhere(filters: EmployeeFilters): SQL | undefined {
+  const search = filters.search?.trim();
+  if (!search) return undefined;
+
+  const pattern = `%${search}%`;
+  return or(
+    ilike(employee.firstName, pattern),
+    ilike(employee.middleName, pattern),
+    ilike(employee.lastName, pattern),
+    ilike(employee.code, pattern),
+    ilike(employee.workEmail, pattern),
+    ilike(employee.personalEmail, pattern),
+  );
+}
+
+/** Latest = the row with `endDate IS NULL` (current), else the newest `startDate`. */
+function latestEmploymentSubquery() {
+  return db
+    .selectDistinctOn([employeeEmployment.employeeId], {
+      employeeId: employeeEmployment.employeeId,
+      // `.as()` forces distinct column names in the subquery's own SELECT
+      // list — without it, Drizzle emits both `level.name` and
+      // `position.name` as a bare `name`, which Postgres then can't
+      // disambiguate once this subquery is joined back in.
+      levelName: sql<string>`${level.name}`.as("level_name"),
+      positionName: sql<string>`${position.name}`.as("position_name"),
+    })
+    .from(employeeEmployment)
+    .innerJoin(level, eq(level.id, employeeEmployment.levelId))
+    .innerJoin(position, eq(position.id, employeeEmployment.positionId))
+    .orderBy(
+      employeeEmployment.employeeId,
+      sql`${employeeEmployment.endDate} IS NULL DESC`,
+      desc(employeeEmployment.startDate),
+    )
+    .as("latest_employment");
+}
+
+function latestDeploymentSubquery() {
+  return db
+    .selectDistinctOn([employeeDeployment.employeeId], {
+      employeeId: employeeDeployment.employeeId,
+      clientName: sql<string>`${client.name}`.as("client_name"),
+      project: employeeDeployment.project,
+    })
+    .from(employeeDeployment)
+    .innerJoin(client, eq(client.id, employeeDeployment.clientId))
+    .orderBy(
+      employeeDeployment.employeeId,
+      sql`${employeeDeployment.endDate} IS NULL DESC`,
+      desc(employeeDeployment.startDate),
+    )
+    .as("latest_deployment");
+}
+
+/**
+ * Lists employees for the directory table, each row carrying its latest
+ * employment (Level/Position) and deployment (Client/Project) computed via a
+ * `DISTINCT ON` subquery per history table, plus the current address.
+ * Paginated, same shape as `listUsers`/`listAuditEntries`.
+ */
+export async function listEmployees(filters: EmployeeFilters = {}): Promise<EmployeeListResult> {
+  await authorize("employees:read");
+
+  const page = Math.max(1, filters.page ?? 1);
+  const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, filters.pageSize ?? DEFAULT_PAGE_SIZE));
+
+  const where = buildWhere(filters);
+  const latestEmployment = latestEmploymentSubquery();
+  const latestDeployment = latestDeploymentSubquery();
+
+  const rows = await db
+    .select({
+      id: employee.id,
+      code: employee.code,
+      firstName: employee.firstName,
+      middleName: employee.middleName,
+      lastName: employee.lastName,
+      latestLevel: latestEmployment.levelName,
+      latestPosition: latestEmployment.positionName,
+      latestClient: latestDeployment.clientName,
+      latestProject: latestDeployment.project,
+      currentBarangay: employeeAddress.barangayName,
+      currentCity: employeeAddress.cityName,
+    })
+    .from(employee)
+    .leftJoin(latestEmployment, eq(latestEmployment.employeeId, employee.id))
+    .leftJoin(latestDeployment, eq(latestDeployment.employeeId, employee.id))
+    .leftJoin(
+      employeeAddress,
+      and(eq(employeeAddress.employeeId, employee.id), eq(employeeAddress.type, "current")),
+    )
+    .where(where)
+    .orderBy(asc(employee.lastName), asc(employee.firstName))
+    .limit(pageSize)
+    .offset((page - 1) * pageSize);
+
+  const [{ value: total }] = await db.select({ value: count() }).from(employee).where(where);
+
+  return {
+    employees: rows.map((row) => ({
+      id: row.id,
+      code: row.code,
+      firstName: row.firstName,
+      middleName: row.middleName,
+      lastName: row.lastName,
+      latestLevel: row.latestLevel,
+      latestPosition: row.latestPosition,
+      latestClient: row.latestClient,
+      latestProject: row.latestProject,
+      currentAddress:
+        row.currentBarangay && row.currentCity
+          ? { barangayName: row.currentBarangay, cityName: row.currentCity }
+          : null,
+    })),
+    total,
+    page,
+    pageSize,
+  };
+}
+
+export async function getEmployeeById(id: string): Promise<EmployeeDetail | null> {
+  await authorize("employees:read");
+
+  const [row] = await db
+    .select({
+      id: employee.id,
+      code: employee.code,
+      firstName: employee.firstName,
+      middleName: employee.middleName,
+      lastName: employee.lastName,
+      genderId: employee.genderId,
+      genderName: gender.name,
+      mobileNumber: employee.mobileNumber,
+      viberNumber: employee.viberNumber,
+      personalEmail: employee.personalEmail,
+      workEmail: employee.workEmail,
+      teamId: employee.teamId,
+      teamName: team.name,
+    })
+    .from(employee)
+    .innerJoin(gender, eq(gender.id, employee.genderId))
+    .leftJoin(team, eq(team.id, employee.teamId))
+    .where(eq(employee.id, id))
+    .limit(1);
+
+  if (!row) return null;
+
+  const addresses = await db.select().from(employeeAddress).where(eq(employeeAddress.employeeId, id));
+  const currentAddress = addresses.find((address) => address.type === "current") ?? null;
+  const permanentAddress = addresses.find((address) => address.type === "permanent") ?? null;
+
+  const employments = await db
+    .select({
+      id: employeeEmployment.id,
+      salary: employeeEmployment.salary,
+      levelId: employeeEmployment.levelId,
+      levelName: level.name,
+      positionId: employeeEmployment.positionId,
+      positionName: position.name,
+      employmentType: employeeEmployment.employmentType,
+      startDate: employeeEmployment.startDate,
+      endDate: employeeEmployment.endDate,
+    })
+    .from(employeeEmployment)
+    .innerJoin(level, eq(level.id, employeeEmployment.levelId))
+    .innerJoin(position, eq(position.id, employeeEmployment.positionId))
+    .where(eq(employeeEmployment.employeeId, id))
+    .orderBy(sql`${employeeEmployment.endDate} IS NULL DESC`, desc(employeeEmployment.startDate));
+
+  const deployments = await db
+    .select({
+      id: employeeDeployment.id,
+      clientId: employeeDeployment.clientId,
+      clientName: client.name,
+      project: employeeDeployment.project,
+      startDate: employeeDeployment.startDate,
+      endDate: employeeDeployment.endDate,
+    })
+    .from(employeeDeployment)
+    .innerJoin(client, eq(client.id, employeeDeployment.clientId))
+    .where(eq(employeeDeployment.employeeId, id))
+    .orderBy(sql`${employeeDeployment.endDate} IS NULL DESC`, desc(employeeDeployment.startDate));
+
+  return {
+    id: row.id,
+    code: row.code,
+    firstName: row.firstName,
+    middleName: row.middleName,
+    lastName: row.lastName,
+    genderId: row.genderId,
+    genderName: row.genderName,
+    mobileNumber: row.mobileNumber,
+    viberNumber: row.viberNumber,
+    personalEmail: row.personalEmail,
+    workEmail: row.workEmail,
+    teamId: row.teamId,
+    teamName: row.teamName,
+    currentAddress,
+    permanentAddress,
+    employments,
+    deployments,
+  };
+}

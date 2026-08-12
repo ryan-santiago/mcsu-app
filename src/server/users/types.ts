@@ -1,4 +1,7 @@
 import type { UserRole, UserStatus } from "@/db/schema";
+import type { ActionResult } from "@/lib/action-result";
+
+export type { ActionResult };
 
 /** A user row as rendered by User Management. */
 export type ManagedUser = {
@@ -17,6 +20,9 @@ export type UserFilters = {
   search?: string;
   status?: UserStatus | "all";
   role?: UserRole | "all";
+  /** 1-indexed. */
+  page?: number;
+  pageSize?: number;
 };
 
 export type UserCounts = Record<UserStatus | "all", number>;
@@ -24,9 +30,7 @@ export type UserCounts = Record<UserStatus | "all", number>;
 export type UserListResult = {
   users: ManagedUser[];
   counts: UserCounts;
+  total: number;
+  page: number;
+  pageSize: number;
 };
-
-/** Uniform result shape for every user mutation, so the UI has one thing to handle. */
-export type ActionResult<T = undefined> =
-  | { ok: true; data: T; message: string }
-  | { ok: false; error: string };

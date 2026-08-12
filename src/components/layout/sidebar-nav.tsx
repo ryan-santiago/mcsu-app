@@ -1,6 +1,6 @@
 "use client";
 
-import { History, LayoutDashboard, Users, type LucideIcon } from "lucide-react";
+import { History, IdCard, LayoutDashboard, Users, Wrench, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -12,6 +12,8 @@ const NAV_ICONS: Record<NavIconKey, LucideIcon> = {
   dashboard: LayoutDashboard,
   users: Users,
   audit: History,
+  employees: IdCard,
+  maintenance: Wrench,
 };
 
 type SidebarNavProps = {

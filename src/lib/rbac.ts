@@ -22,6 +22,17 @@ export const PERMISSIONS = [
   "users:delete",
   "users:assign_role",
 
+  "employees:read",
+  "employees:create",
+  "employees:update",
+  "employees:delete",
+  /** Gates the Salary column/field — sensitive HR data. */
+  "employees:read_salary",
+
+  /** Covers create/update/activate/deactivate/delete for every lookup kind. */
+  "maintenance:read",
+  "maintenance:manage",
+
   "audit:read",
   "settings:manage",
 ] as const;
@@ -46,6 +57,10 @@ const MANAGER_PERMISSIONS = [
   "users:approve",
   "users:suspend",
   "users:update",
+  "employees:read",
+  "employees:create",
+  "employees:update",
+  "employees:read_salary",
 ] as const satisfies readonly Permission[];
 
 export const ROLES: Record<UserRole, RoleDefinition> = {

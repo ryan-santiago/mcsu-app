@@ -6,6 +6,7 @@ import * as React from "react";
 import type { DateRange } from "react-day-picker";
 
 import { EmptyState } from "@/components/layout/empty-state";
+import { PaginationFooter } from "@/components/layout/pagination-footer";
 import { ActionBadge, ModuleBadge } from "@/components/audit/audit-badges";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -38,7 +39,7 @@ import { fetchAuditLog } from "@/server/audit/actions";
 import { auditQueryKey } from "@/server/audit/query-key";
 import type { AuditEntry, AuditFilters } from "@/server/audit/types";
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 20;
 
 /** Renders a raw stored value using the same labels the rest of the app uses for it. */
 function formatChangeValue(field: string, value: unknown): string {
@@ -106,7 +107,6 @@ export function AuditView() {
 
   const entries = data?.entries ?? [];
   const total = data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   function toggle(id: string) {
     setExpanded((prev) => {
@@ -349,36 +349,7 @@ export function AuditView() {
       {/* ------------------------------------------------------------------ */}
       {/* Pagination                                                         */}
       {/* ------------------------------------------------------------------ */}
-      {total > 0 ? (
-        <div className="flex items-center justify-between gap-4">
-          <p className="text-muted-foreground text-sm">
-            {total.toLocaleString()} {total === 1 ? "entry" : "entries"}
-          </p>
-          <div className="flex items-center gap-3">
-            <span className="text-muted-foreground text-sm">
-              Page {page} of {totalPages}
-            </span>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-              >
-                Previous
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              >
-                Next
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <PaginationFooter total={total} page={page} pageSize={PAGE_SIZE} onPageChange={setPage} itemLabel="entry" />
     </div>
   );
 }

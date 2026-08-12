@@ -1,5 +1,16 @@
 import { relations } from "drizzle-orm";
-import { boolean, index, jsonb, pgEnum, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  date,
+  index,
+  jsonb,
+  numeric,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 
 /* -------------------------------------------------------------------------- */
 /*  Enums                                                                     */
@@ -183,6 +194,219 @@ export const auditLog = pgTable(
 );
 
 /* -------------------------------------------------------------------------- */
+/*  Employee module — Maintenance lookups                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Shared shape for every Maintenance-managed lookup list (Client, Position,
+ * Level, Gender, Team). Each is a *separate* physical table rather than one
+ * generic table with a `category` column, so a foreign key can only ever
+ * point at the right kind of row (a Position id can never land in a column
+ * that expects a Level id).
+ *
+ * `isActive` lets an admin retire a value without breaking historical rows
+ * that still reference it: inactive entries drop out of pickers for new
+ * records but stay valid wherever they're already assigned.
+ */
+function lookupColumns() {
+  return {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    isActive: boolean("is_active").default(true).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date())
+      .notNull(),
+  };
+}
+
+export const client = pgTable("client", lookupColumns, (table) => [
+  uniqueIndex("client_name_idx").on(table.name),
+]);
+
+export const position = pgTable("position", lookupColumns, (table) => [
+  uniqueIndex("position_name_idx").on(table.name),
+]);
+
+export const level = pgTable("level", lookupColumns, (table) => [
+  uniqueIndex("level_name_idx").on(table.name),
+]);
+
+export const gender = pgTable("gender", lookupColumns, (table) => [
+  uniqueIndex("gender_name_idx").on(table.name),
+]);
+
+export const team = pgTable("team", lookupColumns, (table) => [
+  uniqueIndex("team_name_idx").on(table.name),
+]);
+
+/* -------------------------------------------------------------------------- */
+/*  Employee module — core record                                            */
+/* -------------------------------------------------------------------------- */
+
+export const employee = pgTable(
+  "employee",
+  {
+    id: text("id").primaryKey(),
+    /** "PH00123456" or "123456" — manually entered, validated in Zod. */
+    code: text("code").notNull().unique(),
+    firstName: text("first_name").notNull(),
+    middleName: text("middle_name"),
+    lastName: text("last_name").notNull(),
+    genderId: text("gender_id")
+      .notNull()
+      .references(() => gender.id, { onDelete: "restrict" }),
+    /** PH mobile format, validated in Zod. */
+    mobileNumber: text("mobile_number").notNull(),
+    viberNumber: text("viber_number"),
+    personalEmail: text("personal_email"),
+    workEmail: text("work_email"),
+    teamId: text("team_id").references(() => team.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("employee_last_name_idx").on(table.lastName),
+    // Postgres allows multiple NULLs under a unique index, so employees
+    // without a work email yet don't collide with each other.
+    uniqueIndex("employee_work_email_idx").on(table.workEmail),
+  ],
+);
+
+/**
+ * One row per address per employee (`current` and `permanent`). Region,
+ * province, city/municipality and barangay names are snapshotted alongside
+ * their PSGC codes — same reasoning as `auditLog.entityLabel` — so an address
+ * still reads correctly even if the bundled PSGC dataset is later updated.
+ *
+ * `latitude`/`longitude` are nullable and unused by any UI today; they exist
+ * so a future OpenStreetMap pin is a pure addition, not a migration.
+ */
+export const employeeAddressType = pgEnum("employee_address_type", ["current", "permanent"]);
+
+export const employeeAddress = pgTable(
+  "employee_address",
+  {
+    id: text("id").primaryKey(),
+    employeeId: text("employee_id")
+      .notNull()
+      .references(() => employee.id, { onDelete: "cascade" }),
+    type: employeeAddressType("type").notNull(),
+    regionCode: text("region_code").notNull(),
+    regionName: text("region_name").notNull(),
+    // Null only in principle — the bundled PSGC dataset models NCR's
+    // districts/cities as province-level entries too, so every address in
+    // practice has a province.
+    provinceCode: text("province_code"),
+    provinceName: text("province_name"),
+    cityCode: text("city_code").notNull(),
+    cityName: text("city_name").notNull(),
+    barangayCode: text("barangay_code").notNull(),
+    barangayName: text("barangay_name").notNull(),
+    /** House/unit/building number and street. */
+    addressLine: text("address_line").notNull(),
+    latitude: numeric("latitude", { precision: 10, scale: 7 }),
+    longitude: numeric("longitude", { precision: 10, scale: 7 }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [uniqueIndex("employee_address_employee_type_idx").on(table.employeeId, table.type)],
+);
+
+/**
+ * Historical employment records. `endDate` null means "current" — the row
+ * with no end date (or, failing that, the latest `startDate`) is what the
+ * employee list and profile show as the active role.
+ *
+ * `employmentType` stays a Postgres enum rather than a Maintenance lookup —
+ * unlike Level and Position, it wasn't asked for as an admin-editable list.
+ */
+export const employmentType = pgEnum("employment_type", [
+  "regular",
+  "probationary",
+  "contractual",
+  "project_based",
+  "consultant",
+  "intern",
+]);
+
+export const employeeEmployment = pgTable(
+  "employee_employment",
+  {
+    id: text("id").primaryKey(),
+    employeeId: text("employee_id")
+      .notNull()
+      .references(() => employee.id, { onDelete: "cascade" }),
+    salary: numeric("salary", { precision: 12, scale: 2 }).notNull(),
+    levelId: text("level_id")
+      .notNull()
+      .references(() => level.id, { onDelete: "restrict" }),
+    positionId: text("position_id")
+      .notNull()
+      .references(() => position.id, { onDelete: "restrict" }),
+    employmentType: employmentType("employment_type").notNull(),
+    startDate: date("start_date").notNull(),
+    endDate: date("end_date"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("employee_employment_employee_idx").on(table.employeeId),
+    index("employee_employment_employee_end_idx").on(table.employeeId, table.endDate),
+  ],
+);
+
+/**
+ * Historical client/project deployment records. `project` is a plain text
+ * column rather than a foreign key — the Projects module doesn't exist yet;
+ * this migrates to a real reference once it does.
+ */
+export const employeeDeployment = pgTable(
+  "employee_deployment",
+  {
+    id: text("id").primaryKey(),
+    employeeId: text("employee_id")
+      .notNull()
+      .references(() => employee.id, { onDelete: "cascade" }),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => client.id, { onDelete: "restrict" }),
+    project: text("project").notNull(),
+    startDate: date("start_date").notNull(),
+    endDate: date("end_date"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("employee_deployment_employee_idx").on(table.employeeId),
+    index("employee_deployment_employee_end_idx").on(table.employeeId, table.endDate),
+  ],
+);
+
+/* -------------------------------------------------------------------------- */
 /*  Relations                                                                 */
 /* -------------------------------------------------------------------------- */
 
@@ -203,6 +427,29 @@ export const auditLogRelations = relations(auditLog, ({ one }) => ({
   actor: one(user, { fields: [auditLog.actorId], references: [user.id] }),
 }));
 
+export const employeeRelations = relations(employee, ({ one, many }) => ({
+  gender: one(gender, { fields: [employee.genderId], references: [gender.id] }),
+  team: one(team, { fields: [employee.teamId], references: [team.id] }),
+  addresses: many(employeeAddress),
+  employments: many(employeeEmployment),
+  deployments: many(employeeDeployment),
+}));
+
+export const employeeAddressRelations = relations(employeeAddress, ({ one }) => ({
+  employee: one(employee, { fields: [employeeAddress.employeeId], references: [employee.id] }),
+}));
+
+export const employeeEmploymentRelations = relations(employeeEmployment, ({ one }) => ({
+  employee: one(employee, { fields: [employeeEmployment.employeeId], references: [employee.id] }),
+  level: one(level, { fields: [employeeEmployment.levelId], references: [level.id] }),
+  position: one(position, { fields: [employeeEmployment.positionId], references: [position.id] }),
+}));
+
+export const employeeDeploymentRelations = relations(employeeDeployment, ({ one }) => ({
+  employee: one(employee, { fields: [employeeDeployment.employeeId], references: [employee.id] }),
+  client: one(client, { fields: [employeeDeployment.clientId], references: [client.id] }),
+}));
+
 /* -------------------------------------------------------------------------- */
 /*  Inferred types                                                            */
 /* -------------------------------------------------------------------------- */
@@ -213,3 +460,21 @@ export type Session = typeof session.$inferSelect;
 export type AuditLog = typeof auditLog.$inferSelect;
 export type UserRole = (typeof userRole.enumValues)[number];
 export type UserStatus = (typeof userStatus.enumValues)[number];
+
+export type Client = typeof client.$inferSelect;
+export type Position = typeof position.$inferSelect;
+export type Level = typeof level.$inferSelect;
+export type Gender = typeof gender.$inferSelect;
+export type Team = typeof team.$inferSelect;
+
+export type Employee = typeof employee.$inferSelect;
+export type NewEmployee = typeof employee.$inferInsert;
+export type EmployeeAddress = typeof employeeAddress.$inferSelect;
+export type NewEmployeeAddress = typeof employeeAddress.$inferInsert;
+export type EmployeeEmployment = typeof employeeEmployment.$inferSelect;
+export type NewEmployeeEmployment = typeof employeeEmployment.$inferInsert;
+export type EmployeeDeployment = typeof employeeDeployment.$inferSelect;
+export type NewEmployeeDeployment = typeof employeeDeployment.$inferInsert;
+
+export type EmployeeAddressType = (typeof employeeAddressType.enumValues)[number];
+export type EmploymentType = (typeof employmentType.enumValues)[number];

@@ -8,6 +8,9 @@ import { authorize } from "@/lib/session";
 
 import type { UserCounts, UserFilters, UserListResult, ManagedUser } from "./types";
 
+const DEFAULT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 100;
+
 const SELECTION = {
   id: user.id,
   name: user.name,
@@ -57,6 +60,9 @@ function buildWhere(filters: UserFilters): SQL | undefined {
 export async function listUsers(filters: UserFilters = {}): Promise<UserListResult> {
   await authorize("users:read");
 
+  const page = Math.max(1, filters.page ?? 1);
+  const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, filters.pageSize ?? DEFAULT_PAGE_SIZE));
+
   const where = buildWhere(filters);
 
   const rows = await db
@@ -69,8 +75,14 @@ export async function listUsers(filters: UserFilters = {}): Promise<UserListResu
       desc(user.createdAt),
       asc(user.name),
     )
-    .limit(500);
+    .limit(pageSize)
+    .offset((page - 1) * pageSize);
 
+  const [{ value: total }] = await db.select({ value: count() }).from(user).where(where);
+
+  // The status chips show whole-directory totals regardless of which status
+  // tab is active, so this count deliberately excludes `status` from the
+  // filter — unlike `total` above, which reflects the current page's filters.
   const countWhere = buildWhere({ search: filters.search, role: filters.role });
 
   const grouped = await db
@@ -85,7 +97,7 @@ export async function listUsers(filters: UserFilters = {}): Promise<UserListResu
     counts.all += row.total;
   }
 
-  return { users: rows as ManagedUser[], counts };
+  return { users: rows as ManagedUser[], counts, total, page, pageSize };
 }
 
 /** Used by the detail dialogs; returns null rather than throwing on a bad id. */

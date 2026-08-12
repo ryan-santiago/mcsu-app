@@ -16,6 +16,7 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/layout/empty-state";
+import { PaginationFooter } from "@/components/layout/pagination-footer";
 import { ApproveUserDialog } from "@/components/users/approve-user-dialog";
 import { RoleBadge, StatusBadge } from "@/components/users/user-badges";
 import { initialsOf } from "@/components/layout/user-menu";
@@ -90,6 +91,8 @@ function emptyTitleFor(status: UserStatus | "all"): string {
   return status === "all" ? "No users yet" : `No ${STATUS_LABELS[status].toLowerCase()} users`;
 }
 
+const PAGE_SIZE = 20;
+
 /* -------------------------------------------------------------------------- */
 /*  View                                                                      */
 /* -------------------------------------------------------------------------- */
@@ -105,12 +108,22 @@ export function UsersView({ actor, initialFilters }: UsersViewProps) {
 
   const [search, setSearch] = React.useState(initialFilters.search ?? "");
   const [status, setStatus] = React.useState<UserStatus | "all">(initialFilters.status ?? "all");
+  const [page, setPage] = React.useState(1);
   const debouncedSearch = useDebounced(search);
 
   const filters = React.useMemo<UserFilters>(
-    () => ({ search: debouncedSearch || undefined, status, role: "all" }),
-    [debouncedSearch, status],
+    () => ({ search: debouncedSearch || undefined, status, role: "all", page, pageSize: PAGE_SIZE }),
+    [debouncedSearch, status, page],
   );
+
+  // Any filter change (except paging itself) should snap back to page 1 —
+  // same reasoning as the Audit Trail's identical pattern.
+  const filterSignature = JSON.stringify({ debouncedSearch, status });
+  const [previousSignature, setPreviousSignature] = React.useState(filterSignature);
+  if (previousSignature !== filterSignature) {
+    setPreviousSignature(filterSignature);
+    if (page !== 1) setPage(1);
+  }
 
   const { data, isPending, isFetching, isError, error, refetch } = useQuery<UserListResult>({
     queryKey: usersQueryKey(filters),
@@ -145,6 +158,7 @@ export function UsersView({ actor, initialFilters }: UsersViewProps) {
 
   const users = data?.users ?? [];
   const counts = data?.counts;
+  const total = data?.total ?? 0;
   const grantableRoles = assignableRoles(actor);
 
   const mayApprove = can(actor, "users:approve");
@@ -367,6 +381,11 @@ export function UsersView({ actor, initialFilters }: UsersViewProps) {
           </Button>
         </div>
       ) : null}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Pagination                                                         */}
+      {/* ------------------------------------------------------------------ */}
+      <PaginationFooter total={total} page={page} pageSize={PAGE_SIZE} onPageChange={setPage} itemLabel="user" />
 
       {/* ------------------------------------------------------------------ */}
       {/* Dialogs                                                            */}

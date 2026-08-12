@@ -10,7 +10,27 @@ import { canAny } from "@/lib/rbac";
  * runtime. Resolve the name to a component only on the client, in
  * `NAV_ICONS` (`sidebar-nav.tsx`).
  */
-export type NavIconKey = "dashboard" | "users" | "audit";
+export type NavIconKey = "dashboard" | "users" | "audit" | "employees" | "maintenance";
+
+/**
+ * A known sub-route of a nav item, for the topbar breadcrumb trail —
+ * e.g. `/employees/new` under the "Employees" item. Plain data, not a
+ * predicate function: `visibleNavigation()`'s result is passed as a prop
+ * from the server layout into client components, and a function isn't
+ * serializable across that boundary — the same reason `icon` above is a
+ * name, not a component reference.
+ *
+ * Exactly one of `path` (an exact sub-route, e.g. "/employees/new") or
+ * `dynamic` (any other single path segment beyond the item's `href`, e.g.
+ * "/employees/[id]") should be set. Static labels only — nothing here
+ * depends on data a page fetches, which is also why the Employee detail
+ * page's breadcrumb stays generic rather than showing the employee's name.
+ */
+export type NavBreadcrumbChild = {
+  title: string;
+  path?: string;
+  dynamic?: boolean;
+};
 
 export type NavItem = {
   title: string;
@@ -20,6 +40,8 @@ export type NavItem = {
   permissions?: readonly Permission[];
   /** Match child routes too, e.g. /admin/users/123 highlights User Management. */
   matchNested?: boolean;
+  /** Known sub-routes, deepest match wins — see `breadcrumbsFor()`. */
+  children?: readonly NavBreadcrumbChild[];
 };
 
 export type NavGroup = {
@@ -46,6 +68,22 @@ export const NAVIGATION: readonly NavGroup[] = [
     ],
   },
   {
+    title: "Workforce",
+    items: [
+      {
+        title: "Employees",
+        href: "/employees",
+        icon: "employees",
+        permissions: ["employees:read"],
+        matchNested: true,
+        children: [
+          { title: "Add employee", path: "/employees/new" },
+          { title: "View / Edit Employee", dynamic: true },
+        ],
+      },
+    ],
+  },
+  {
     title: "Administration",
     items: [
       {
@@ -53,6 +91,13 @@ export const NAVIGATION: readonly NavGroup[] = [
         href: "/admin/users",
         icon: "users",
         permissions: ["users:read"],
+        matchNested: true,
+      },
+      {
+        title: "Maintenance",
+        href: "/admin/maintenance",
+        icon: "maintenance",
+        permissions: ["maintenance:read"],
         matchNested: true,
       },
       {
@@ -86,4 +131,35 @@ export function findNavItem(pathname: string): NavItem | undefined {
   return NAVIGATION.flatMap((group) => group.items).find((item) =>
     isNavItemActive(item, pathname),
   );
+}
+
+export type Breadcrumb = { title: string; href?: string };
+
+/**
+ * The topbar's breadcrumb trail for a pathname — one crumb for the section
+ * itself (e.g. "Employees"), plus one more if it matches a known child route
+ * (e.g. "Add employee"). Sections with no matching child, or no `children`
+ * at all, render as a single crumb, same as before breadcrumbs existed.
+ *
+ * Adding a nested route to any future module is just a `children` entry on
+ * its `NavItem` — nothing else in the topbar needs to change.
+ */
+export function breadcrumbsFor(pathname: string): Breadcrumb[] {
+  const item = findNavItem(pathname);
+  if (!item) return [];
+
+  const children = item.children ?? [];
+  const exact = children.find((candidate) => candidate.path === pathname);
+
+  // A `dynamic` child matches any single segment beyond the item's own href
+  // that no sibling already claims exactly — e.g. "/employees/abc123", but
+  // not "/employees/new" once that has its own exact `path` entry.
+  const remainder = pathname.slice(item.href.length).replace(/^\//, "");
+  const isSingleSegment = remainder.length > 0 && !remainder.includes("/");
+  const dynamic = isSingleSegment ? children.find((candidate) => candidate.dynamic) : undefined;
+
+  const child = exact ?? dynamic;
+  if (!child) return [{ title: item.title }];
+
+  return [{ title: item.title, href: item.href }, { title: child.title }];
 }

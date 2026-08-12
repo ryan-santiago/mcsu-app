@@ -15,6 +15,12 @@ import { endOfToday, startOfToday, subDays } from "date-fns";
 export const AUDIT_MODULES = [
   { value: "users", label: "User Management" },
   { value: "auth", label: "Authentication" },
+  { value: "employees", label: "Employees" },
+  { value: "clients", label: "Maintenance — Clients" },
+  { value: "positions", label: "Maintenance — Positions" },
+  { value: "levels", label: "Maintenance — Levels" },
+  { value: "genders", label: "Maintenance — Genders" },
+  { value: "teams", label: "Maintenance — Teams" },
 ] as const;
 
 export type AuditModule = (typeof AUDIT_MODULES)[number]["value"];
@@ -32,6 +38,14 @@ export const AUDIT_ACTIONS = [
   { value: "suspended", label: "Suspended" },
   { value: "reinstated", label: "Reinstated" },
   { value: "role_changed", label: "Role changed" },
+  { value: "activated", label: "Activated" },
+  { value: "deactivated", label: "Deactivated" },
+  { value: "employment_added", label: "Employment record added" },
+  { value: "employment_updated", label: "Employment record updated" },
+  { value: "employment_removed", label: "Employment record removed" },
+  { value: "deployment_added", label: "Deployment record added" },
+  { value: "deployment_updated", label: "Deployment record updated" },
+  { value: "deployment_removed", label: "Deployment record removed" },
   { value: "deleted", label: "Deleted" },
   { value: "login", label: "Signed in" },
 ] as const;

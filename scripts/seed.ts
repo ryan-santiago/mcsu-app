@@ -17,6 +17,7 @@ import type { eq as eqType } from 'drizzle-orm'
 
 import type {
 	account as accountTable,
+	gender as genderTable,
 	user as userTable,
 	UserRole,
 	UserStatus,
@@ -37,6 +38,7 @@ let eq: typeof eqType
 let db: typeof dbClient
 let user: typeof userTable
 let account: typeof accountTable
+let gender: typeof genderTable
 let auth: typeof authClient
 
 const ADMIN = {
@@ -101,6 +103,30 @@ const DEMO_USERS: Array<{
 
 const DEMO_PASSWORD = 'testpassword1234'
 
+/**
+ * Gender is Maintenance-managed (Administration → Maintenance), but the
+ * Employee form needs at least these three to be usable out of the box —
+ * Client/Position/Level/Team intentionally start empty and are populated
+ * through that screen instead.
+ */
+const DEFAULT_GENDERS = ['Male', 'Female', 'Others']
+
+async function seedGenders() {
+	for (const name of DEFAULT_GENDERS) {
+		const [existing] = await db
+			.select({ id: gender.id })
+			.from(gender)
+			.where(eq(gender.name, name))
+			.limit(1)
+		if (existing) {
+			console.log(`  · ${name} already exists — skipped`)
+			continue
+		}
+		await db.insert(gender).values({ id: crypto.randomUUID(), name })
+		console.log(`  ✓ ${name}`)
+	}
+}
+
 async function findByEmail(email: string) {
 	const [existing] = await db
 		.select({ id: user.id })
@@ -155,7 +181,7 @@ async function createUser(input: {
 async function main() {
 	;({ eq } = await import('drizzle-orm'))
 	;({ db } = await import('../src/db'))
-	;({ account, user } = await import('../src/db/schema'))
+	;({ account, user, gender } = await import('../src/db/schema'))
 	;({ auth } = await import('../src/lib/auth'))
 
 	const withDemo = process.argv.includes('--with-demo-users')
@@ -164,6 +190,9 @@ async function main() {
 
 	console.log('Administrator:')
 	await createUser({ ...ADMIN, role: 'admin', status: 'active' })
+
+	console.log('\nGenders:')
+	await seedGenders()
 
 	if (withDemo) {
 		console.log('\nDemo users:')
