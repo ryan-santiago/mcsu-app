@@ -3,25 +3,74 @@ import "server-only";
 import { and, asc, count, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 
 import { db } from "@/db";
-import { user, type UserStatus } from "@/db/schema";
+import { role, user, type UserStatus } from "@/db/schema";
+import { formatEmployeeDisplayName } from "@/lib/employee-format";
 import { authorize } from "@/lib/session";
+import { employeeIdentitySubquery } from "@/server/employees/queries";
 
 import type { UserCounts, UserFilters, UserListResult, ManagedUser } from "./types";
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 
-const SELECTION = {
-  id: user.id,
-  name: user.name,
-  email: user.email,
-  image: user.image,
-  role: user.role,
-  status: user.status,
-  jobTitle: user.jobTitle,
-  lastLoginAt: user.lastLoginAt,
-  createdAt: user.createdAt,
+type UserRow = {
+  id: string;
+  name: string;
+  email: string;
+  image: string | null;
+  roleId: string;
+  roleLabel: string;
+  rank: number;
+  status: UserStatus;
+  lastLoginAt: Date | null;
+  createdAt: Date;
+  employeeFirstName: string | null;
+  employeeLastName: string | null;
+  levelName: string | null;
+  positionName: string | null;
 };
+
+function selection(identity: ReturnType<typeof employeeIdentitySubquery>) {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    image: user.image,
+    roleId: user.roleId,
+    roleLabel: role.label,
+    rank: role.rank,
+    status: user.status,
+    lastLoginAt: user.lastLoginAt,
+    createdAt: user.createdAt,
+    employeeFirstName: identity.firstName,
+    employeeLastName: identity.lastName,
+    levelName: identity.levelName,
+    positionName: identity.positionName,
+  };
+}
+
+function toManagedUser(row: UserRow): ManagedUser {
+  return {
+    id: row.id,
+    name: row.name,
+    displayName:
+      row.employeeFirstName && row.employeeLastName
+        ? formatEmployeeDisplayName({
+            firstName: row.employeeFirstName,
+            lastName: row.employeeLastName,
+          })
+        : row.name,
+    email: row.email,
+    image: row.image,
+    roleId: row.roleId,
+    roleLabel: row.roleLabel,
+    rank: row.rank,
+    status: row.status,
+    position: row.levelName && row.positionName ? `${row.levelName} - ${row.positionName}` : null,
+    lastLoginAt: row.lastLoginAt,
+    createdAt: row.createdAt,
+  };
+}
 
 function buildWhere(filters: UserFilters): SQL | undefined {
   const clauses: SQL[] = [];
@@ -29,11 +78,7 @@ function buildWhere(filters: UserFilters): SQL | undefined {
   const search = filters.search?.trim();
   if (search) {
     const pattern = `%${search}%`;
-    const match = or(
-      ilike(user.name, pattern),
-      ilike(user.email, pattern),
-      ilike(user.jobTitle, pattern),
-    );
+    const match = or(ilike(user.name, pattern), ilike(user.email, pattern));
     if (match) clauses.push(match);
   }
 
@@ -42,7 +87,7 @@ function buildWhere(filters: UserFilters): SQL | undefined {
   }
 
   if (filters.role && filters.role !== "all") {
-    clauses.push(eq(user.role, filters.role));
+    clauses.push(eq(user.roleId, filters.role));
   }
 
   if (clauses.length === 0) return undefined;
@@ -64,10 +109,13 @@ export async function listUsers(filters: UserFilters = {}): Promise<UserListResu
   const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, filters.pageSize ?? DEFAULT_PAGE_SIZE));
 
   const where = buildWhere(filters);
+  const identity = employeeIdentitySubquery();
 
   const rows = await db
-    .select(SELECTION)
+    .select(selection(identity))
     .from(user)
+    .innerJoin(role, eq(role.id, user.roleId))
+    .leftJoin(identity, sql`${identity.workEmailLower} = lower(${user.email})`)
     // Pending first: the whole point of this screen is clearing the queue.
     .where(where)
     .orderBy(
@@ -97,13 +145,21 @@ export async function listUsers(filters: UserFilters = {}): Promise<UserListResu
     counts.all += row.total;
   }
 
-  return { users: rows as ManagedUser[], counts, total, page, pageSize };
+  return { users: rows.map(toManagedUser), counts, total, page, pageSize };
 }
 
 /** Used by the detail dialogs; returns null rather than throwing on a bad id. */
 export async function getUserById(id: string): Promise<ManagedUser | null> {
   await authorize("users:read");
 
-  const [row] = await db.select(SELECTION).from(user).where(eq(user.id, id)).limit(1);
-  return (row as ManagedUser | undefined) ?? null;
+  const identity = employeeIdentitySubquery();
+  const [row] = await db
+    .select(selection(identity))
+    .from(user)
+    .innerJoin(role, eq(role.id, user.roleId))
+    .leftJoin(identity, sql`${identity.workEmailLower} = lower(${user.email})`)
+    .where(eq(user.id, id))
+    .limit(1);
+
+  return row ? toManagedUser(row) : null;
 }

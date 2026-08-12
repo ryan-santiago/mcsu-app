@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { PhAddressPicker } from "@/components/employees/ph-address-picker";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -47,6 +48,7 @@ function toFormValues(detail: EmployeeDetail | undefined): EmployeeFormInput {
         personalEmail: "",
         workEmail: "",
         teamId: "",
+        resignationDate: "",
       },
       currentAddress: EMPTY_ADDRESS,
       permanentAddress: EMPTY_ADDRESS,
@@ -80,6 +82,7 @@ function toFormValues(detail: EmployeeDetail | undefined): EmployeeFormInput {
       personalEmail: detail.personalEmail ?? "",
       workEmail: detail.workEmail ?? "",
       teamId: detail.teamId ?? "",
+      resignationDate: detail.resignationDate ?? "",
     },
     currentAddress: toAddress(detail.currentAddress),
     permanentAddress: toAddress(detail.permanentAddress),
@@ -311,6 +314,20 @@ export function EmployeeForm(props: EmployeeFormProps) {
                       <FormControl>
                         <Input {...field} disabled={fieldDisabled} />
                       </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="profile.resignationDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        Resignation date <span className="text-muted-foreground font-normal">(optional)</span>
+                      </FormLabel>
+                      <DatePicker value={field.value} onChange={field.onChange} disabled={fieldDisabled} />
                       <FormMessage />
                     </FormItem>
                   )}

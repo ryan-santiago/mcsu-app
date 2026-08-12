@@ -3,6 +3,7 @@ import {
   boolean,
   date,
   index,
+  integer,
   jsonb,
   numeric,
   pgEnum,
@@ -17,18 +18,50 @@ import {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Role names are the RBAC anchor. The permissions each role grants live in
- * `src/lib/rbac.ts` rather than in the database — see docs/RBAC.md for why, and
- * for the migration path to database-driven roles.
- */
-export const userRole = pgEnum("user_role", ["admin", "manager", "engineer", "viewer"]);
-
-/**
  * `pending` users have registered but have not been approved yet: they hold no
  * role and cannot obtain a session. `suspended` users keep their role but are
  * locked out.
  */
 export const userStatus = pgEnum("user_status", ["pending", "active", "suspended"]);
+
+/* -------------------------------------------------------------------------- */
+/*  Roles — the RBAC anchor                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Roles and the permissions they grant are admin-editable at runtime (see
+ * docs/RBAC.md and the Access Control screen), so this is a table rather than
+ * a fixed enum. `permissions` stores `Permission` strings (`src/lib/rbac.ts`)
+ * as plain `text[]` rather than importing that type here, to keep `schema.ts`
+ * free of a dependency on `lib/`; the roles query/action layer validates the
+ * array's shape at the boundary instead.
+ *
+ * `rank` preserves the pre-existing hierarchy rules — who may act on whom,
+ * and which roles someone may grant — now as an admin-settable field instead
+ * of a hardcoded constant. `isSystem` roles (Administrator, Manager) cannot be
+ * deleted; Administrator's `permissions` are additionally locked in the
+ * action layer (`src/server/roles/actions.ts`) so the workspace can never
+ * accidentally lock itself out.
+ */
+export const role = pgTable(
+  "role",
+  {
+    id: text("id").primaryKey(),
+    label: text("label").notNull(),
+    description: text("description"),
+    rank: integer("rank").notNull(),
+    isSystem: boolean("is_system").default(false).notNull(),
+    permissions: jsonb("permissions").$type<string[]>().notNull().default([]),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [index("role_rank_idx").on(table.rank)],
+);
 
 /* -------------------------------------------------------------------------- */
 /*  BetterAuth core tables                                                    */
@@ -51,9 +84,13 @@ export const user = pgTable(
     image: text("image"),
 
     // --- MCSU fields ---
-    role: userRole("role").default("viewer").notNull(),
+    // `restrict`: a role in use by a user can't be deleted — same policy as
+    // `employee.genderId`/`employeeEmployment.levelId` protecting Maintenance
+    // lookups still referenced by historical rows.
+    roleId: text("role_id")
+      .notNull()
+      .references(() => role.id, { onDelete: "restrict" }),
     status: userStatus("status").default("pending").notNull(),
-    jobTitle: text("job_title"),
     approvedAt: timestamp("approved_at", { withTimezone: true }),
     approvedBy: text("approved_by"),
     lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
@@ -66,7 +103,7 @@ export const user = pgTable(
       .$onUpdate(() => new Date())
       .notNull(),
   },
-  (table) => [index("user_status_idx").on(table.status), index("user_role_idx").on(table.role)],
+  (table) => [index("user_status_idx").on(table.status), index("user_role_id_idx").on(table.roleId)],
 );
 
 export const session = pgTable(
@@ -243,6 +280,127 @@ export const team = pgTable("team", lookupColumns, (table) => [
   uniqueIndex("team_name_idx").on(table.name),
 ]);
 
+export const salesRepresentative = pgTable("sales_representative", lookupColumns, (table) => [
+  uniqueIndex("sales_representative_name_idx").on(table.name),
+]);
+
+export const solutionsManager = pgTable("solutions_manager", lookupColumns, (table) => [
+  uniqueIndex("solutions_manager_name_idx").on(table.name),
+]);
+
+export const engagementType = pgTable("engagement_type", lookupColumns, (table) => [
+  uniqueIndex("engagement_type_name_idx").on(table.name),
+]);
+
+/* -------------------------------------------------------------------------- */
+/*  Projects module — S3P (Sales Profit Projection per Project)              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The master project record. `s3pNumber` is manually entered and unique, the
+ * same convention as `employee.code`. `salesRepresentativeId`/
+ * `solutionsManagerId`/`engagementTypeId`/`startDate`/`endDate` are nullable
+ * here — a project's identity (S3P Number/Name/Client) is known immediately,
+ * assignments can follow — but the create/edit form requires them, the same
+ * "nullable column, required field" split already used for
+ * `employee.teamId`.
+ */
+export const project = pgTable(
+  "project",
+  {
+    id: text("id").primaryKey(),
+    s3pNumber: text("s3p_number").notNull().unique(),
+    /** What Employee deployment history picks from — see `employeeDeployment.projectId`. */
+    name: text("name").notNull(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => client.id, { onDelete: "restrict" }),
+    salesRepresentativeId: text("sales_representative_id").references(() => salesRepresentative.id, {
+      onDelete: "restrict",
+    }),
+    solutionsManagerId: text("solutions_manager_id").references(() => solutionsManager.id, {
+      onDelete: "restrict",
+    }),
+    engagementTypeId: text("engagement_type_id").references(() => engagementType.id, { onDelete: "restrict" }),
+    startDate: date("start_date"),
+    endDate: date("end_date"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [index("project_client_idx").on(table.clientId)],
+);
+
+/**
+ * Alternate names a project is also known/invoiced under — distinct from the
+ * Maintenance-managed `client` the project belongs to. A short unordered
+ * list, edited inline with the project (whole-list replace on save), not a
+ * dated history table like employments/deployments.
+ */
+export const projectClientName = pgTable(
+  "project_client_name",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => project.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => [index("project_client_name_project_idx").on(table.projectId)],
+);
+
+/**
+ * One S3P financial line per row. `estimatedGrossProfit` is deliberately not
+ * stored — it's `contractPrice - estimatedCost`, computed wherever it's
+ * shown (per line and summed for the project total), so it can never drift
+ * from the two numbers it's derived from.
+ */
+export const projectDetail = pgTable(
+  "project_detail",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => project.id, { onDelete: "cascade" }),
+    description: text("description").notNull(),
+    contractPrice: numeric("contract_price", { precision: 12, scale: 2 }).notNull(),
+    estimatedCost: numeric("estimated_cost", { precision: 12, scale: 2 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [index("project_detail_project_idx").on(table.projectId)],
+);
+
+/** Multiple teams may be assigned to a single S3P detail line. */
+export const projectDetailTeam = pgTable(
+  "project_detail_team",
+  {
+    id: text("id").primaryKey(),
+    projectDetailId: text("project_detail_id")
+      .notNull()
+      .references(() => projectDetail.id, { onDelete: "cascade" }),
+    teamId: text("team_id")
+      .notNull()
+      .references(() => team.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => [uniqueIndex("project_detail_team_detail_team_idx").on(table.projectDetailId, table.teamId)],
+);
+
 /* -------------------------------------------------------------------------- */
 /*  Employee module — core record                                            */
 /* -------------------------------------------------------------------------- */
@@ -265,6 +423,9 @@ export const employee = pgTable(
     personalEmail: text("personal_email"),
     workEmail: text("work_email"),
     teamId: text("team_id").references(() => team.id, { onDelete: "set null" }),
+    resignationDate: date("resignation_date"),
+    /** Always derived from `resignationDate` in the action layer — never a direct user input. */
+    isResigned: boolean("is_resigned").default(false).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .$defaultFn(() => new Date())
       .notNull(),
@@ -374,11 +535,7 @@ export const employeeEmployment = pgTable(
   ],
 );
 
-/**
- * Historical client/project deployment records. `project` is a plain text
- * column rather than a foreign key — the Projects module doesn't exist yet;
- * this migrates to a real reference once it does.
- */
+/** Historical client/project deployment records. */
 export const employeeDeployment = pgTable(
   "employee_deployment",
   {
@@ -389,7 +546,9 @@ export const employeeDeployment = pgTable(
     clientId: text("client_id")
       .notNull()
       .references(() => client.id, { onDelete: "restrict" }),
-    project: text("project").notNull(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => project.id, { onDelete: "restrict" }),
     startDate: date("start_date").notNull(),
     endDate: date("end_date"),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -410,7 +569,12 @@ export const employeeDeployment = pgTable(
 /*  Relations                                                                 */
 /* -------------------------------------------------------------------------- */
 
-export const userRelations = relations(user, ({ many }) => ({
+export const roleRelations = relations(role, ({ many }) => ({
+  users: many(user),
+}));
+
+export const userRelations = relations(user, ({ one, many }) => ({
+  role: one(role, { fields: [user.roleId], references: [role.id] }),
   sessions: many(session),
   accounts: many(account),
 }));
@@ -448,6 +612,37 @@ export const employeeEmploymentRelations = relations(employeeEmployment, ({ one 
 export const employeeDeploymentRelations = relations(employeeDeployment, ({ one }) => ({
   employee: one(employee, { fields: [employeeDeployment.employeeId], references: [employee.id] }),
   client: one(client, { fields: [employeeDeployment.clientId], references: [client.id] }),
+  project: one(project, { fields: [employeeDeployment.projectId], references: [project.id] }),
+}));
+
+export const projectRelations = relations(project, ({ one, many }) => ({
+  client: one(client, { fields: [project.clientId], references: [client.id] }),
+  salesRepresentative: one(salesRepresentative, {
+    fields: [project.salesRepresentativeId],
+    references: [salesRepresentative.id],
+  }),
+  solutionsManager: one(solutionsManager, {
+    fields: [project.solutionsManagerId],
+    references: [solutionsManager.id],
+  }),
+  engagementType: one(engagementType, { fields: [project.engagementTypeId], references: [engagementType.id] }),
+  clientNames: many(projectClientName),
+  details: many(projectDetail),
+  deployments: many(employeeDeployment),
+}));
+
+export const projectClientNameRelations = relations(projectClientName, ({ one }) => ({
+  project: one(project, { fields: [projectClientName.projectId], references: [project.id] }),
+}));
+
+export const projectDetailRelations = relations(projectDetail, ({ one, many }) => ({
+  project: one(project, { fields: [projectDetail.projectId], references: [project.id] }),
+  teams: many(projectDetailTeam),
+}));
+
+export const projectDetailTeamRelations = relations(projectDetailTeam, ({ one }) => ({
+  detail: one(projectDetail, { fields: [projectDetailTeam.projectDetailId], references: [projectDetail.id] }),
+  team: one(team, { fields: [projectDetailTeam.teamId], references: [team.id] }),
 }));
 
 /* -------------------------------------------------------------------------- */
@@ -458,7 +653,7 @@ export type User = typeof user.$inferSelect;
 export type NewUser = typeof user.$inferInsert;
 export type Session = typeof session.$inferSelect;
 export type AuditLog = typeof auditLog.$inferSelect;
-export type UserRole = (typeof userRole.enumValues)[number];
+export type Role = typeof role.$inferSelect;
 export type UserStatus = (typeof userStatus.enumValues)[number];
 
 export type Client = typeof client.$inferSelect;
@@ -466,6 +661,16 @@ export type Position = typeof position.$inferSelect;
 export type Level = typeof level.$inferSelect;
 export type Gender = typeof gender.$inferSelect;
 export type Team = typeof team.$inferSelect;
+export type SalesRepresentative = typeof salesRepresentative.$inferSelect;
+export type SolutionsManager = typeof solutionsManager.$inferSelect;
+export type EngagementType = typeof engagementType.$inferSelect;
+
+export type Project = typeof project.$inferSelect;
+export type NewProject = typeof project.$inferInsert;
+export type ProjectClientName = typeof projectClientName.$inferSelect;
+export type ProjectDetail = typeof projectDetail.$inferSelect;
+export type NewProjectDetail = typeof projectDetail.$inferInsert;
+export type ProjectDetailTeam = typeof projectDetailTeam.$inferSelect;
 
 export type Employee = typeof employee.$inferSelect;
 export type NewEmployee = typeof employee.$inferInsert;

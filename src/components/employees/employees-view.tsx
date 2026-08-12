@@ -16,8 +16,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/layout/empty-state";
+import { Label } from "@/components/ui/label";
 import { PaginationFooter } from "@/components/layout/pagination-footer";
 import {
   DropdownMenu,
@@ -47,19 +50,21 @@ type EmployeesViewProps = {
 export function EmployeesView({ initialFilters, canCreate, canDelete }: EmployeesViewProps) {
   const queryClient = useQueryClient();
   const [search, setSearch] = React.useState(initialFilters.search ?? "");
+  const [includeResigned, setIncludeResigned] = React.useState(initialFilters.includeResigned ?? false);
   const [page, setPage] = React.useState(1);
   const debouncedSearch = useDebounced(search);
 
   const filters = React.useMemo<EmployeeFilters>(
-    () => ({ search: debouncedSearch || undefined, page, pageSize: PAGE_SIZE }),
-    [debouncedSearch, page],
+    () => ({ search: debouncedSearch || undefined, includeResigned, page, pageSize: PAGE_SIZE }),
+    [debouncedSearch, includeResigned, page],
   );
 
-  // A new search should snap back to page 1 — same reasoning as Audit Trail
-  // and User Management's identical pattern.
-  const [previousSearch, setPreviousSearch] = React.useState(debouncedSearch);
-  if (previousSearch !== debouncedSearch) {
-    setPreviousSearch(debouncedSearch);
+  // A new search (or the resigned-employees toggle) should snap back to page
+  // 1 — same reasoning as Audit Trail and User Management's identical pattern.
+  const filterSignature = `${debouncedSearch}|${includeResigned}`;
+  const [previousSignature, setPreviousSignature] = React.useState(filterSignature);
+  if (previousSignature !== filterSignature) {
+    setPreviousSignature(filterSignature);
     if (page !== 1) setPage(1);
   }
 
@@ -91,18 +96,31 @@ export function EmployeesView({ initialFilters, canCreate, canDelete }: Employee
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative w-full sm:max-w-xs">
-          <Search
-            className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
-            aria-hidden
-          />
-          <Input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search name, code or email"
-            aria-label="Search employees"
-            className="pl-9"
-          />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="relative w-full sm:max-w-xs">
+            <Search
+              className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
+              aria-hidden
+            />
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search name, code or email"
+              aria-label="Search employees"
+              className="pl-9"
+            />
+          </div>
+
+          <div className="flex shrink-0 items-center gap-2">
+            <Checkbox
+              id="show-resigned"
+              checked={includeResigned}
+              onCheckedChange={(checked) => setIncludeResigned(checked === true)}
+            />
+            <Label htmlFor="show-resigned" className="text-sm font-normal whitespace-nowrap">
+              Show resigned employees
+            </Label>
+          </div>
         </div>
 
         {canCreate ? (
@@ -170,9 +188,16 @@ export function EmployeesView({ initialFilters, canCreate, canDelete }: Employee
                 employees.map((row) => (
                   <TableRow key={row.id} className={cn(isFetching && "opacity-70")}>
                     <TableCell>
-                      <Link href={`/employees/${row.id}`} className="font-medium hover:underline">
-                        {formatEmployeeName(row)}
-                      </Link>
+                      <div className="flex items-center gap-2">
+                        <Link href={`/employees/${row.id}`} className="font-medium hover:underline">
+                          {formatEmployeeName(row)}
+                        </Link>
+                        {row.isResigned ? (
+                          <Badge variant="outline" className="text-muted-foreground font-normal">
+                            Resigned
+                          </Badge>
+                        ) : null}
+                      </div>
                     </TableCell>
                     <TableCell className="font-mono text-sm">{row.code}</TableCell>
                     <TableCell className="text-sm">

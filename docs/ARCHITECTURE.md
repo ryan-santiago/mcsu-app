@@ -28,8 +28,12 @@ src/
     (auth)/            Split-panel shell — login, register, pending, forgot-password
     (app)/             Authenticated shell — sidebar + topbar
       dashboard/
+      employees/       Directory, add, view/edit
+      projects/        S3P directory, add, view/edit
       admin/users/
+      admin/maintenance/
       admin/audit/
+      admin/access-control/
     api/auth/[...all]/ BetterAuth request handler
     forbidden.tsx      403 boundary, rendered by forbidden()
     error.tsx          Top-level error boundary
@@ -38,6 +42,10 @@ src/
     auth/              Login and registration forms
     layout/            Sidebar, topbar, user menu, PageHeader, EmptyState
     users/             User Management table, badges, dialogs
+    roles/             Access Control list, permission matrix, role dialog
+    employees/         Directory table, profile form, employment/deployment history
+    projects/          S3P directory table, project form, financial detail lines
+    maintenance/       Generic lookup-list table reused by every Maintenance kind
     audit/             Audit Trail table, badges
     ui/                shadcn primitives + hand-built date-range-picker
   db/
@@ -48,15 +56,20 @@ src/
   lib/
     auth.ts            BetterAuth server config  (server only)
     auth-client.ts     BetterAuth React client
-    rbac.ts            Permissions, roles, rank rules  (isomorphic)
+    rbac.ts            Permissions, modules, rank rules  (isomorphic)
     session.ts         requireUser / requirePermission / authorize
     audit.ts           recordAudit() + diffFields()  (server only — see below)
     audit-registry.ts  Module/action lists + default date range  (isomorphic)
     navigation.ts      Sidebar definition, RBAC-filtered
     format.ts          Shared date formatting
+    employee-format.ts Name/currency/period formatting shared by Employees & Projects
     validation/        Zod schemas shared by forms and actions
   server/
     users/             Queries, server actions, shared types
+    roles/             Queries, server actions, shared types — Access Control
+    employees/         Queries, server actions, shared types
+    projects/          Queries, server actions, shared types — S3P
+    maintenance/       Queries, server actions, shared types — every lookup kind
     audit/             Queries (read-only — nothing to mutate), shared types
   env.ts               Zod-validated environment
   proxy.ts             Optimistic redirect (Next 16's middleware successor)
@@ -139,30 +152,39 @@ all do this. A stale cache can never outlive a revocation.
 Role *promotions* also revoke, even though they widen access. One rule is
 easier to trust than two.
 
-### Permissions in code, not in tables
+### Roles live in a table, permissions live in code
 
-`ROLES` in `src/lib/rbac.ts` is a TypeScript object, not a `role_permissions`
-table. Four roles and ten permissions don't justify a join on every request,
-and a code matrix is type-checked, greppable and reviewable in a diff. See
-[RBAC.md](./RBAC.md) for the migration path if this ever needs to become
-runtime-editable.
+Which permissions exist (`PERMISSIONS`, `MODULES`, `ACTIONS` in
+`src/lib/rbac.ts`) is a TypeScript constant — a new module or action is a code
+change and a deploy, same reasoning as the audit log's module/action lists.
+Which roles exist and **which permissions each one holds** is a `role` table
+instead, editable at runtime from Access Control (`/admin/access-control`) —
+this was a code object (`ROLES`) until an admin-editable matrix was asked for;
+see [RBAC.md](./RBAC.md) for the resulting model. `can()` stays a pure,
+synchronous check either way: the principal's permission set is loaded once
+per request (`getCurrentUser()`, joined alongside the role) and handed to it
+as plain data, so call sites never changed.
 
 ### The audit log is generic, not per-feature
 
 `audit_log` has no `user_id`-shaped columns — it's `module` + `entityId` +
 `entityLabel` + a field-level `changes[]` diff, deliberately shaped to fit any
 future domain table, not just `user`. `module`/`action` are plain text rather
-than DB enums for the same reason `ROLES` lives in code: a new module (or a
-new action verb) should never require a migration just to start being logged.
+than DB enums for the same reason `PERMISSIONS` is a constant, not a table: a
+new module (or a new action verb) should never require a migration just to
+start being logged.
 `entityId` has no foreign key — a single audit table can't reference N
-different future tables, so it's a snapshot, not a live join. The entire
-integration surface for a future module is one call:
+different future tables, so it's a snapshot, not a live join. Role-change
+diffs go a step further and store the role's *label* rather than its id, for
+the same reason — the entry must still read correctly after the role itself
+is renamed or deleted. The entire integration surface for a future module is
+one call:
 `recordAudit({ module, action, entityId, entityLabel, changes: diffFields(before, after, labels) })`.
 See [RBAC.md](./RBAC.md#audit-trail) for the full convention.
 
 ### Registration cannot grant privilege
 
-`role` and `status` are declared `input: false` in BetterAuth's
+`roleId` and `status` are declared `input: false` in BetterAuth's
 `additionalFields`, so they are stripped from the sign-up payload no matter what
 the client posts. A registrant lands as `pending` with no effective permissions.
 

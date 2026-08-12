@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { PageHeader } from "@/components/layout/page-header";
 import { UsersView } from "@/components/users/users-view";
 import { requirePermission } from "@/lib/session";
+import { listRoleOptions } from "@/server/roles/queries";
 import { listUsers } from "@/server/users/queries";
 import { usersQueryKey } from "@/server/users/query-key";
 import type { UserFilters } from "@/server/users/types";
@@ -24,10 +25,13 @@ export default async function UserManagementPage() {
   const initialFilters: UserFilters = { status: "all", role: "all" };
 
   const queryClient = new QueryClient();
-  await queryClient.prefetchQuery({
-    queryKey: usersQueryKey(initialFilters),
-    queryFn: () => listUsers(initialFilters),
-  });
+  const [, roles] = await Promise.all([
+    queryClient.prefetchQuery({
+      queryKey: usersQueryKey(initialFilters),
+      queryFn: () => listUsers(initialFilters),
+    }),
+    listRoleOptions(),
+  ]);
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6">
@@ -38,7 +42,14 @@ export default async function UserManagementPage() {
 
       <HydrationBoundary state={dehydrate(queryClient)}>
         <UsersView
-          actor={{ id: actor.id, role: actor.role, status: actor.status }}
+          actor={{
+            id: actor.id,
+            status: actor.status,
+            roleId: actor.roleId,
+            rank: actor.rank,
+            permissions: actor.permissions,
+          }}
+          roles={roles}
           initialFilters={initialFilters}
         />
       </HydrationBoundary>

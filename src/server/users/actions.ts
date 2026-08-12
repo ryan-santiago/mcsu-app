@@ -5,16 +5,17 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/db";
-import { session, user, userRole, userStatus, type UserRole } from "@/db/schema";
+import { role, session, user, userStatus } from "@/db/schema";
 import { diffFields, recordAudit } from "@/lib/audit";
-import { assignableRoles, denyReasonForActingOn, ROLES } from "@/lib/rbac";
+import { assignableRoles, denyReasonForActingOn } from "@/lib/rbac";
 import { authorize, AuthorizationError, type CurrentUser } from "@/lib/session";
+import { listRoleOptions } from "@/server/roles/queries";
 import { listUsers } from "@/server/users/queries";
 
 import type { ActionResult, UserFilters, UserListResult } from "./types";
 
 const idSchema = z.string().min(1, "A user must be selected");
-const roleSchema = z.enum(userRole.enumValues);
+const roleIdSchema = z.string().min(1, "A role must be selected");
 
 /**
  * Wraps an action body so every failure becomes a rendered message rather than
@@ -49,10 +50,13 @@ async function loadTarget(actor: CurrentUser, targetId: string) {
       id: user.id,
       name: user.name,
       email: user.email,
-      role: user.role,
+      roleId: user.roleId,
+      roleLabel: role.label,
+      rank: role.rank,
       status: user.status,
     })
     .from(user)
+    .innerJoin(role, eq(role.id, user.roleId))
     .where(eq(user.id, targetId))
     .limit(1);
 
@@ -92,14 +96,11 @@ export async function fetchUsers(filters: UserFilters): Promise<UserListResult> 
 /*  Approval                                                                  */
 /* -------------------------------------------------------------------------- */
 
-export async function approveUser(input: {
-  userId: string;
-  role: UserRole;
-}): Promise<ActionResult> {
+export async function approveUser(input: { userId: string; role: string }): Promise<ActionResult> {
   return run(async () => {
-    const actor = await authorize("users:approve");
+    const actor = await authorize("users:edit");
     const userId = idSchema.parse(input.userId);
-    const role = roleSchema.parse(input.role);
+    const roleId = roleIdSchema.parse(input.role);
 
     const target = await loadTarget(actor, userId);
 
@@ -109,13 +110,14 @@ export async function approveUser(input: {
 
     // Approving *is* granting a role, so the assignable-roles rule applies here
     // just as it does to an explicit role change.
-    if (!assignableRoles(actor).includes(role)) {
-      return { ok: false, error: `You cannot grant the ${ROLES[role].label} role.` };
+    const chosenRole = assignableRoles(actor, await listRoleOptions()).find((r) => r.id === roleId);
+    if (!chosenRole) {
+      return { ok: false, error: "You cannot grant that role." };
     }
 
     await db
       .update(user)
-      .set({ status: "active", role, approvedAt: new Date(), approvedBy: actor.id })
+      .set({ status: "active", roleId, approvedAt: new Date(), approvedBy: actor.id })
       .where(eq(user.id, userId));
 
     await recordAudit({
@@ -127,7 +129,7 @@ export async function approveUser(input: {
       actorEmail: actor.email,
       changes: diffFields(
         { status: target.status, role: null },
-        { status: "active", role },
+        { status: "active", role: chosenRole.label },
         { status: "Status", role: "Role" },
       ),
     });
@@ -136,14 +138,14 @@ export async function approveUser(input: {
     return {
       ok: true,
       data: undefined,
-      message: `${target.name} approved as ${ROLES[role].label}.`,
+      message: `${target.name} approved as ${chosenRole.label}.`,
     };
   });
 }
 
 export async function rejectUser(input: { userId: string }): Promise<ActionResult> {
   return run(async () => {
-    const actor = await authorize("users:approve");
+    const actor = await authorize("users:edit");
     const userId = idSchema.parse(input.userId);
     const target = await loadTarget(actor, userId);
 
@@ -183,7 +185,7 @@ export async function setUserStatus(input: {
   status: "active" | "suspended";
 }): Promise<ActionResult> {
   return run(async () => {
-    const actor = await authorize("users:suspend");
+    const actor = await authorize("users:edit");
     const userId = idSchema.parse(input.userId);
     const status = z.enum(userStatus.enumValues).parse(input.status);
 
@@ -227,26 +229,24 @@ export async function setUserStatus(input: {
 /*  Role                                                                      */
 /* -------------------------------------------------------------------------- */
 
-export async function changeUserRole(input: {
-  userId: string;
-  role: UserRole;
-}): Promise<ActionResult> {
+export async function changeUserRole(input: { userId: string; role: string }): Promise<ActionResult> {
   return run(async () => {
-    const actor = await authorize("users:assign_role");
+    const actor = await authorize("users:edit");
     const userId = idSchema.parse(input.userId);
-    const role = roleSchema.parse(input.role);
+    const roleId = roleIdSchema.parse(input.role);
 
     const target = await loadTarget(actor, userId);
 
-    if (target.role === role) {
-      return { ok: false, error: `${target.name} already has the ${ROLES[role].label} role.` };
+    if (target.roleId === roleId) {
+      return { ok: false, error: `${target.name} already has the ${target.roleLabel} role.` };
     }
 
-    if (!assignableRoles(actor).includes(role)) {
-      return { ok: false, error: `You cannot grant the ${ROLES[role].label} role.` };
+    const chosenRole = assignableRoles(actor, await listRoleOptions()).find((r) => r.id === roleId);
+    if (!chosenRole) {
+      return { ok: false, error: "You cannot grant that role." };
     }
 
-    await db.update(user).set({ role }).where(eq(user.id, userId));
+    await db.update(user).set({ roleId }).where(eq(user.id, userId));
 
     // A demotion must take effect immediately; re-authenticating picks up the
     // narrower role. Promotions are revoked too — one rule is easier to trust.
@@ -259,14 +259,14 @@ export async function changeUserRole(input: {
       entityLabel: target.name,
       actorId: actor.id,
       actorEmail: actor.email,
-      changes: diffFields({ role: target.role }, { role }, { role: "Role" }),
+      changes: diffFields({ role: target.roleLabel }, { role: chosenRole.label }, { role: "Role" }),
     });
 
     refreshUserViews();
     return {
       ok: true,
       data: undefined,
-      message: `${target.name} is now ${ROLES[role].label}. They'll need to sign in again.`,
+      message: `${target.name} is now ${chosenRole.label}. They'll need to sign in again.`,
     };
   });
 }
@@ -291,7 +291,7 @@ export async function deleteUser(input: { userId: string }): Promise<ActionResul
       actorId: actor.id,
       actorEmail: actor.email,
       changes: diffFields(
-        { email: target.email, role: target.role, status: target.status },
+        { email: target.email, role: target.roleLabel, status: target.status },
         null,
         { email: "Email", role: "Role", status: "Status" },
       ),

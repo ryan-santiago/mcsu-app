@@ -15,7 +15,7 @@ export const metadata: Metadata = {
  * are wired up so adding content is the only work left.
  */
 export default async function DashboardPage() {
-  const user = await requirePermission("dashboard:view");
+  const user = await requirePermission("dashboard:read");
   const firstName = user.name.split(/\s+/)[0];
 
   return (

@@ -18,6 +18,8 @@ export const employeeProfileSchema = z.object({
   personalEmail: optionalEmailSchema,
   workEmail: optionalEmailSchema,
   teamId: z.string().min(1, "Select a team"),
+  /** `isResigned` is never a form field — it's always derived from this. */
+  resignationDate: z.string().optional().or(z.literal("")),
 });
 
 export const employeeFormSchema = z.object({
@@ -61,7 +63,7 @@ export type EmploymentRecordInput = z.infer<typeof employmentRecordSchema>;
 export const deploymentRecordSchema = z
   .object({
     clientId: z.string().min(1, "Select a client"),
-    project: z.string().trim().min(1, "Enter a project name").max(120, "That's too long"),
+    projectId: z.string().min(1, "Select a project"),
     startDate: z.string().min(1, "Select a start date"),
     endDate: z.string().optional().or(z.literal("")),
   })

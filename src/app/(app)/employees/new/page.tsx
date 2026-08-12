@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 };
 
 export default async function NewEmployeePage() {
-  await requirePermission("employees:create");
+  await requirePermission("employees:write");
 
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6">

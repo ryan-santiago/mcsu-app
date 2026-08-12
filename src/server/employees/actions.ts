@@ -5,7 +5,7 @@ import { and, eq, isNull, ne } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/db";
-import { employee, employeeAddress, employeeDeployment, employeeEmployment } from "@/db/schema";
+import { employee, employeeAddress, employeeDeployment, employeeEmployment, project } from "@/db/schema";
 import type { ActionResult } from "@/lib/action-result";
 import { diffFields, recordAudit } from "@/lib/audit";
 import { formatEmployeeName } from "@/lib/employee-format";
@@ -20,6 +20,8 @@ import {
 } from "@/lib/validation/employee";
 import { listLookupOptions } from "@/server/maintenance/queries";
 import type { LookupKind, LookupOption } from "@/server/maintenance/types";
+import { listProjectOptions } from "@/server/projects/queries";
+import type { ProjectOption } from "@/server/projects/types";
 
 import { getEmployeeById, listEmployees } from "./queries";
 import type { EmployeeDetail, EmployeeFilters, EmployeeListResult } from "./types";
@@ -74,17 +76,17 @@ async function closeOtherOpenEmployments(employeeId: string, keepId: string, clo
     );
 }
 
-async function closeOtherOpenDeployments(employeeId: string, keepId: string, closeAtDate: string) {
+/**
+ * A resignation date means the employee's current ("Present") role ended
+ * that day — closes any open employment record to match. Safe to call every
+ * time a resignation date is saved: re-closing an already-closed record at
+ * the same date is a no-op.
+ */
+async function closeOpenEmploymentAtResignation(employeeId: string, resignationDate: string) {
   await db
-    .update(employeeDeployment)
-    .set({ endDate: closeAtDate })
-    .where(
-      and(
-        eq(employeeDeployment.employeeId, employeeId),
-        isNull(employeeDeployment.endDate),
-        ne(employeeDeployment.id, keepId),
-      ),
-    );
+    .update(employeeEmployment)
+    .set({ endDate: resignationDate })
+    .where(and(eq(employeeEmployment.employeeId, employeeId), isNull(employeeEmployment.endDate)));
 }
 
 /* -------------------------------------------------------------------------- */
@@ -105,13 +107,24 @@ export async function fetchLookupOptions(kind: LookupKind): Promise<LookupOption
   return listLookupOptions(kind);
 }
 
+/** Options for the deployment history form's Project picker, optionally scoped to a client. */
+export async function fetchProjectOptions(clientId?: string): Promise<ProjectOption[]> {
+  await authorize("employees:read");
+  return listProjectOptions(clientId);
+}
+
+async function loadProjectName(projectId: string): Promise<string | null> {
+  const [row] = await db.select({ name: project.name }).from(project).where(eq(project.id, projectId)).limit(1);
+  return row?.name ?? null;
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Employee profile                                                         */
 /* -------------------------------------------------------------------------- */
 
 export async function createEmployee(input: EmployeeFormInput): Promise<ActionResult<{ id: string }>> {
   return run(async () => {
-    const actor = await authorize("employees:create");
+    const actor = await authorize("employees:write");
     const { profile, currentAddress, permanentAddress } = employeeFormSchema.parse(input);
 
     const [existingCode] = await db
@@ -131,6 +144,7 @@ export async function createEmployee(input: EmployeeFormInput): Promise<ActionRe
     }
 
     const id = crypto.randomUUID();
+    const resignationDate = profile.resignationDate || null;
 
     await db.insert(employee).values({
       id,
@@ -144,6 +158,8 @@ export async function createEmployee(input: EmployeeFormInput): Promise<ActionRe
       personalEmail: profile.personalEmail || null,
       workEmail: profile.workEmail || null,
       teamId: profile.teamId,
+      resignationDate,
+      isResigned: Boolean(resignationDate),
     });
 
     await db.insert(employeeAddress).values([
@@ -171,7 +187,7 @@ export async function updateEmployee(
   input: { id: string } & EmployeeFormInput,
 ): Promise<ActionResult> {
   return run(async () => {
-    const actor = await authorize("employees:update");
+    const actor = await authorize("employees:edit");
     const id = idSchema.parse(input.id);
     const { profile, currentAddress, permanentAddress } = employeeFormSchema.parse(input);
 
@@ -194,6 +210,8 @@ export async function updateEmployee(
       if (duplicateEmail) return { ok: false, error: `Work email "${profile.workEmail}" is already in use.` };
     }
 
+    const resignationDate = profile.resignationDate || null;
+
     await db
       .update(employee)
       .set({
@@ -207,8 +225,12 @@ export async function updateEmployee(
         personalEmail: profile.personalEmail || null,
         workEmail: profile.workEmail || null,
         teamId: profile.teamId,
+        resignationDate,
+        isResigned: Boolean(resignationDate),
       })
       .where(eq(employee.id, id));
+
+    if (resignationDate) await closeOpenEmploymentAtResignation(id, resignationDate);
 
     for (const [type, address] of [
       ["current", currentAddress],
@@ -246,6 +268,7 @@ export async function updateEmployee(
           viberNumber: existing.viberNumber,
           personalEmail: existing.personalEmail,
           workEmail: existing.workEmail,
+          resignationDate: existing.resignationDate,
         },
         {
           code: profile.code,
@@ -256,6 +279,7 @@ export async function updateEmployee(
           viberNumber: profile.viberNumber || null,
           personalEmail: profile.personalEmail || null,
           workEmail: profile.workEmail || null,
+          resignationDate,
         },
         {
           code: "Employee code",
@@ -266,6 +290,7 @@ export async function updateEmployee(
           viberNumber: "Viber number",
           personalEmail: "Personal email",
           workEmail: "Work email",
+          resignationDate: "Resignation date",
         },
       ),
     });
@@ -324,7 +349,7 @@ export async function addEmploymentRecord(
   input: { employeeId: string } & EmploymentRecordInput,
 ): Promise<ActionResult> {
   return run(async () => {
-    const actor = await authorize("employees:update");
+    const actor = await authorize("employees:edit");
     const employeeId = idSchema.parse(input.employeeId);
     const data = employmentRecordSchema.parse(input);
 
@@ -370,7 +395,7 @@ export async function updateEmploymentRecord(
   input: { id: string; employeeId: string } & EmploymentRecordInput,
 ): Promise<ActionResult> {
   return run(async () => {
-    const actor = await authorize("employees:update");
+    const actor = await authorize("employees:edit");
     const id = idSchema.parse(input.id);
     const employeeId = idSchema.parse(input.employeeId);
     const data = employmentRecordSchema.parse(input);
@@ -460,12 +485,15 @@ export async function addDeploymentRecord(
   input: { employeeId: string } & DeploymentRecordInput,
 ): Promise<ActionResult> {
   return run(async () => {
-    const actor = await authorize("employees:update");
+    const actor = await authorize("employees:edit");
     const employeeId = idSchema.parse(input.employeeId);
     const data = deploymentRecordSchema.parse(input);
 
     const label = await loadEmployeeLabel(employeeId);
     if (!label) return { ok: false, error: "That employee no longer exists." };
+
+    const projectName = await loadProjectName(data.projectId);
+    if (!projectName) return { ok: false, error: "That project no longer exists." };
 
     const id = crypto.randomUUID();
     const endDate = data.endDate || null;
@@ -474,12 +502,10 @@ export async function addDeploymentRecord(
       id,
       employeeId,
       clientId: data.clientId,
-      project: data.project,
+      projectId: data.projectId,
       startDate: data.startDate,
       endDate,
     });
-
-    if (!endDate) await closeOtherOpenDeployments(employeeId, id, data.startDate);
 
     await recordAudit({
       module: "employees",
@@ -490,7 +516,7 @@ export async function addDeploymentRecord(
       actorEmail: actor.email,
       changes: diffFields(
         null,
-        { client: data.clientId, project: data.project, startDate: data.startDate },
+        { client: data.clientId, project: projectName, startDate: data.startDate },
         { client: "Client", project: "Project", startDate: "Start date" },
       ),
     });
@@ -504,7 +530,7 @@ export async function updateDeploymentRecord(
   input: { id: string; employeeId: string } & DeploymentRecordInput,
 ): Promise<ActionResult> {
   return run(async () => {
-    const actor = await authorize("employees:update");
+    const actor = await authorize("employees:edit");
     const id = idSchema.parse(input.id);
     const employeeId = idSchema.parse(input.employeeId);
     const data = deploymentRecordSchema.parse(input);
@@ -519,19 +545,23 @@ export async function updateDeploymentRecord(
     const label = await loadEmployeeLabel(employeeId);
     if (!label) return { ok: false, error: "That employee no longer exists." };
 
+    const [existingProjectName, newProjectName] = await Promise.all([
+      loadProjectName(existing.projectId),
+      loadProjectName(data.projectId),
+    ]);
+    if (!newProjectName) return { ok: false, error: "That project no longer exists." };
+
     const endDate = data.endDate || null;
 
     await db
       .update(employeeDeployment)
       .set({
         clientId: data.clientId,
-        project: data.project,
+        projectId: data.projectId,
         startDate: data.startDate,
         endDate,
       })
       .where(eq(employeeDeployment.id, id));
-
-    if (!endDate) await closeOtherOpenDeployments(employeeId, id, data.startDate);
 
     await recordAudit({
       module: "employees",
@@ -541,8 +571,13 @@ export async function updateDeploymentRecord(
       actorId: actor.id,
       actorEmail: actor.email,
       changes: diffFields(
-        { client: existing.clientId, project: existing.project, startDate: existing.startDate, endDate: existing.endDate },
-        { client: data.clientId, project: data.project, startDate: data.startDate, endDate },
+        {
+          client: existing.clientId,
+          project: existingProjectName,
+          startDate: existing.startDate,
+          endDate: existing.endDate,
+        },
+        { client: data.clientId, project: newProjectName, startDate: data.startDate, endDate },
         { client: "Client", project: "Project", startDate: "Start date", endDate: "End date" },
       ),
     });

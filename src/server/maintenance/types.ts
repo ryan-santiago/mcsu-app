@@ -1,9 +1,26 @@
 import type { AuditModule } from "@/lib/audit-registry";
 
-/** The five Maintenance-managed lookup lists that feed the Employee module. */
-export type LookupKind = "client" | "position" | "level" | "gender" | "team";
+/** The Maintenance-managed lookup lists that feed the Employee and Projects modules. */
+export type LookupKind =
+  | "client"
+  | "position"
+  | "level"
+  | "gender"
+  | "team"
+  | "sales_representative"
+  | "solutions_manager"
+  | "engagement_type";
 
-export const LOOKUP_KINDS: readonly LookupKind[] = ["client", "position", "level", "gender", "team"];
+export const LOOKUP_KINDS: readonly LookupKind[] = [
+  "client",
+  "position",
+  "level",
+  "gender",
+  "team",
+  "sales_representative",
+  "solutions_manager",
+  "engagement_type",
+];
 
 export type LookupRow = {
   id: string;
@@ -21,4 +38,15 @@ export const LOOKUP_META: Record<LookupKind, { label: string; singular: string; 
   level: { label: "Levels", singular: "Level", auditModule: "levels" },
   gender: { label: "Genders", singular: "Gender", auditModule: "genders" },
   team: { label: "Teams", singular: "Team", auditModule: "teams" },
+  sales_representative: {
+    label: "Sales Representatives",
+    singular: "Sales Representative",
+    auditModule: "sales_representatives",
+  },
+  solutions_manager: {
+    label: "Solutions Managers",
+    singular: "Solutions Manager",
+    auditModule: "solutions_managers",
+  },
+  engagement_type: { label: "Engagement Types", singular: "Engagement Type", auditModule: "engagement_types" },
 };

@@ -10,7 +10,7 @@ import { canAny } from "@/lib/rbac";
  * runtime. Resolve the name to a component only on the client, in
  * `NAV_ICONS` (`sidebar-nav.tsx`).
  */
-export type NavIconKey = "dashboard" | "users" | "audit" | "employees" | "maintenance";
+export type NavIconKey = "dashboard" | "users" | "audit" | "employees" | "projects" | "maintenance" | "access-control";
 
 /**
  * A known sub-route of a nav item, for the topbar breadcrumb trail —
@@ -63,7 +63,7 @@ export const NAVIGATION: readonly NavGroup[] = [
         title: "Dashboard",
         href: "/dashboard",
         icon: "dashboard",
-        permissions: ["dashboard:view"],
+        permissions: ["dashboard:read"],
       },
     ],
   },
@@ -79,6 +79,17 @@ export const NAVIGATION: readonly NavGroup[] = [
         children: [
           { title: "Add employee", path: "/employees/new" },
           { title: "View / Edit Employee", dynamic: true },
+        ],
+      },
+      {
+        title: "Projects",
+        href: "/projects",
+        icon: "projects",
+        permissions: ["projects:read"],
+        matchNested: true,
+        children: [
+          { title: "Add project", path: "/projects/new" },
+          { title: "View / Edit Project", dynamic: true },
         ],
       },
     ],
@@ -105,6 +116,13 @@ export const NAVIGATION: readonly NavGroup[] = [
         href: "/admin/audit",
         icon: "audit",
         permissions: ["audit:read"],
+        matchNested: true,
+      },
+      {
+        title: "Access Control",
+        href: "/admin/access-control",
+        icon: "access-control",
+        permissions: ["access_control:read"],
         matchNested: true,
       },
     ],

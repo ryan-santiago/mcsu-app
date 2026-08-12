@@ -12,7 +12,6 @@ import { Button } from "@/components/ui/button";
 import {
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -61,7 +60,7 @@ export function RegisterForm() {
 
   const form = useForm<RegisterInput>({
     resolver: zodResolver(registerSchema),
-    defaultValues: { name: "", email: "", jobTitle: "", password: "", confirmPassword: "" },
+    defaultValues: { name: "", email: "", password: "", confirmPassword: "" },
   });
 
   const isSubmitting = form.formState.isSubmitting;
@@ -76,7 +75,6 @@ export function RegisterForm() {
       name: values.name.trim(),
       email: values.email.trim().toLowerCase(),
       password: values.password,
-      jobTitle: values.jobTitle?.trim() || undefined,
     });
 
     if (error) {
@@ -155,30 +153,6 @@ export function RegisterForm() {
                     className="h-11"
                   />
                 </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name="jobTitle"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>
-                  Job title{" "}
-                  <span className="text-muted-foreground font-normal">(optional)</span>
-                </FormLabel>
-                <FormControl>
-                  <Input
-                    {...field}
-                    autoComplete="organization-title"
-                    placeholder="Cloud Operations Engineer"
-                    disabled={isSubmitting}
-                    className="h-11"
-                  />
-                </FormControl>
-                <FormDescription>Helps the approver pick the right role for you.</FormDescription>
                 <FormMessage />
               </FormItem>
             )}

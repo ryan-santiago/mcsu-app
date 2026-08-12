@@ -1,0 +1,2 @@
+ALTER TABLE "user" ADD COLUMN "role_id" text;--> statement-breakpoint
+ALTER TABLE "user" ADD CONSTRAINT "user_role_id_role_id_fk" FOREIGN KEY ("role_id") REFERENCES "public"."role"("id") ON DELETE restrict ON UPDATE no action;

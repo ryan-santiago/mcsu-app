@@ -1,4 +1,4 @@
-import type { UserRole, UserStatus } from "@/db/schema";
+import type { UserStatus } from "@/db/schema";
 import type { ActionResult } from "@/lib/action-result";
 
 export type { ActionResult };
@@ -7,11 +7,16 @@ export type { ActionResult };
 export type ManagedUser = {
   id: string;
   name: string;
+  /** The account name, unless a matching Employee record's name should be shown instead. */
+  displayName: string;
   email: string;
   image: string | null;
-  role: UserRole;
+  roleId: string;
+  roleLabel: string;
+  rank: number;
   status: UserStatus;
-  jobTitle: string | null;
+  /** Latest "Level - Position" from the matching Employee record, if any. */
+  position: string | null;
   lastLoginAt: Date | null;
   createdAt: Date;
 };
@@ -19,7 +24,7 @@ export type ManagedUser = {
 export type UserFilters = {
   search?: string;
   status?: UserStatus | "all";
-  role?: UserRole | "all";
+  role?: string | "all";
   /** 1-indexed. */
   page?: number;
   pageSize?: number;

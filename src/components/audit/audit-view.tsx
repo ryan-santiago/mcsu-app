@@ -30,10 +30,10 @@ import {
 } from "@/components/ui/table";
 import { initialsOf } from "@/components/layout/user-menu";
 import { useDebounced } from "@/hooks/use-debounced";
-import type { UserRole, UserStatus } from "@/db/schema";
+import type { UserStatus } from "@/db/schema";
 import { formatDateTime, formatRelative } from "@/lib/format";
 import { AUDIT_ACTIONS, AUDIT_MODULES, defaultAuditRange } from "@/lib/audit-registry";
-import { ROLES, STATUS_LABELS } from "@/lib/rbac";
+import { STATUS_LABELS } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 import { fetchAuditLog } from "@/server/audit/actions";
 import { auditQueryKey } from "@/server/audit/query-key";
@@ -41,16 +41,19 @@ import type { AuditEntry, AuditFilters } from "@/server/audit/types";
 
 const PAGE_SIZE = 20;
 
-/** Renders a raw stored value using the same labels the rest of the app uses for it. */
+/**
+ * Renders a raw stored value using the same labels the rest of the app uses
+ * for it. Role changes store the role's human label directly at write time
+ * (not the id), so — unlike status — there's no lookup to do here; it reads
+ * correctly even after the role is later renamed or deleted.
+ */
 function formatChangeValue(field: string, value: unknown): string {
   if (value === null || value === undefined || value === "") return "—";
-  if (field === "role" && typeof value === "string" && value in ROLES) {
-    return ROLES[value as UserRole].label;
-  }
   if (field === "status" && typeof value === "string" && value in STATUS_LABELS) {
     return STATUS_LABELS[value as UserStatus];
   }
   if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (Array.isArray(value)) return value.length === 0 ? "None" : value.join(", ");
   return String(value);
 }
 

@@ -12,6 +12,7 @@ import {
   gender,
   level,
   position,
+  project,
   team,
 } from "@/db/schema";
 import { authorize } from "@/lib/session";
@@ -22,18 +23,28 @@ const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 
 function buildWhere(filters: EmployeeFilters): SQL | undefined {
-  const search = filters.search?.trim();
-  if (!search) return undefined;
+  const clauses: SQL[] = [];
 
-  const pattern = `%${search}%`;
-  return or(
-    ilike(employee.firstName, pattern),
-    ilike(employee.middleName, pattern),
-    ilike(employee.lastName, pattern),
-    ilike(employee.code, pattern),
-    ilike(employee.workEmail, pattern),
-    ilike(employee.personalEmail, pattern),
-  );
+  const search = filters.search?.trim();
+  if (search) {
+    const pattern = `%${search}%`;
+    const match = or(
+      ilike(employee.firstName, pattern),
+      ilike(employee.middleName, pattern),
+      ilike(employee.lastName, pattern),
+      ilike(employee.code, pattern),
+      ilike(employee.workEmail, pattern),
+      ilike(employee.personalEmail, pattern),
+    );
+    if (match) clauses.push(match);
+  }
+
+  if (!filters.includeResigned) {
+    clauses.push(eq(employee.isResigned, false));
+  }
+
+  if (clauses.length === 0) return undefined;
+  return clauses.length === 1 ? clauses[0] : and(...clauses);
 }
 
 /** Latest = the row with `endDate IS NULL` (current), else the newest `startDate`. */
@@ -59,15 +70,40 @@ function latestEmploymentSubquery() {
     .as("latest_employment");
 }
 
+/**
+ * One row per employee that has a work email, carrying their latest
+ * Level/Position. Left-joined (not inner) against `latestEmploymentSubquery`
+ * so an employee with no employment history yet still matches by name — used
+ * to enrich `user` records matched by email, since there is no formal
+ * `user`/`employee` relation.
+ */
+export function employeeIdentitySubquery() {
+  const latestEmployment = latestEmploymentSubquery();
+  return db
+    .select({
+      workEmailLower: sql<string>`lower(${employee.workEmail})`.as("work_email_lower"),
+      firstName: employee.firstName,
+      middleName: employee.middleName,
+      lastName: employee.lastName,
+      levelName: latestEmployment.levelName,
+      positionName: latestEmployment.positionName,
+    })
+    .from(employee)
+    .leftJoin(latestEmployment, eq(latestEmployment.employeeId, employee.id))
+    .where(sql`${employee.workEmail} is not null`)
+    .as("employee_identity");
+}
+
 function latestDeploymentSubquery() {
   return db
     .selectDistinctOn([employeeDeployment.employeeId], {
       employeeId: employeeDeployment.employeeId,
       clientName: sql<string>`${client.name}`.as("client_name"),
-      project: employeeDeployment.project,
+      projectName: sql<string>`${project.name}`.as("project_name"),
     })
     .from(employeeDeployment)
     .innerJoin(client, eq(client.id, employeeDeployment.clientId))
+    .innerJoin(project, eq(project.id, employeeDeployment.projectId))
     .orderBy(
       employeeDeployment.employeeId,
       sql`${employeeDeployment.endDate} IS NULL DESC`,
@@ -102,9 +138,10 @@ export async function listEmployees(filters: EmployeeFilters = {}): Promise<Empl
       latestLevel: latestEmployment.levelName,
       latestPosition: latestEmployment.positionName,
       latestClient: latestDeployment.clientName,
-      latestProject: latestDeployment.project,
+      latestProject: latestDeployment.projectName,
       currentBarangay: employeeAddress.barangayName,
       currentCity: employeeAddress.cityName,
+      isResigned: employee.isResigned,
     })
     .from(employee)
     .leftJoin(latestEmployment, eq(latestEmployment.employeeId, employee.id))
@@ -135,6 +172,7 @@ export async function listEmployees(filters: EmployeeFilters = {}): Promise<Empl
         row.currentBarangay && row.currentCity
           ? { barangayName: row.currentBarangay, cityName: row.currentCity }
           : null,
+      isResigned: row.isResigned,
     })),
     total,
     page,
@@ -160,6 +198,8 @@ export async function getEmployeeById(id: string): Promise<EmployeeDetail | null
       workEmail: employee.workEmail,
       teamId: employee.teamId,
       teamName: team.name,
+      resignationDate: employee.resignationDate,
+      isResigned: employee.isResigned,
     })
     .from(employee)
     .innerJoin(gender, eq(gender.id, employee.genderId))
@@ -196,12 +236,14 @@ export async function getEmployeeById(id: string): Promise<EmployeeDetail | null
       id: employeeDeployment.id,
       clientId: employeeDeployment.clientId,
       clientName: client.name,
-      project: employeeDeployment.project,
+      projectId: employeeDeployment.projectId,
+      projectName: project.name,
       startDate: employeeDeployment.startDate,
       endDate: employeeDeployment.endDate,
     })
     .from(employeeDeployment)
     .innerJoin(client, eq(client.id, employeeDeployment.clientId))
+    .innerJoin(project, eq(project.id, employeeDeployment.projectId))
     .where(eq(employeeDeployment.employeeId, id))
     .orderBy(sql`${employeeDeployment.endDate} IS NULL DESC`, desc(employeeDeployment.startDate));
 
@@ -219,6 +261,8 @@ export async function getEmployeeById(id: string): Promise<EmployeeDetail | null
     workEmail: row.workEmail,
     teamId: row.teamId,
     teamName: row.teamName,
+    resignationDate: row.resignationDate,
+    isResigned: row.isResigned,
     currentAddress,
     permanentAddress,
     employments,

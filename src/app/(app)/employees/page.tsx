@@ -34,7 +34,7 @@ export default async function EmployeesPage() {
       <HydrationBoundary state={dehydrate(queryClient)}>
         <EmployeesView
           initialFilters={initialFilters}
-          canCreate={can(actor, "employees:create")}
+          canCreate={can(actor, "employees:write")}
           canDelete={can(actor, "employees:delete")}
         />
       </HydrationBoundary>

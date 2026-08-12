@@ -5,7 +5,21 @@ import { count, eq, ne, and } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/db";
-import { client, employee, employeeDeployment, employeeEmployment, gender, level, position, team } from "@/db/schema";
+import {
+  client,
+  employee,
+  employeeDeployment,
+  employeeEmployment,
+  engagementType,
+  gender,
+  level,
+  position,
+  project,
+  projectDetailTeam,
+  salesRepresentative,
+  solutionsManager,
+  team,
+} from "@/db/schema";
 import type { ActionResult } from "@/lib/action-result";
 import { diffFields, recordAudit } from "@/lib/audit";
 import { AuthorizationError, authorize } from "@/lib/session";
@@ -13,7 +27,16 @@ import { AuthorizationError, authorize } from "@/lib/session";
 import { listLookup } from "./queries";
 import { LOOKUP_META, type LookupKind, type LookupRow } from "./types";
 
-const kindSchema = z.enum(["client", "position", "level", "gender", "team"]);
+const kindSchema = z.enum([
+  "client",
+  "position",
+  "level",
+  "gender",
+  "team",
+  "sales_representative",
+  "solutions_manager",
+  "engagement_type",
+]);
 const nameSchema = z.string().trim().min(1, "Name is required").max(100, "That name is too long");
 const idSchema = z.string().min(1, "A record must be selected");
 
@@ -29,6 +52,12 @@ function tableFor(kind: LookupKind) {
       return gender;
     case "team":
       return team;
+    case "sales_representative":
+      return salesRepresentative;
+    case "solutions_manager":
+      return solutionsManager;
+    case "engagement_type":
+      return engagementType;
   }
 }
 
@@ -40,8 +69,12 @@ async function usageCount(kind: LookupKind, id: string): Promise<number> {
       return row?.total ?? 0;
     }
     case "team": {
-      const [row] = await db.select({ total: count() }).from(employee).where(eq(employee.teamId, id));
-      return row?.total ?? 0;
+      const [employeeRow] = await db.select({ total: count() }).from(employee).where(eq(employee.teamId, id));
+      const [detailTeamRow] = await db
+        .select({ total: count() })
+        .from(projectDetailTeam)
+        .where(eq(projectDetailTeam.teamId, id));
+      return (employeeRow?.total ?? 0) + (detailTeamRow?.total ?? 0);
     }
     case "level": {
       const [row] = await db
@@ -58,10 +91,32 @@ async function usageCount(kind: LookupKind, id: string): Promise<number> {
       return row?.total ?? 0;
     }
     case "client": {
-      const [row] = await db
+      const [deploymentRow] = await db
         .select({ total: count() })
         .from(employeeDeployment)
         .where(eq(employeeDeployment.clientId, id));
+      const [projectRow] = await db.select({ total: count() }).from(project).where(eq(project.clientId, id));
+      return (deploymentRow?.total ?? 0) + (projectRow?.total ?? 0);
+    }
+    case "sales_representative": {
+      const [row] = await db
+        .select({ total: count() })
+        .from(project)
+        .where(eq(project.salesRepresentativeId, id));
+      return row?.total ?? 0;
+    }
+    case "solutions_manager": {
+      const [row] = await db
+        .select({ total: count() })
+        .from(project)
+        .where(eq(project.solutionsManagerId, id));
+      return row?.total ?? 0;
+    }
+    case "engagement_type": {
+      const [row] = await db
+        .select({ total: count() })
+        .from(project)
+        .where(eq(project.engagementTypeId, id));
       return row?.total ?? 0;
     }
   }
@@ -91,7 +146,7 @@ export async function fetchLookup(kind: LookupKind): Promise<LookupRow[]> {
 
 export async function createLookupEntry(input: { kind: LookupKind; name: string }): Promise<ActionResult<{ id: string }>> {
   return run(async () => {
-    const actor = await authorize("maintenance:manage");
+    const actor = await authorize("maintenance:write");
     const kind = kindSchema.parse(input.kind);
     const name = nameSchema.parse(input.name);
     const meta = LOOKUP_META[kind];
@@ -120,7 +175,7 @@ export async function createLookupEntry(input: { kind: LookupKind; name: string 
 
 export async function updateLookupEntry(input: { kind: LookupKind; id: string; name: string }): Promise<ActionResult> {
   return run(async () => {
-    const actor = await authorize("maintenance:manage");
+    const actor = await authorize("maintenance:edit");
     const kind = kindSchema.parse(input.kind);
     const id = idSchema.parse(input.id);
     const name = nameSchema.parse(input.name);
@@ -156,7 +211,7 @@ export async function updateLookupEntry(input: { kind: LookupKind; id: string; n
 
 export async function setLookupActive(input: { kind: LookupKind; id: string; isActive: boolean }): Promise<ActionResult> {
   return run(async () => {
-    const actor = await authorize("maintenance:manage");
+    const actor = await authorize("maintenance:edit");
     const kind = kindSchema.parse(input.kind);
     const id = idSchema.parse(input.id);
     const meta = LOOKUP_META[kind];
@@ -191,7 +246,7 @@ export async function setLookupActive(input: { kind: LookupKind; id: string; isA
 
 export async function deleteLookupEntry(input: { kind: LookupKind; id: string }): Promise<ActionResult> {
   return run(async () => {
-    const actor = await authorize("maintenance:manage");
+    const actor = await authorize("maintenance:delete");
     const kind = kindSchema.parse(input.kind);
     const id = idSchema.parse(input.id);
     const meta = LOOKUP_META[kind];
@@ -204,7 +259,7 @@ export async function deleteLookupEntry(input: { kind: LookupKind; id: string })
     if (usage > 0) {
       return {
         ok: false,
-        error: `Cannot delete — ${target.name} is used by ${usage} employee record${usage === 1 ? "" : "s"}. Deactivate it instead.`,
+        error: `Cannot delete — ${target.name} is used by ${usage} other record${usage === 1 ? "" : "s"}. Deactivate it instead.`,
       };
     }
 

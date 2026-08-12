@@ -20,17 +20,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { UserRole } from "@/db/schema";
-import { ROLES } from "@/lib/rbac";
+import type { RoleOption } from "@/lib/rbac";
 import type { ManagedUser } from "@/server/users/types";
 
 type ApproveUserDialogProps = {
   user: ManagedUser | null;
-  /** Roles the current actor is allowed to grant. */
-  roles: UserRole[];
+  /** Roles the current actor is allowed to grant, highest rank first. */
+  roles: RoleOption[];
   pending: boolean;
   onOpenChange: (open: boolean) => void;
-  onConfirm: (role: UserRole) => void;
+  onConfirm: (roleId: string) => void;
 };
 
 /**
@@ -73,17 +72,20 @@ function ApproveDialogBody({
   onConfirm,
 }: ApproveUserDialogProps & { user: ManagedUser }) {
   // Least privilege by default: Viewer when it is on offer, otherwise the
-  // lowest-ranked role this actor may grant.
-  const defaultRole = roles.includes("viewer") ? "viewer" : (roles[roles.length - 1] ?? "viewer");
-  const [role, setRole] = React.useState<UserRole>(defaultRole);
+  // lowest-ranked role this actor may grant (roles are sorted highest rank
+  // first, so that's the last entry).
+  const defaultRoleId =
+    roles.find((option) => option.id === "viewer")?.id ?? (roles[roles.length - 1]?.id ?? "viewer");
+  const [roleId, setRoleId] = React.useState<string>(defaultRoleId);
+  const selected = roles.find((option) => option.id === roleId);
 
   return (
     <>
       <DialogHeader>
         <DialogTitle>Approve access</DialogTitle>
         <DialogDescription>
-          Grant <span className="text-foreground font-medium">{user.name}</span> access to the MCSU
-          console and choose the role they should hold.
+          Grant <span className="text-foreground font-medium">{user.displayName}</span> access to the
+          MCSU console and choose the role they should hold.
         </DialogDescription>
       </DialogHeader>
 
@@ -93,29 +95,31 @@ function ApproveDialogBody({
             <dt className="text-muted-foreground">Email</dt>
             <dd className="truncate font-medium">{user.email}</dd>
           </div>
-          {user.jobTitle ? (
+          {user.position ? (
             <div className="flex justify-between gap-4">
-              <dt className="text-muted-foreground">Job title</dt>
-              <dd className="truncate font-medium">{user.jobTitle}</dd>
+              <dt className="text-muted-foreground">Position</dt>
+              <dd className="truncate font-medium">{user.position}</dd>
             </div>
           ) : null}
         </dl>
 
         <div className="space-y-2">
           <Label htmlFor="approve-role">Assign role</Label>
-          <Select value={role} onValueChange={(value) => setRole(value as UserRole)}>
+          <Select value={roleId} onValueChange={setRoleId}>
             <SelectTrigger id="approve-role" className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {roles.map((value) => (
-                <SelectItem key={value} value={value}>
-                  {ROLES[value].label}
+              {roles.map((option) => (
+                <SelectItem key={option.id} value={option.id}>
+                  {option.label}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <p className="text-muted-foreground text-xs">{ROLES[role].description}</p>
+          {selected?.description ? (
+            <p className="text-muted-foreground text-xs">{selected.description}</p>
+          ) : null}
         </div>
       </div>
 
@@ -123,9 +127,9 @@ function ApproveDialogBody({
         <Button variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
           Cancel
         </Button>
-        <Button onClick={() => onConfirm(role)} disabled={pending}>
+        <Button onClick={() => onConfirm(roleId)} disabled={pending}>
           {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
-          Approve as {ROLES[role].label}
+          Approve as {selected?.label ?? roleId}
         </Button>
       </DialogFooter>
     </>

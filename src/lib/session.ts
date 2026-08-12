@@ -1,18 +1,25 @@
 import "server-only";
 
+import { eq } from "drizzle-orm";
 import { headers } from "next/headers";
 import { forbidden, redirect } from "next/navigation";
 import { cache } from "react";
 
-import type { UserRole, UserStatus } from "@/db/schema";
+import { db } from "@/db";
+import { role as roleTable, type UserStatus } from "@/db/schema";
 import { auth } from "@/lib/auth";
-import { can, type Permission, type Principal } from "@/lib/rbac";
+import { can, canAny, type Permission, type Principal } from "@/lib/rbac";
+import { getEmployeeIdentityByEmail } from "@/server/employees/identity";
 
 export type CurrentUser = Principal & {
   name: string;
+  /** The account name, unless a matching Employee record's name should be shown instead. */
+  displayName: string;
   email: string;
   image: string | null;
-  jobTitle: string | null;
+  roleLabel: string;
+  /** Latest "Level - Position" from the matching Employee record, if any. */
+  position: string | null;
   createdAt: Date;
 };
 
@@ -21,26 +28,43 @@ export type CurrentUser = Principal & {
  *
  * `cache()` dedupes it per render pass, so a layout, its page and any server
  * action helper can all call this without repeated cookie parsing or database
- * round trips.
+ * round trips. Permissions and rank come from the `role` table, not a static
+ * map — one extra join per request, alongside the existing Employee-identity
+ * lookup.
  */
 export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const result = await auth.api.getSession({ headers: await headers() });
   if (!result?.user) return null;
 
   const u = result.user as typeof result.user & {
-    role?: UserRole;
+    roleId?: string;
     status?: UserStatus;
-    jobTitle?: string | null;
   };
+
+  const roleId = u.roleId ?? "viewer";
+
+  const [roleRows, identity] = await Promise.all([
+    db
+      .select({ label: roleTable.label, rank: roleTable.rank, permissions: roleTable.permissions })
+      .from(roleTable)
+      .where(eq(roleTable.id, roleId))
+      .limit(1),
+    getEmployeeIdentityByEmail(u.email),
+  ]);
+  const roleRow = roleRows[0];
 
   return {
     id: u.id,
     name: u.name,
+    displayName: identity?.displayName ?? u.name,
     email: u.email,
     image: u.image ?? null,
-    role: u.role ?? "viewer",
+    roleId,
+    roleLabel: roleRow?.label ?? roleId,
+    rank: roleRow?.rank ?? 0,
+    permissions: (roleRow?.permissions as Permission[] | undefined) ?? [],
     status: u.status ?? "pending",
-    jobTitle: u.jobTitle ?? null,
+    position: identity?.position ?? null,
     createdAt: u.createdAt,
   };
 });
@@ -85,6 +109,17 @@ export async function authorize(permission: Permission): Promise<CurrentUser> {
   if (!user) throw new AuthorizationError("Your session has expired. Please sign in again.");
   if (user.status !== "active") throw new AuthorizationError("Your account is not active.");
   if (!can(user, permission)) throw new AuthorizationError();
+
+  return user;
+}
+
+/** Like `authorize()`, but passes when the actor holds any one of the given permissions. */
+export async function authorizeAny(permissions: readonly Permission[]): Promise<CurrentUser> {
+  const user = await getCurrentUser();
+
+  if (!user) throw new AuthorizationError("Your session has expired. Please sign in again.");
+  if (user.status !== "active") throw new AuthorizationError("Your account is not active.");
+  if (!canAny(user, permissions)) throw new AuthorizationError();
 
   return user;
 }

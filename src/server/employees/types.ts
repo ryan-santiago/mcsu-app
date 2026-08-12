@@ -11,10 +11,13 @@ export type EmployeeListRow = {
   latestClient: string | null;
   latestProject: string | null;
   currentAddress: { barangayName: string; cityName: string } | null;
+  isResigned: boolean;
 };
 
 export type EmployeeFilters = {
   search?: string;
+  /** Resigned employees are excluded unless this is true. */
+  includeResigned?: boolean;
   /** 1-indexed. */
   page?: number;
   pageSize?: number;
@@ -57,7 +60,8 @@ export type DeploymentRecordRow = {
   id: string;
   clientId: string;
   clientName: string;
-  project: string;
+  projectId: string;
+  projectName: string;
   startDate: string;
   endDate: string | null;
 };
@@ -76,6 +80,8 @@ export type EmployeeDetail = {
   workEmail: string | null;
   teamId: string | null;
   teamName: string | null;
+  resignationDate: string | null;
+  isResigned: boolean;
   currentAddress: EmployeeAddressDetail | null;
   permanentAddress: EmployeeAddressDetail | null;
   employments: EmploymentRecordRow[];

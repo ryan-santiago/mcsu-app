@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 
 import { PageHeader } from "@/components/layout/page-header";
 import { MaintenanceView } from "@/components/maintenance/maintenance-view";
-import { can } from "@/lib/rbac";
+import { canAny } from "@/lib/rbac";
 import { requirePermission } from "@/lib/session";
 import { listLookup } from "@/server/maintenance/queries";
 import { lookupQueryKey } from "@/server/maintenance/query-key";
@@ -34,7 +34,9 @@ export default async function MaintenancePage() {
       />
 
       <HydrationBoundary state={dehydrate(queryClient)}>
-        <MaintenanceView canManage={can(actor, "maintenance:manage")} />
+        <MaintenanceView
+          canManage={canAny(actor, ["maintenance:write", "maintenance:edit", "maintenance:delete"])}
+        />
       </HydrationBoundary>
     </div>
   );

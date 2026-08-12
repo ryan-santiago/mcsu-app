@@ -16,7 +16,6 @@ import {
 } from "@/components/ui/breadcrumb";
 import { breadcrumbsFor } from "@/lib/navigation";
 import type { NavGroup } from "@/lib/navigation";
-import { ROLES } from "@/lib/rbac";
 import type { CurrentUser } from "@/lib/session";
 
 type AppTopbarProps = {
@@ -58,7 +57,7 @@ export function AppTopbar({ groups, user }: AppTopbarProps) {
       </div>
 
       <Badge variant="secondary" className="hidden shrink-0 font-normal sm:inline-flex">
-        {ROLES[user.role].label}
+        {user.roleLabel}
       </Badge>
     </header>
   );

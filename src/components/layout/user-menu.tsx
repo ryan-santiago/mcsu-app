@@ -19,7 +19,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { signOut } from "@/lib/auth-client";
-import { ROLES } from "@/lib/rbac";
 import type { CurrentUser } from "@/lib/session";
 
 export function initialsOf(name: string): string {
@@ -56,14 +55,14 @@ export function UserMenu({ user }: { user: CurrentUser }) {
           <Avatar className="size-8 shrink-0">
             <AvatarImage src={user.image ?? undefined} alt="" />
             <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
-              {initialsOf(user.name)}
+              {initialsOf(user.displayName)}
             </AvatarFallback>
           </Avatar>
 
           <span className="flex min-w-0 flex-1 flex-col items-start text-left">
-            <span className="w-full truncate text-sm font-medium">{user.name}</span>
+            <span className="w-full truncate text-sm font-medium">{user.displayName}</span>
             <span className="text-muted-foreground w-full truncate text-xs">
-              {ROLES[user.role].label}
+              {user.roleLabel}
             </span>
           </span>
 
@@ -73,7 +72,7 @@ export function UserMenu({ user }: { user: CurrentUser }) {
 
       <DropdownMenuContent align="end" side="top" className="w-60">
         <DropdownMenuLabel className="font-normal">
-          <p className="truncate text-sm font-medium">{user.name}</p>
+          <p className="truncate text-sm font-medium">{user.displayName}</p>
           <p className="text-muted-foreground truncate text-xs">{user.email}</p>
         </DropdownMenuLabel>
 

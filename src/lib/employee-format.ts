@@ -11,6 +11,16 @@ export function formatEmployeeName(person: {
   return `${person.lastName.trim().toUpperCase()}, ${person.firstName.trim()}${initial ? ` ${initial}` : ""}`;
 }
 
+/**
+ * First-and-last-only display name for identity-style UI (topbar, user
+ * lists) — as opposed to `formatEmployeeName`'s "LASTNAME, First M." form
+ * used in HR tables. No middle name, by design.
+ * `formatEmployeeDisplayName({ firstName: "Juan", lastName: "Dela Cruz" })` → "Juan Dela Cruz"
+ */
+export function formatEmployeeDisplayName(person: { firstName: string; lastName: string }): string {
+  return `${person.firstName.trim()} ${person.lastName.trim()}`;
+}
+
 export const EMPLOYMENT_TYPE_LABELS: Record<EmploymentType, string> = {
   regular: "Regular",
   probationary: "Probationary",
@@ -35,8 +45,27 @@ const currencyFormatter = new Intl.NumberFormat("en-PH", {
 
 export function formatSalary(value: string | number | null | undefined): string {
   if (value === null || value === undefined) return "—";
-  const amount = typeof value === "string" ? Number(value) : value;
+  const amount = typeof value === "string" ? Number(String(value).replace(/,/g, "")) : value;
   return Number.isNaN(amount) ? "—" : currencyFormatter.format(amount);
+}
+
+/**
+ * Live thousands-grouping for a money `<Input>` as the user types — e.g.
+ * `formatMoneyInput("4000000")` → `"4,000,000"`. Keeps at most one decimal
+ * point and strips anything else non-numeric, so pasted or mid-edit input
+ * never produces garbage. The comma-formatted string is what stays in
+ * react-hook-form state; `moneySchema` (`src/lib/validation/project.ts`)
+ * strips the commas back out on submit.
+ */
+export function formatMoneyInput(raw: string): string {
+  const cleaned = raw.replace(/[^\d.]/g, "");
+  const firstDot = cleaned.indexOf(".");
+  const [wholePart, decimalPart] =
+    firstDot === -1
+      ? [cleaned, undefined]
+      : [cleaned.slice(0, firstDot), cleaned.slice(firstDot + 1).replace(/\./g, "")];
+  const grouped = wholePart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return decimalPart === undefined ? grouped : `${grouped}.${decimalPart}`;
 }
 
 const periodDateFormatter = new Intl.DateTimeFormat("en-PH", { day: "numeric", month: "short", year: "numeric" });

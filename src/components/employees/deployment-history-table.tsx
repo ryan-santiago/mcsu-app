@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, MapPin, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
 import * as React from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/layout/empty-state";
@@ -37,14 +37,19 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { ActionResult } from "@/lib/action-result";
 import { formatPeriod, sortHistoryRecords, type HistorySortOrder } from "@/lib/employee-format";
 import { deploymentRecordSchema, type DeploymentRecordInput } from "@/lib/validation/employee";
-import { addDeploymentRecord, deleteDeploymentRecord, fetchLookupOptions, updateDeploymentRecord } from "@/server/employees/actions";
+import {
+  addDeploymentRecord,
+  deleteDeploymentRecord,
+  fetchLookupOptions,
+  fetchProjectOptions,
+  updateDeploymentRecord,
+} from "@/server/employees/actions";
 import type { DeploymentRecordRow } from "@/server/employees/types";
 
 type DeploymentHistoryTableProps = {
@@ -129,7 +134,7 @@ export function DeploymentHistoryTable({ employeeId, records, canEdit, canDelete
                   <TableRow key={record.id}>
                     <TableCell className="whitespace-nowrap">{formatPeriod(record.startDate, record.endDate)}</TableCell>
                     <TableCell>{record.clientName}</TableCell>
-                    <TableCell>{record.project}</TableCell>
+                    <TableCell>{record.projectName}</TableCell>
                     {canEdit || canDelete ? (
                       <TableCell>
                         <DropdownMenu>
@@ -259,26 +264,52 @@ function DeploymentRecordForm({
     resolver: zodResolver(deploymentRecordSchema),
     defaultValues: {
       clientId: record?.clientId ?? "",
-      project: record?.project ?? "",
+      projectId: record?.projectId ?? "",
       startDate: record?.startDate ?? "",
       endDate: record?.endDate ?? "",
     },
   });
 
+  // `useWatch` rather than `form.watch()`: the latter returns a fresh function
+  // each render, which opts the whole component out of React Compiler memoing.
+  const clientId = useWatch({ control: form.control, name: "clientId" });
+  const startDate = useWatch({ control: form.control, name: "startDate" });
+  const endDate = useWatch({ control: form.control, name: "endDate" });
+
+  const projectOptions = useQuery({
+    queryKey: ["employee-project-options", clientId],
+    queryFn: () => fetchProjectOptions(clientId),
+    enabled: Boolean(clientId),
+  });
+
   const [ongoing, setOngoing] = React.useState(!record || !record.endDate);
+  // New records default to syncing dates from the project (convenient — most
+  // deployments simply run for the project's own duration); edits default to
+  // the record's own saved dates, so opening an existing record never risks
+  // silently swapping in different dates if the project's range has since
+  // changed.
+  const [useProjectDates, setUseProjectDates] = React.useState(!isEdit);
+
+  function syncDatesToProject(projectId: string) {
+    const selected = projectOptions.data?.find((option) => option.id === projectId);
+    form.setValue("startDate", selected?.startDate ?? "");
+    form.setValue("endDate", selected?.endDate ?? "");
+  }
 
   return (
     <>
       <DialogHeader>
         <DialogTitle>{isEdit ? "Edit deployment record" : "Add deployment record"}</DialogTitle>
         <DialogDescription>
-          Adding a record with no end date automatically closes any previous ongoing deployment.
+          An employee can be deployed to multiple projects at the same time.
         </DialogDescription>
       </DialogHeader>
 
       <Form {...form}>
         <form
-          onSubmit={form.handleSubmit((values) => onSubmit({ ...values, endDate: ongoing ? "" : values.endDate }))}
+          onSubmit={form.handleSubmit((values) =>
+            onSubmit({ ...values, endDate: useProjectDates ? values.endDate : ongoing ? "" : values.endDate }),
+          )}
           className="space-y-4"
           noValidate
         >
@@ -289,7 +320,18 @@ function DeploymentRecordForm({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Client</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange} disabled={pending}>
+                  <Select
+                    value={field.value}
+                    onValueChange={(value) => {
+                      field.onChange(value);
+                      form.setValue("projectId", "");
+                      if (useProjectDates) {
+                        form.setValue("startDate", "");
+                        form.setValue("endDate", "");
+                      }
+                    }}
+                    disabled={pending}
+                  >
                     <FormControl>
                       <SelectTrigger className="w-full">
                         <SelectValue placeholder="Select client" />
@@ -310,51 +352,100 @@ function DeploymentRecordForm({
 
             <FormField
               control={form.control}
-              name="project"
+              name="projectId"
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Project</FormLabel>
-                  <FormControl>
-                    <Input {...field} disabled={pending} placeholder="e.g. Fullstack Developer" />
-                  </FormControl>
+                  <Select
+                    value={field.value}
+                    onValueChange={(value) => {
+                      field.onChange(value);
+                      if (useProjectDates) syncDatesToProject(value);
+                    }}
+                    disabled={pending || !clientId}
+                  >
+                    <FormControl>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder={clientId ? "Select project" : "Select a client first"} />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {projectOptions.data?.map((option) => (
+                        <SelectItem key={option.id} value={option.id}>
+                          {option.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <FormMessage />
                 </FormItem>
               )}
             />
-
-            <FormField
-              control={form.control}
-              name="startDate"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Start date</FormLabel>
-                  <DatePicker value={field.value} onChange={field.onChange} disabled={pending} />
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {!ongoing ? (
-              <FormField
-                control={form.control}
-                name="endDate"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>End date</FormLabel>
-                    <DatePicker value={field.value} onChange={field.onChange} disabled={pending} />
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            ) : null}
           </div>
 
           <div className="flex items-center gap-2">
-            <Checkbox id="ongoing-deployment" checked={ongoing} onCheckedChange={(checked) => setOngoing(checked === true)} />
-            <Label htmlFor="ongoing-deployment" className="text-sm font-normal">
-              Currently deployed here
+            <Checkbox
+              id="use-project-dates"
+              checked={useProjectDates}
+              onCheckedChange={(checked) => {
+                const isChecked = checked === true;
+                setUseProjectDates(isChecked);
+                if (isChecked) {
+                  const projectId = form.getValues("projectId");
+                  if (projectId) syncDatesToProject(projectId);
+                }
+              }}
+            />
+            <Label htmlFor="use-project-dates" className="text-sm font-normal">
+              Use the project&apos;s date range
             </Label>
           </div>
+
+          {useProjectDates ? (
+            <div className="bg-muted/50 rounded-lg border p-3 text-sm">
+              <span className="text-muted-foreground">Dates: </span>
+              <span className="font-medium">
+                {startDate ? formatPeriod(startDate, endDate || null) : "Select a project to set dates"}
+              </span>
+            </div>
+          ) : (
+            <>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FormField
+                  control={form.control}
+                  name="startDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Start date</FormLabel>
+                      <DatePicker value={field.value} onChange={field.onChange} disabled={pending} />
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {!ongoing ? (
+                  <FormField
+                    control={form.control}
+                    name="endDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>End date</FormLabel>
+                        <DatePicker value={field.value} onChange={field.onChange} disabled={pending} />
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                ) : null}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Checkbox id="ongoing-deployment" checked={ongoing} onCheckedChange={(checked) => setOngoing(checked === true)} />
+                <Label htmlFor="ongoing-deployment" className="text-sm font-normal">
+                  Currently deployed here
+                </Label>
+              </div>
+            </>
+          )}
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>

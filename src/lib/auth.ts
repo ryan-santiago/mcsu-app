@@ -58,9 +58,8 @@ export const auth = betterAuth({
     additionalFields: {
       // `input: false` keeps these out of the sign-up payload — a registrant
       // must not be able to hand themselves a role or an active status.
-      role: { type: "string", required: false, defaultValue: "viewer", input: false },
+      roleId: { type: "string", required: false, defaultValue: "viewer", input: false },
       status: { type: "string", required: false, defaultValue: "pending", input: false },
-      jobTitle: { type: "string", required: false, input: true },
       approvedAt: { type: "date", required: false, input: false },
       approvedBy: { type: "string", required: false, input: false },
       lastLoginAt: { type: "date", required: false, input: false },
@@ -88,7 +87,7 @@ export const auth = betterAuth({
           return {
             data: {
               ...newUser,
-              role: isFirstUser ? "admin" : "viewer",
+              roleId: isFirstUser ? "admin" : "viewer",
               status: isFirstUser ? "active" : "pending",
               approvedAt: isFirstUser ? new Date() : null,
             },
@@ -96,9 +95,8 @@ export const auth = betterAuth({
         },
         after: async (createdUser) => {
           const created = createdUser as typeof createdUser & {
-            role?: string;
+            roleId?: string;
             status?: string;
-            jobTitle?: string | null;
           };
 
           await recordAudit({
@@ -108,8 +106,8 @@ export const auth = betterAuth({
             entityLabel: created.name,
             changes: diffFields(
               null,
-              { name: created.name, email: created.email, jobTitle: created.jobTitle ?? null, role: created.role, status: created.status },
-              { name: "Name", email: "Email", jobTitle: "Job Title", role: "Role", status: "Status" },
+              { name: created.name, email: created.email, roleId: created.roleId, status: created.status },
+              { name: "Name", email: "Email", roleId: "Role", status: "Status" },
             ),
           });
         },

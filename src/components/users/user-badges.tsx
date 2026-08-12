@@ -1,29 +1,38 @@
-import { CircleCheck, CircleSlash, Clock3, ShieldCheck, UserCog, Wrench, Eye } from "lucide-react";
+import { CircleCheck, CircleSlash, Clock3, ShieldCheck, UserCog, Wrench, Eye, ShieldQuestion } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import type { UserRole, UserStatus } from "@/db/schema";
-import { ROLES, STATUS_LABELS } from "@/lib/rbac";
+import type { UserStatus } from "@/db/schema";
+import { STATUS_LABELS } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 
-const ROLE_ICONS: Record<UserRole, LucideIcon> = {
+/** The four built-in roles keep dedicated icons; any custom role falls back to a generic one. */
+const ROLE_ICONS: Record<string, LucideIcon> = {
   admin: ShieldCheck,
   manager: UserCog,
   engineer: Wrench,
   viewer: Eye,
 };
 
+const DEFAULT_ROLE_ICON = ShieldQuestion;
+
 /**
  * Roles are distinguished by icon and label rather than by colour alone —
  * colour is reserved for status, where it carries the urgent signal.
  */
-export function RoleBadge({ role, className }: { role: UserRole; className?: string }) {
-  const Icon = ROLE_ICONS[role];
+export function RoleBadge({
+  role,
+  className,
+}: {
+  role: { id: string; label: string };
+  className?: string;
+}) {
+  const Icon = ROLE_ICONS[role.id] ?? DEFAULT_ROLE_ICON;
 
   return (
     <Badge variant="outline" className={cn("gap-1.5 font-normal", className)}>
       <Icon className="size-3.5 shrink-0" aria-hidden />
-      {ROLES[role].label}
+      {role.label}
     </Badge>
   );
 }

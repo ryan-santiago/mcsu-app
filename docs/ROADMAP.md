@@ -10,12 +10,17 @@ What is built, what is deliberately missing, and what to build next.
 - BetterAuth email/password with sessions, sign-in blocked for
   pending/suspended accounts
 - Drizzle schema on Neon: user, session, account, verification, audit_log
-- RBAC: four roles, ten permissions, rank rules, guards on layout, page,
-  action and query
+- RBAC: admin-editable roles and permissions (Access Control), rank rules,
+  guards on layout, page, action and query — see [RBAC.md](./RBAC.md)
 - App shell: RBAC-filtered sidebar, topbar, mobile drawer, light/dark/system
 - Dashboard (intentionally empty — the frame and guard are in place)
 - User Management: search, status filters, approve with role assignment,
   reject, role change, suspend/reinstate, remove
+- Employees: directory, profile, employment and deployment history
+- Projects (S3P): directory, project identity/assignments, financial detail
+  lines with per-line team assignment and computed totals
+- Maintenance: admin-editable lookup lists (Client, Position, Level, Gender,
+  Team, Sales Representative, Solutions Manager, Engagement Type)
 - Audit Trail: Administrator-only page under Administration — date range,
   module and action filters, actor/entity search, expandable field-level
   diff, pagination. Generic across modules by design: any future module's
@@ -70,9 +75,13 @@ colour — series 1 is brand blue, series 2 brand orange.
 
 ### 4. User profile screen
 
-Users currently cannot change their own name, job title, avatar or password.
-`users:update` exists; the screen does not. Note the rank rule bars acting on
-your *own* account through the admin tools — this is the intended escape hatch.
+Users currently cannot change their own name, avatar or password. `users:update`
+exists; the screen does not. Note the rank rule bars acting on your *own*
+account through the admin tools — this is the intended escape hatch.
+
+Display name and position are no longer typed at registration — see
+[RBAC.md](./RBAC.md) (or `src/server/employees/identity.ts`) for how they're
+now derived by matching the account email against Employee's `workEmail`.
 
 ---
 

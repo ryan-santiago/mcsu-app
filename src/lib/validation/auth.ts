@@ -40,7 +40,6 @@ export const registerSchema = z
   .object({
     name: nameSchema,
     email: emailSchema,
-    jobTitle: z.string().trim().max(80, "That job title is too long").optional().or(z.literal("")),
     password: passwordSchema,
     confirmPassword: z.string().min(1, "Confirm your password"),
   })

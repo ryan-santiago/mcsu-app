@@ -53,16 +53,16 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import type { UserRole, UserStatus } from "@/db/schema";
+import type { UserStatus } from "@/db/schema";
 import { useDebounced } from "@/hooks/use-debounced";
 import { formatDate, formatRelative } from "@/lib/format";
 import {
   assignableRoles,
   can,
   denyReasonForActingOn,
-  ROLES,
   STATUS_LABELS,
   type Principal,
+  type RoleOption,
 } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 import {
@@ -100,10 +100,12 @@ const PAGE_SIZE = 20;
 type UsersViewProps = {
   /** The signed-in administrator, used to gate every control. */
   actor: Principal;
+  /** Every role that exists, for the assign-role picker (`assignableRoles` filters it down). */
+  roles: RoleOption[];
   initialFilters: UserFilters;
 };
 
-export function UsersView({ actor, initialFilters }: UsersViewProps) {
+export function UsersView({ actor, roles, initialFilters }: UsersViewProps) {
   const queryClient = useQueryClient();
 
   const [search, setSearch] = React.useState(initialFilters.search ?? "");
@@ -159,11 +161,11 @@ export function UsersView({ actor, initialFilters }: UsersViewProps) {
   const users = data?.users ?? [];
   const counts = data?.counts;
   const total = data?.total ?? 0;
-  const grantableRoles = assignableRoles(actor);
+  const grantableRoles = assignableRoles(actor, roles);
 
-  const mayApprove = can(actor, "users:approve");
-  const maySuspend = can(actor, "users:suspend");
-  const mayAssignRole = can(actor, "users:assign_role");
+  // Approve/reject, suspend/reinstate and role assignment all fold into a
+  // single `users:edit` permission — see docs/RBAC.md.
+  const mayEdit = can(actor, "users:edit");
   const mayDelete = can(actor, "users:delete");
 
   return (
@@ -281,7 +283,7 @@ export function UsersView({ actor, initialFilters }: UsersViewProps) {
                       title={search ? "No matching users" : emptyTitleFor(status)}
                       description={
                         search
-                          ? "Try a different name, email or job title."
+                          ? "Try a different name or email."
                           : "Users appear here once they request access."
                       }
                       className="rounded-none border-0"
@@ -300,13 +302,13 @@ export function UsersView({ actor, initialFilters }: UsersViewProps) {
                           <Avatar className="size-9 shrink-0">
                             <AvatarImage src={row.image ?? undefined} alt="" />
                             <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
-                              {initialsOf(row.name)}
+                              {initialsOf(row.displayName)}
                             </AvatarFallback>
                           </Avatar>
 
                           <div className="min-w-0">
                             <p className="flex items-center gap-2 truncate text-sm font-medium">
-                              {row.name}
+                              {row.displayName}
                               {isSelf ? (
                                 <span className="text-muted-foreground text-xs font-normal">
                                   (you)
@@ -314,9 +316,9 @@ export function UsersView({ actor, initialFilters }: UsersViewProps) {
                               ) : null}
                             </p>
                             <p className="text-muted-foreground truncate text-xs">{row.email}</p>
-                            {row.jobTitle ? (
+                            {row.position ? (
                               <p className="text-muted-foreground/80 truncate text-xs">
-                                {row.jobTitle}
+                                {row.position}
                               </p>
                             ) : null}
                           </div>
@@ -327,7 +329,7 @@ export function UsersView({ actor, initialFilters }: UsersViewProps) {
                         {row.status === "pending" ? (
                           <span className="text-muted-foreground text-sm">Not assigned</span>
                         ) : (
-                          <RoleBadge role={row.role} />
+                          <RoleBadge role={{ id: row.roleId, label: row.roleLabel }} />
                         )}
                       </TableCell>
 
@@ -348,7 +350,7 @@ export function UsersView({ actor, initialFilters }: UsersViewProps) {
                           row={row}
                           denial={denial}
                           grantableRoles={grantableRoles}
-                          permissions={{ mayApprove, maySuspend, mayAssignRole, mayDelete }}
+                          permissions={{ mayEdit, mayDelete }}
                           pending={mutation.isPending}
                           onApprove={() => setApproving(row)}
                           onReject={() => setConfirming({ user: row, intent: "reject" })}
@@ -413,12 +415,12 @@ export function UsersView({ actor, initialFilters }: UsersViewProps) {
               {confirming?.intent === "reject" ? (
                 <>
                   The access request from{" "}
-                  <span className="text-foreground font-medium">{confirming.user.name}</span> will be
+                  <span className="text-foreground font-medium">{confirming.user.displayName}</span> will be
                   deleted. They can register again later.
                 </>
               ) : confirming ? (
                 <>
-                  <span className="text-foreground font-medium">{confirming.user.name}</span> will be
+                  <span className="text-foreground font-medium">{confirming.user.displayName}</span> will be
                   permanently removed along with their sessions. This cannot be undone.
                 </>
               ) : null}
@@ -458,18 +460,16 @@ type RowActionsProps = {
   row: ManagedUser;
   /** Why this row cannot be acted on, or null when it can. */
   denial: string | null;
-  grantableRoles: UserRole[];
+  grantableRoles: RoleOption[];
   permissions: {
-    mayApprove: boolean;
-    maySuspend: boolean;
-    mayAssignRole: boolean;
+    mayEdit: boolean;
     mayDelete: boolean;
   };
   pending: boolean;
   onApprove: () => void;
   onReject: () => void;
   onDelete: () => void;
-  onRoleChange: (role: UserRole) => void;
+  onRoleChange: (role: string) => void;
   onStatusChange: (status: "active" | "suspended") => void;
 };
 
@@ -485,12 +485,12 @@ function RowActions({
   onRoleChange,
   onStatusChange,
 }: RowActionsProps) {
-  const { mayApprove, maySuspend, mayAssignRole, mayDelete } = permissions;
+  const { mayEdit, mayDelete } = permissions;
 
   // Nothing to offer: either the actor outranks nobody here, or they hold no
   // write permissions at all. Explain rather than render a menu that does
   // nothing when opened.
-  const hasAnyPermission = mayApprove || maySuspend || mayAssignRole || mayDelete;
+  const hasAnyPermission = mayEdit || mayDelete;
 
   if (denial || !hasAnyPermission) {
     return (
@@ -518,7 +518,7 @@ function RowActions({
       </DropdownMenuTrigger>
 
       <DropdownMenuContent align="end" className="w-56">
-        {row.status === "pending" && mayApprove ? (
+        {row.status === "pending" && mayEdit ? (
           <>
             <DropdownMenuItem onSelect={onApprove}>
               <UserCheck className="size-4" aria-hidden />
@@ -531,7 +531,7 @@ function RowActions({
           </>
         ) : null}
 
-        {row.status !== "pending" && mayAssignRole && grantableRoles.length > 0 ? (
+        {row.status !== "pending" && mayEdit && grantableRoles.length > 0 ? (
           <>
             <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">
               <span className="flex items-center gap-1.5">
@@ -539,20 +539,17 @@ function RowActions({
                 Role
               </span>
             </DropdownMenuLabel>
-            <DropdownMenuRadioGroup
-              value={row.role}
-              onValueChange={(value) => onRoleChange(value as UserRole)}
-            >
+            <DropdownMenuRadioGroup value={row.roleId} onValueChange={onRoleChange}>
               {grantableRoles.map((role) => (
-                <DropdownMenuRadioItem key={role} value={role}>
-                  {ROLES[role].label}
+                <DropdownMenuRadioItem key={role.id} value={role.id}>
+                  {role.label}
                 </DropdownMenuRadioItem>
               ))}
             </DropdownMenuRadioGroup>
           </>
         ) : null}
 
-        {row.status !== "pending" && maySuspend ? (
+        {row.status !== "pending" && mayEdit ? (
           <>
             <DropdownMenuSeparator />
             {row.status === "active" ? (
