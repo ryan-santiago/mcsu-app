@@ -18,6 +18,8 @@ export type NavIconKey =
 	| 'projects'
 	| 'maintenance'
 	| 'access-control'
+	| 'approvals'
+	| 'settings'
 
 /**
  * A known sub-route of a nav item, for the topbar breadcrumb trail —
@@ -130,6 +132,20 @@ export const NAVIGATION: readonly NavGroup[] = [
 				href: '/admin/audit',
 				icon: 'audit',
 				permissions: ['audit:read'],
+				matchNested: true,
+			},
+			{
+				title: 'Approvals',
+				href: '/admin/approvals',
+				icon: 'approvals',
+				permissions: ['employees:edit'],
+				matchNested: true,
+			},
+			{
+				// No `permissions` — every active signed-in user reaches their own profile.
+				title: 'Settings & Profile',
+				href: '/admin/settings',
+				icon: 'settings',
 				matchNested: true,
 			},
 		],

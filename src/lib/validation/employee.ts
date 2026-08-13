@@ -16,7 +16,7 @@ export const employeeProfileSchema = z.object({
   mobileNumber: phMobileSchema,
   viberNumber: phMobileOptionalSchema,
   personalEmail: optionalEmailSchema,
-  workEmail: optionalEmailSchema,
+  workEmail: emailSchema,
   teamId: z.string().min(1, "Select a team"),
   /** `isResigned` is never a form field — it's always derived from this. */
   resignationDate: z.string().optional().or(z.literal("")),
@@ -30,6 +30,26 @@ export const employeeFormSchema = z.object({
 
 export type EmployeeProfileInput = z.infer<typeof employeeProfileSchema>;
 export type EmployeeFormInput = z.infer<typeof employeeFormSchema>;
+
+/**
+ * The subset of `employeeProfileSchema` an employee may request a change to
+ * about themselves — excludes `code`, `teamId` and `resignationDate`, which
+ * stay HR-administrative fields edited only through the Employee module.
+ */
+export const selfServiceProfileSchema = employeeProfileSchema.omit({
+  code: true,
+  teamId: true,
+  resignationDate: true,
+});
+
+export const selfServiceFormSchema = z.object({
+  profile: selfServiceProfileSchema,
+  currentAddress: addressSchema,
+  permanentAddress: addressSchema,
+});
+
+export type SelfServiceProfileInput = z.infer<typeof selfServiceProfileSchema>;
+export type SelfServiceFormInput = z.infer<typeof selfServiceFormSchema>;
 
 const salarySchema = z
   .string()

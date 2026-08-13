@@ -94,6 +94,7 @@ export function employeeIdentitySubquery() {
   const latestEmployment = latestEmploymentSubquery();
   return db
     .select({
+      id: employee.id,
       workEmailLower: sql<string>`lower(${employee.workEmail})`.as("work_email_lower"),
       firstName: employee.firstName,
       middleName: employee.middleName,
@@ -203,7 +204,19 @@ export async function listEmployees(filters: EmployeeFilters = {}): Promise<Empl
 
 export async function getEmployeeById(id: string): Promise<EmployeeDetail | null> {
   await authorize("employees:read");
+  return loadEmployeeDetail(id);
+}
 
+/**
+ * The unauthorized core of `getEmployeeById` — used by `getEmployeeById`
+ * itself (gated on `employees:read`) and by
+ * `src/server/settings/queries.ts`'s `getMyEmployeeDetail()`, which must let
+ * any active user load their *own* record regardless of whether they hold
+ * the Employees module permission at all. Same reasoning as
+ * `getEmployeeIdentityByEmail` being ungated: safe because the caller
+ * controls which `id` reaches it, not the browser.
+ */
+export async function loadEmployeeDetail(id: string): Promise<EmployeeDetail | null> {
   const [row] = await db
     .select({
       id: employee.id,

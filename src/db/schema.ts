@@ -409,8 +409,8 @@ export const employee = pgTable(
   "employee",
   {
     id: text("id").primaryKey(),
-    /** "PH00123456" or "123456" — manually entered, validated in Zod. */
-    code: text("code").notNull().unique(),
+    /** "PH00123456" or "123456" — manually entered, validated in Zod. Optional: a plain UNIQUE constraint (not a unique index) still allows multiple NULLs in Postgres. */
+    code: text("code").unique(),
     firstName: text("first_name").notNull(),
     middleName: text("middle_name"),
     lastName: text("last_name").notNull(),
@@ -421,7 +421,8 @@ export const employee = pgTable(
     mobileNumber: text("mobile_number").notNull(),
     viberNumber: text("viber_number"),
     personalEmail: text("personal_email"),
-    workEmail: text("work_email"),
+    /** Required — also the account-matching key `getEmployeeIdentityByEmail` uses to link a signed-in user to their own record. */
+    workEmail: text("work_email").notNull(),
     teamId: text("team_id").references(() => team.id, { onDelete: "set null" }),
     resignationDate: date("resignation_date"),
     /** Always derived from `resignationDate` in the action layer — never a direct user input. */
@@ -436,8 +437,6 @@ export const employee = pgTable(
   },
   (table) => [
     index("employee_last_name_idx").on(table.lastName),
-    // Postgres allows multiple NULLs under a unique index, so employees
-    // without a work email yet don't collide with each other.
     uniqueIndex("employee_work_email_idx").on(table.workEmail),
   ],
 );
@@ -565,6 +564,49 @@ export const employeeDeployment = pgTable(
   ],
 );
 
+/**
+ * A self-service edit of the employee's own Identity/Contact/Address fields,
+ * awaiting review. `employees:edit` holders write directly through the
+ * Employee module; a user editing the one Employee record linked to their
+ * own account goes through this instead (see `denyReasonForActingOn` in
+ * `src/lib/rbac.ts` for the same "no self-service through the admin tools"
+ * rule applied to user accounts). `proposed*` columns hold the full proposed
+ * values (applied on approval); `changes` snapshots the `diffFields()` output
+ * at submission time so the review UI never has to recompute a diff against
+ * a record that may have moved on since.
+ */
+export const changeRequestStatus = pgEnum("change_request_status", ["pending", "approved", "rejected"]);
+
+export const employeeChangeRequest = pgTable(
+  "employee_change_request",
+  {
+    id: text("id").primaryKey(),
+    employeeId: text("employee_id")
+      .notNull()
+      .references(() => employee.id, { onDelete: "cascade" }),
+    requestedBy: text("requested_by").references(() => user.id, { onDelete: "set null" }),
+    status: changeRequestStatus("status").default("pending").notNull(),
+    proposedProfile: jsonb("proposed_profile").notNull(),
+    proposedCurrentAddress: jsonb("proposed_current_address").notNull(),
+    proposedPermanentAddress: jsonb("proposed_permanent_address").notNull(),
+    changes: jsonb("changes").$type<AuditChange[]>().notNull(),
+    reviewedBy: text("reviewed_by").references(() => user.id, { onDelete: "set null" }),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    reviewNote: text("review_note"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("employee_change_request_employee_idx").on(table.employeeId),
+    index("employee_change_request_status_idx").on(table.status),
+  ],
+);
+
 /* -------------------------------------------------------------------------- */
 /*  Relations                                                                 */
 /* -------------------------------------------------------------------------- */
@@ -613,6 +655,12 @@ export const employeeDeploymentRelations = relations(employeeDeployment, ({ one 
   employee: one(employee, { fields: [employeeDeployment.employeeId], references: [employee.id] }),
   client: one(client, { fields: [employeeDeployment.clientId], references: [client.id] }),
   project: one(project, { fields: [employeeDeployment.projectId], references: [project.id] }),
+}));
+
+export const employeeChangeRequestRelations = relations(employeeChangeRequest, ({ one }) => ({
+  employee: one(employee, { fields: [employeeChangeRequest.employeeId], references: [employee.id] }),
+  requestedByUser: one(user, { fields: [employeeChangeRequest.requestedBy], references: [user.id] }),
+  reviewedByUser: one(user, { fields: [employeeChangeRequest.reviewedBy], references: [user.id] }),
 }));
 
 export const projectRelations = relations(project, ({ one, many }) => ({
@@ -683,3 +731,7 @@ export type NewEmployeeDeployment = typeof employeeDeployment.$inferInsert;
 
 export type EmployeeAddressType = (typeof employeeAddressType.enumValues)[number];
 export type EmploymentType = (typeof employmentType.enumValues)[number];
+
+export type EmployeeChangeRequest = typeof employeeChangeRequest.$inferSelect;
+export type NewEmployeeChangeRequest = typeof employeeChangeRequest.$inferInsert;
+export type ChangeRequestStatus = (typeof changeRequestStatus.enumValues)[number];

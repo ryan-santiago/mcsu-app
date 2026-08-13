@@ -127,28 +127,28 @@ export async function createEmployee(input: EmployeeFormInput): Promise<ActionRe
     const actor = await authorize("employees:write");
     const { profile, currentAddress, permanentAddress } = employeeFormSchema.parse(input);
 
-    const [existingCode] = await db
-      .select({ id: employee.id })
-      .from(employee)
-      .where(eq(employee.code, profile.code))
-      .limit(1);
-    if (existingCode) return { ok: false, error: `Employee code "${profile.code}" is already in use.` };
-
-    if (profile.workEmail) {
-      const [existingEmail] = await db
+    if (profile.code) {
+      const [existingCode] = await db
         .select({ id: employee.id })
         .from(employee)
-        .where(eq(employee.workEmail, profile.workEmail))
+        .where(eq(employee.code, profile.code))
         .limit(1);
-      if (existingEmail) return { ok: false, error: `Work email "${profile.workEmail}" is already in use.` };
+      if (existingCode) return { ok: false, error: `Employee code "${profile.code}" is already in use.` };
     }
+
+    const [existingEmail] = await db
+      .select({ id: employee.id })
+      .from(employee)
+      .where(eq(employee.workEmail, profile.workEmail))
+      .limit(1);
+    if (existingEmail) return { ok: false, error: `Work email "${profile.workEmail}" is already in use.` };
 
     const id = crypto.randomUUID();
     const resignationDate = profile.resignationDate || null;
 
     await db.insert(employee).values({
       id,
-      code: profile.code,
+      code: profile.code || null,
       firstName: profile.firstName,
       middleName: profile.middleName || null,
       lastName: profile.lastName,
@@ -156,7 +156,7 @@ export async function createEmployee(input: EmployeeFormInput): Promise<ActionRe
       mobileNumber: profile.mobileNumber,
       viberNumber: profile.viberNumber || null,
       personalEmail: profile.personalEmail || null,
-      workEmail: profile.workEmail || null,
+      workEmail: profile.workEmail,
       teamId: profile.teamId,
       resignationDate,
       isResigned: Boolean(resignationDate),
@@ -175,7 +175,7 @@ export async function createEmployee(input: EmployeeFormInput): Promise<ActionRe
       entityLabel: label,
       actorId: actor.id,
       actorEmail: actor.email,
-      changes: diffFields(null, { code: profile.code }, { code: "Employee code" }),
+      changes: diffFields(null, { code: profile.code || null }, { code: "Employee code" }),
     });
 
     refreshEmployeeViews(id);
@@ -194,28 +194,28 @@ export async function updateEmployee(
     const [existing] = await db.select().from(employee).where(eq(employee.id, id)).limit(1);
     if (!existing) return { ok: false, error: "That employee no longer exists." };
 
-    const [duplicateCode] = await db
-      .select({ id: employee.id })
-      .from(employee)
-      .where(and(eq(employee.code, profile.code), ne(employee.id, id)))
-      .limit(1);
-    if (duplicateCode) return { ok: false, error: `Employee code "${profile.code}" is already in use.` };
-
-    if (profile.workEmail) {
-      const [duplicateEmail] = await db
+    if (profile.code) {
+      const [duplicateCode] = await db
         .select({ id: employee.id })
         .from(employee)
-        .where(and(eq(employee.workEmail, profile.workEmail), ne(employee.id, id)))
+        .where(and(eq(employee.code, profile.code), ne(employee.id, id)))
         .limit(1);
-      if (duplicateEmail) return { ok: false, error: `Work email "${profile.workEmail}" is already in use.` };
+      if (duplicateCode) return { ok: false, error: `Employee code "${profile.code}" is already in use.` };
     }
+
+    const [duplicateEmail] = await db
+      .select({ id: employee.id })
+      .from(employee)
+      .where(and(eq(employee.workEmail, profile.workEmail), ne(employee.id, id)))
+      .limit(1);
+    if (duplicateEmail) return { ok: false, error: `Work email "${profile.workEmail}" is already in use.` };
 
     const resignationDate = profile.resignationDate || null;
 
     await db
       .update(employee)
       .set({
-        code: profile.code,
+        code: profile.code || null,
         firstName: profile.firstName,
         middleName: profile.middleName || null,
         lastName: profile.lastName,
@@ -223,7 +223,7 @@ export async function updateEmployee(
         mobileNumber: profile.mobileNumber,
         viberNumber: profile.viberNumber || null,
         personalEmail: profile.personalEmail || null,
-        workEmail: profile.workEmail || null,
+        workEmail: profile.workEmail,
         teamId: profile.teamId,
         resignationDate,
         isResigned: Boolean(resignationDate),
@@ -232,23 +232,7 @@ export async function updateEmployee(
 
     if (resignationDate) await closeOpenEmploymentAtResignation(id, resignationDate);
 
-    for (const [type, address] of [
-      ["current", currentAddress],
-      ["permanent", permanentAddress],
-    ] as const) {
-      const result = await db
-        .update(employeeAddress)
-        .set(toAddressValues(address))
-        .where(and(eq(employeeAddress.employeeId, id), eq(employeeAddress.type, type)));
-      if (result.rowCount === 0) {
-        await db.insert(employeeAddress).values({
-          id: crypto.randomUUID(),
-          employeeId: id,
-          type,
-          ...toAddressValues(address),
-        });
-      }
-    }
+    await upsertEmployeeAddresses(id, currentAddress, permanentAddress);
 
     const label = formatEmployeeName(profile);
     await recordAudit({
@@ -271,14 +255,14 @@ export async function updateEmployee(
           resignationDate: existing.resignationDate,
         },
         {
-          code: profile.code,
+          code: profile.code || null,
           firstName: profile.firstName,
           middleName: profile.middleName || null,
           lastName: profile.lastName,
           mobileNumber: profile.mobileNumber,
           viberNumber: profile.viberNumber || null,
           personalEmail: profile.personalEmail || null,
-          workEmail: profile.workEmail || null,
+          workEmail: profile.workEmail,
           resignationDate,
         },
         {
@@ -339,6 +323,36 @@ function toAddressValues(address: EmployeeFormInput["currentAddress"]) {
     barangayName: address.barangayName,
     addressLine: address.addressLine,
   };
+}
+
+/**
+ * Upserts both address rows for an employee — shared by `updateEmployee`
+ * (HR-initiated) and `approveChangeRequest`
+ * (`src/server/change-requests/actions.ts`, a self-service edit approval),
+ * since both end up writing the same Current/Permanent address pair.
+ */
+export async function upsertEmployeeAddresses(
+  employeeId: string,
+  currentAddress: EmployeeFormInput["currentAddress"],
+  permanentAddress: EmployeeFormInput["permanentAddress"],
+) {
+  for (const [type, address] of [
+    ["current", currentAddress],
+    ["permanent", permanentAddress],
+  ] as const) {
+    const result = await db
+      .update(employeeAddress)
+      .set(toAddressValues(address))
+      .where(and(eq(employeeAddress.employeeId, employeeId), eq(employeeAddress.type, type)));
+    if (result.rowCount === 0) {
+      await db.insert(employeeAddress).values({
+        id: crypto.randomUUID(),
+        employeeId,
+        type,
+        ...toAddressValues(address),
+      });
+    }
+  }
 }
 
 /* -------------------------------------------------------------------------- */

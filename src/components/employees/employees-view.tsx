@@ -255,7 +255,7 @@ export function EmployeesView({ initialFilters, canCreate, canDelete }: Employee
                         ) : null}
                       </div>
                     </TableCell>
-                    <TableCell className="font-mono text-sm">{row.code}</TableCell>
+                    <TableCell className="font-mono text-sm">{row.code || "—"}</TableCell>
                     <TableCell className="text-sm">
                       {row.latestLevel && row.latestPosition ? `${row.latestLevel} - ${row.latestPosition}` : "—"}
                     </TableCell>

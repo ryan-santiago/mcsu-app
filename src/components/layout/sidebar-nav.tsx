@@ -1,6 +1,17 @@
 "use client";
 
-import { FolderKanban, History, IdCard, LayoutDashboard, ShieldCheck, Users, Wrench, type LucideIcon } from "lucide-react";
+import {
+  FolderKanban,
+  History,
+  IdCard,
+  LayoutDashboard,
+  ListChecks,
+  Settings,
+  ShieldCheck,
+  Users,
+  Wrench,
+  type LucideIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -16,6 +27,8 @@ const NAV_ICONS: Record<NavIconKey, LucideIcon> = {
   projects: FolderKanban,
   maintenance: Wrench,
   "access-control": ShieldCheck,
+  approvals: ListChecks,
+  settings: Settings,
 };
 
 type SidebarNavProps = {

@@ -1,12 +1,14 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { RotateCcw, UserX } from "lucide-react";
+import { Link as LinkIcon, RotateCcw, UserX } from "lucide-react";
+import Link from "next/link";
 
 import { DeploymentHistoryTable } from "@/components/employees/deployment-history-table";
 import { EmployeeForm } from "@/components/employees/employee-form";
 import { EmploymentHistoryTable } from "@/components/employees/employment-history-table";
 import { EmptyState } from "@/components/layout/empty-state";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fetchEmployee } from "@/server/employees/actions";
@@ -18,9 +20,17 @@ type EmployeeDetailViewProps = {
   canUpdate: boolean;
   canDelete: boolean;
   canViewSalary: boolean;
+  /** True when this is the signed-in user's own linked Employee record. */
+  isSelf: boolean;
 };
 
-export function EmployeeDetailView({ employeeId, canUpdate, canDelete, canViewSalary }: EmployeeDetailViewProps) {
+export function EmployeeDetailView({
+  employeeId,
+  canUpdate,
+  canDelete,
+  canViewSalary,
+  isSelf,
+}: EmployeeDetailViewProps) {
   const { data, isPending, isError, refetch } = useQuery<EmployeeDetail | null>({
     queryKey: employeeQueryKey(employeeId),
     queryFn: () => fetchEmployee(employeeId),
@@ -53,6 +63,16 @@ export function EmployeeDetailView({ employeeId, canUpdate, canDelete, canViewSa
 
   return (
     <div className="space-y-6">
+      {isSelf && !canUpdate ? (
+        <Alert>
+          <LinkIcon aria-hidden />
+          <AlertTitle>This is your own record</AlertTitle>
+          <AlertDescription>
+            Edits to your own profile go through approval instead.{" "}
+            <Link href="/admin/settings">Request a change from Settings &amp; Profile</Link>.
+          </AlertDescription>
+        </Alert>
+      ) : null}
       <EmployeeForm mode="edit" employeeId={employeeId} initialData={data} readOnly={!canUpdate} />
       <EmploymentHistoryTable
         employeeId={employeeId}

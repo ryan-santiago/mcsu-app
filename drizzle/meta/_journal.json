@@ -99,6 +99,27 @@
       "when": 1786551268854,
       "tag": "0013_add_employee_resignation",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1786606664341,
+      "tag": "0014_add_employee_change_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1786623491911,
+      "tag": "0015_make_employee_code_optional",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1786624475079,
+      "tag": "0016_make_work_email_required",
+      "breakpoints": true
     }
   ]
 }

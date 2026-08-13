@@ -72,7 +72,7 @@ function toFormValues(detail: EmployeeDetail | undefined): EmployeeFormInput {
 
   return {
     profile: {
-      code: detail.code,
+      code: detail.code ?? "",
       firstName: detail.firstName,
       middleName: detail.middleName ?? "",
       lastName: detail.lastName,
@@ -134,13 +134,12 @@ export function EmployeeForm(props: EmployeeFormProps) {
   const watched = useWatch({ control: form.control });
   const completion: Record<TabKey, boolean> = {
     identity: Boolean(
-      watched.profile?.code &&
-        watched.profile?.firstName &&
+      watched.profile?.firstName &&
         watched.profile?.lastName &&
         watched.profile?.genderId &&
         watched.profile?.teamId,
     ),
-    contact: Boolean(watched.profile?.mobileNumber),
+    contact: Boolean(watched.profile?.mobileNumber && watched.profile?.workEmail),
     currentAddress: Boolean(
       watched.currentAddress?.regionCode &&
         watched.currentAddress?.cityCode &&
@@ -245,7 +244,9 @@ export function EmployeeForm(props: EmployeeFormProps) {
                   name="profile.code"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Employee code</FormLabel>
+                      <FormLabel>
+                        Employee code <span className="text-muted-foreground font-normal">(optional)</span>
+                      </FormLabel>
                       <FormControl>
                         <Input {...field} disabled={fieldDisabled} placeholder="PH00123456" />
                       </FormControl>
@@ -417,9 +418,7 @@ export function EmployeeForm(props: EmployeeFormProps) {
                   name="profile.workEmail"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>
-                        Work email <span className="text-muted-foreground font-normal">(optional)</span>
-                      </FormLabel>
+                      <FormLabel>Work email</FormLabel>
                       <FormControl>
                         <Input {...field} type="email" disabled={fieldDisabled} />
                       </FormControl>

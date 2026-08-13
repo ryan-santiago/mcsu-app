@@ -42,9 +42,10 @@ export default async function EmployeeDetailPage({ params }: EmployeeDetailPageP
       <HydrationBoundary state={dehydrate(queryClient)}>
         <EmployeeDetailView
           employeeId={id}
-          canUpdate={can(actor, "employees:edit")}
-          canDelete={can(actor, "employees:delete")}
+          canUpdate={can(actor, "employees:edit") && actor.employeeId !== id}
+          canDelete={can(actor, "employees:delete") && actor.employeeId !== id}
           canViewSalary={can(actor, "employees:read")}
+          isSelf={actor.employeeId === id}
         />
       </HydrationBoundary>
     </div>

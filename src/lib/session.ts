@@ -20,6 +20,8 @@ export type CurrentUser = Principal & {
   roleLabel: string;
   /** Latest "Level - Position" from the matching Employee record, if any. */
   position: string | null;
+  /** The Employee record matched by email, if any — used to block self-service edits through the Employee module. */
+  employeeId: string | null;
   createdAt: Date;
 };
 
@@ -65,6 +67,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     permissions: (roleRow?.permissions as Permission[] | undefined) ?? [],
     status: u.status ?? "pending",
     position: identity?.position ?? null,
+    employeeId: identity?.id ?? null,
     createdAt: u.createdAt,
   };
 });

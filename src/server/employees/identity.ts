@@ -8,6 +8,7 @@ import { formatEmployeeDisplayName } from "@/lib/employee-format";
 import { employeeIdentitySubquery } from "./queries";
 
 export type EmployeeIdentity = {
+  id: string;
   displayName: string;
   position: string | null;
 };
@@ -24,6 +25,7 @@ export async function getEmployeeIdentityByEmail(email: string): Promise<Employe
 
   const [row] = await db
     .select({
+      id: identity.id,
       firstName: identity.firstName,
       lastName: identity.lastName,
       levelName: identity.levelName,
@@ -36,6 +38,7 @@ export async function getEmployeeIdentityByEmail(email: string): Promise<Employe
   if (!row) return null;
 
   return {
+    id: row.id,
     displayName: formatEmployeeDisplayName(row),
     position: row.levelName && row.positionName ? `${row.levelName} - ${row.positionName}` : null,
   };

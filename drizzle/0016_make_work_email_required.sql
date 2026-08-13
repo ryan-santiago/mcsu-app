@@ -1,0 +1,1 @@
+ALTER TABLE "employee" ALTER COLUMN "work_email" SET NOT NULL;

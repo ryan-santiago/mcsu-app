@@ -17,9 +17,10 @@ export const phMobileOptionalSchema = z
 export const employeeCodeSchema = z
   .string()
   .trim()
-  .min(1, "Employee code is required")
   .regex(/^(?:PH)?\d{6,10}$/i, "Use a code like PH00123456 or 123456")
-  .transform((value) => value.toUpperCase());
+  .transform((value) => value.toUpperCase())
+  .optional()
+  .or(z.literal(""));
 
 export const addressSchema = z.object({
   regionCode: z.string().min(1, "Select a region"),

@@ -2,7 +2,7 @@ import type { EmployeeAddressType, EmploymentType } from "@/db/schema";
 
 export type EmployeeListRow = {
   id: string;
-  code: string;
+  code: string | null;
   firstName: string;
   middleName: string | null;
   lastName: string;
@@ -73,7 +73,7 @@ export type DeploymentRecordRow = {
 
 export type EmployeeDetail = {
   id: string;
-  code: string;
+  code: string | null;
   firstName: string;
   middleName: string | null;
   lastName: string;
@@ -82,7 +82,7 @@ export type EmployeeDetail = {
   mobileNumber: string;
   viberNumber: string | null;
   personalEmail: string | null;
-  workEmail: string | null;
+  workEmail: string;
   teamId: string | null;
   teamName: string | null;
   resignationDate: string | null;
