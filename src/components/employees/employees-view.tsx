@@ -19,9 +19,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { EmployeeCards } from "@/components/employees/employee-cards";
 import { EmptyState } from "@/components/layout/empty-state";
 import { Label } from "@/components/ui/label";
 import { PaginationFooter } from "@/components/layout/pagination-footer";
+import { ViewToggle } from "@/components/layout/view-toggle";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -42,6 +44,7 @@ import type { EmploymentType } from "@/db/schema";
 import type { ActionResult } from "@/lib/action-result";
 import { EMPLOYMENT_TYPE_LABELS, formatAddressSummary, formatEmployeeName } from "@/lib/employee-format";
 import { useDebounced } from "@/hooks/use-debounced";
+import { useViewMode } from "@/hooks/use-view-mode";
 import { cn } from "@/lib/utils";
 import { deleteEmployee, fetchEmployees, fetchLookupOptions } from "@/server/employees/actions";
 import { employeesQueryKey } from "@/server/employees/query-key";
@@ -65,6 +68,7 @@ export function EmployeesView({ initialFilters, canCreate, canDelete }: Employee
   const [employmentTypeFilter, setEmploymentTypeFilter] = React.useState(initialFilters.employmentType ?? "all");
   const [page, setPage] = React.useState(1);
   const debouncedSearch = useDebounced(search);
+  const [viewMode, setViewMode] = useViewMode();
 
   const clientOptions = useQuery({
     queryKey: ["employee-lookup-options", "client"],
@@ -175,131 +179,146 @@ export function EmployeesView({ initialFilters, canCreate, canDelete }: Employee
           </div>
         </div>
 
-        {canCreate ? (
-          <Button asChild>
-            <Link href="/employees/new">
-              <Plus className="size-4" aria-hidden />
-              Add employee
-            </Link>
-          </Button>
-        ) : null}
-      </div>
-
-      <div className="bg-card overflow-hidden rounded-xl border">
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="min-w-[220px]">Full name</TableHead>
-                <TableHead className="min-w-[120px]">Employee code</TableHead>
-                <TableHead className="min-w-[180px]">Latest role</TableHead>
-                <TableHead className="min-w-[140px]">Employment</TableHead>
-                <TableHead className="min-w-[180px]">Latest deployment</TableHead>
-                <TableHead className="min-w-[200px]">Address</TableHead>
-                <TableHead className="w-12" aria-label="Actions" />
-              </TableRow>
-            </TableHeader>
-
-            <TableBody>
-              {isPending ? (
-                Array.from({ length: 5 }).map((_, index) => (
-                  <TableRow key={index} className="hover:bg-transparent">
-                    <TableCell>
-                      <Skeleton className="h-4 w-40" />
-                    </TableCell>
-                    <TableCell>
-                      <Skeleton className="h-4 w-24" />
-                    </TableCell>
-                    <TableCell>
-                      <Skeleton className="h-4 w-32" />
-                    </TableCell>
-                    <TableCell>
-                      <Skeleton className="h-4 w-24" />
-                    </TableCell>
-                    <TableCell>
-                      <Skeleton className="h-4 w-32" />
-                    </TableCell>
-                    <TableCell>
-                      <Skeleton className="h-4 w-36" />
-                    </TableCell>
-                    <TableCell />
-                  </TableRow>
-                ))
-              ) : employees.length === 0 ? (
-                <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={7} className="p-0">
-                    <EmptyState
-                      icon={IdCard}
-                      title={search ? "No matching employees" : "No employees yet"}
-                      description={
-                        search
-                          ? "Try a different name, code or email."
-                          : "Add your first employee to start building the directory."
-                      }
-                      className="rounded-none border-0"
-                    />
-                  </TableCell>
-                </TableRow>
-              ) : (
-                employees.map((row) => (
-                  <TableRow key={row.id} className={cn(isFetching && "opacity-70")}>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Link href={`/employees/${row.id}`} className="font-medium hover:underline">
-                          {formatEmployeeName(row)}
-                        </Link>
-                        {row.isResigned ? (
-                          <Badge variant="outline" className="text-muted-foreground font-normal">
-                            Resigned
-                          </Badge>
-                        ) : null}
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-mono text-sm">{row.code || "—"}</TableCell>
-                    <TableCell className="text-sm">
-                      {row.latestLevel && row.latestPosition ? `${row.latestLevel} - ${row.latestPosition}` : "—"}
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {row.latestEmploymentType ? EMPLOYMENT_TYPE_LABELS[row.latestEmploymentType] : "—"}
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {row.latestClient && row.latestProject ? `${row.latestClient} - ${row.latestProject}` : "—"}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {formatAddressSummary(row.currentAddress)}
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            disabled={mutation.isPending}
-                            aria-label={`Actions for ${formatEmployeeName(row)}`}
-                          >
-                            <MoreHorizontal className="size-4" aria-hidden />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem asChild>
-                            <Link href={`/employees/${row.id}`}>View / edit</Link>
-                          </DropdownMenuItem>
-                          {canDelete ? (
-                            <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(row)}>
-                              <Trash2 className="size-4" aria-hidden />
-                              Remove
-                            </DropdownMenuItem>
-                          ) : null}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+        <div className="flex shrink-0 items-center gap-2">
+          <ViewToggle value={viewMode} onChange={setViewMode} />
+          {canCreate ? (
+            <Button asChild>
+              <Link href="/employees/new">
+                <Plus className="size-4" aria-hidden />
+                Add employee
+              </Link>
+            </Button>
+          ) : null}
         </div>
       </div>
+
+      {viewMode === "card" ? (
+        <EmployeeCards
+          employees={employees}
+          isPending={isPending}
+          isFetching={isFetching}
+          canDelete={canDelete}
+          actionsDisabled={mutation.isPending}
+          search={search}
+          onDelete={setDeleting}
+        />
+      ) : (
+        <div className="bg-card overflow-hidden rounded-xl border">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="min-w-[220px]">Full name</TableHead>
+                  <TableHead className="min-w-[120px]">Employee code</TableHead>
+                  <TableHead className="min-w-[180px]">Latest role</TableHead>
+                  <TableHead className="min-w-[140px]">Employment</TableHead>
+                  <TableHead className="min-w-[180px]">Latest deployment</TableHead>
+                  <TableHead className="min-w-[200px]">Address</TableHead>
+                  <TableHead className="w-12" aria-label="Actions" />
+                </TableRow>
+              </TableHeader>
+
+              <TableBody>
+                {isPending ? (
+                  Array.from({ length: 5 }).map((_, index) => (
+                    <TableRow key={index} className="hover:bg-transparent">
+                      <TableCell>
+                        <Skeleton className="h-4 w-40" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-4 w-24" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-4 w-32" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-4 w-24" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-4 w-32" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-4 w-36" />
+                      </TableCell>
+                      <TableCell />
+                    </TableRow>
+                  ))
+                ) : employees.length === 0 ? (
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={7} className="p-0">
+                      <EmptyState
+                        icon={IdCard}
+                        title={search ? "No matching employees" : "No employees yet"}
+                        description={
+                          search
+                            ? "Try a different name, code or email."
+                            : "Add your first employee to start building the directory."
+                        }
+                        className="rounded-none border-0"
+                      />
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  employees.map((row) => (
+                    <TableRow key={row.id} className={cn(isFetching && "opacity-70")}>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Link href={`/employees/${row.id}`} className="font-medium hover:underline">
+                            {formatEmployeeName(row)}
+                          </Link>
+                          {row.isResigned ? (
+                            <Badge variant="outline" className="text-muted-foreground font-normal">
+                              Resigned
+                            </Badge>
+                          ) : null}
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">{row.code || "—"}</TableCell>
+                      <TableCell className="text-sm">
+                        {row.latestLevel && row.latestPosition ? `${row.latestLevel} - ${row.latestPosition}` : "—"}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {row.latestEmploymentType ? EMPLOYMENT_TYPE_LABELS[row.latestEmploymentType] : "—"}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {row.latestClient && row.latestProject ? `${row.latestClient} - ${row.latestProject}` : "—"}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {formatAddressSummary(row.currentAddress)}
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              disabled={mutation.isPending}
+                              aria-label={`Actions for ${formatEmployeeName(row)}`}
+                            >
+                              <MoreHorizontal className="size-4" aria-hidden />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem asChild>
+                              <Link href={`/employees/${row.id}`}>View / edit</Link>
+                            </DropdownMenuItem>
+                            {canDelete ? (
+                              <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(row)}>
+                                <Trash2 className="size-4" aria-hidden />
+                                Remove
+                              </DropdownMenuItem>
+                            ) : null}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      )}
 
       {isError ? (
         <div className="border-destructive/30 bg-destructive/5 flex items-center justify-between gap-4 rounded-lg border p-4">
