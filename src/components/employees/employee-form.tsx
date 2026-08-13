@@ -92,14 +92,14 @@ function toFormValues(detail: EmployeeDetail | undefined): EmployeeFormInput {
 type TabKey = "identity" | "contact" | "currentAddress" | "permanentAddress";
 
 const TABS: { key: TabKey; label: string; description: string }[] = [
-  { key: "identity", label: "Identity", description: "The employee's code and legal name." },
-  { key: "contact", label: "Contact", description: "How to reach this employee, and which team they belong to." },
+  { key: "identity", label: "Identity", description: "The employee's code, legal name and team." },
+  { key: "contact", label: "Contact", description: "How to reach this employee." },
   { key: "currentAddress", label: "Current Address", description: "Where the employee lives today." },
   { key: "permanentAddress", label: "Permanent Address", description: "Used for records that require a fixed home address." },
 ];
 
 /** Which profile sub-fields belong to which tab, for jumping to the right one on a failed submit. */
-const IDENTITY_FIELDS = ["code", "firstName", "middleName", "lastName", "genderId"] as const;
+const IDENTITY_FIELDS = ["code", "firstName", "middleName", "lastName", "genderId", "teamId"] as const;
 
 type EmployeeFormProps =
   | { mode: "create"; readOnly?: false }
@@ -134,9 +134,13 @@ export function EmployeeForm(props: EmployeeFormProps) {
   const watched = useWatch({ control: form.control });
   const completion: Record<TabKey, boolean> = {
     identity: Boolean(
-      watched.profile?.code && watched.profile?.firstName && watched.profile?.lastName && watched.profile?.genderId,
+      watched.profile?.code &&
+        watched.profile?.firstName &&
+        watched.profile?.lastName &&
+        watched.profile?.genderId &&
+        watched.profile?.teamId,
     ),
-    contact: Boolean(watched.profile?.mobileNumber && watched.profile?.teamId),
+    contact: Boolean(watched.profile?.mobileNumber),
     currentAddress: Boolean(
       watched.currentAddress?.regionCode &&
         watched.currentAddress?.cityCode &&
@@ -321,6 +325,31 @@ export function EmployeeForm(props: EmployeeFormProps) {
 
                 <FormField
                   control={form.control}
+                  name="profile.teamId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Team</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange} disabled={fieldDisabled}>
+                        <FormControl>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select team" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {teamOptions.data?.map((option) => (
+                            <SelectItem key={option.id} value={option.id}>
+                              {option.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
                   name="profile.resignationDate"
                   render={({ field }) => (
                     <FormItem>
@@ -398,31 +427,6 @@ export function EmployeeForm(props: EmployeeFormProps) {
                     </FormItem>
                   )}
                 />
-
-                <FormField
-                  control={form.control}
-                  name="profile.teamId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Team</FormLabel>
-                      <Select value={field.value} onValueChange={field.onChange} disabled={fieldDisabled}>
-                        <FormControl>
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select team" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {teamOptions.data?.map((option) => (
-                            <SelectItem key={option.id} value={option.id}>
-                              {option.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
               </div>
             ) : null}
 
@@ -449,7 +453,10 @@ export function EmployeeForm(props: EmployeeFormProps) {
                           // see the comment on PhAddressPicker's mirror().
                           const current = form.getValues("currentAddress");
                           for (const key of ADDRESS_FIELD_KEYS) {
-                            form.setValue(`permanentAddress.${key}`, current[key]);
+                            form.setValue(`permanentAddress.${key}`, current[key], {
+                              shouldValidate: true,
+                              shouldDirty: true,
+                            });
                           }
                         }
                       }}

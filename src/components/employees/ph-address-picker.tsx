@@ -49,7 +49,7 @@ export function PhAddressPicker({ prefix, disabled, mirrorTo }: PhAddressPickerP
     if (!mirrorTo) return;
     const source = form.getValues(prefix);
     for (const key of ADDRESS_FIELD_KEYS) {
-      form.setValue(`${mirrorTo}.${key}`, source[key]);
+      form.setValue(`${mirrorTo}.${key}`, source[key], { shouldValidate: true, shouldDirty: true });
     }
   }
 

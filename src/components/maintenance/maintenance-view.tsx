@@ -35,13 +35,17 @@ type MaintenanceViewProps = {
 export function MaintenanceView({ canManage }: MaintenanceViewProps) {
   return (
     <Tabs defaultValue="client" className="gap-6">
-      <div className="overflow-x-auto">
-        <TabsList className="w-full sm:w-auto">
-          {KINDS.map((kind) => (
-            <TabsTrigger key={kind} value={kind}>
-              {LOOKUP_META[kind].label}
-            </TabsTrigger>
-          ))}
+      <div className="scrollbar-none overflow-x-auto border-b">
+        <TabsList variant="line">
+          {KINDS.map((kind) => {
+            const Icon = TAB_ICONS[kind];
+            return (
+              <TabsTrigger key={kind} value={kind} className="gap-1.5">
+                <Icon aria-hidden />
+                {LOOKUP_META[kind].label}
+              </TabsTrigger>
+            );
+          })}
         </TabsList>
       </div>
 

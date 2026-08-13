@@ -8,6 +8,7 @@ export type EmployeeListRow = {
   lastName: string;
   latestLevel: string | null;
   latestPosition: string | null;
+  latestEmploymentType: EmploymentType | null;
   latestClient: string | null;
   latestProject: string | null;
   currentAddress: { barangayName: string; cityName: string } | null;
@@ -18,6 +19,10 @@ export type EmployeeFilters = {
   search?: string;
   /** Resigned employees are excluded unless this is true. */
   includeResigned?: boolean;
+  /** Matches the employee's latest deployment's client. Omitted/"all" = no filter. */
+  clientId?: string;
+  /** Matches the employee's latest employment record's type. Omitted/"all" = no filter. */
+  employmentType?: EmploymentType;
   /** 1-indexed. */
   page?: number;
   pageSize?: number;

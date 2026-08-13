@@ -62,16 +62,20 @@ export const PERMISSIONS = [
 
 export type Permission = (typeof PERMISSIONS)[number];
 
-/** The modules the Access Control matrix has one row for, in display order. */
+/**
+ * The modules the Access Control matrix has one row for, in display order —
+ * mirrors the sidebar's nav order (`NAVIGATION` in `src/lib/navigation.ts`).
+ * `settings` has no sidebar entry yet, so it stays last.
+ */
 export const MODULES = [
   { id: "dashboard", label: "Dashboard" },
-  { id: "users", label: "Users & Access" },
   { id: "employees", label: "Employees" },
   { id: "projects", label: "Projects" },
   { id: "maintenance", label: "Maintenance" },
+  { id: "access_control", label: "Access Control" },
+  { id: "users", label: "Users & Access" },
   { id: "audit", label: "Audit Trail" },
   { id: "settings", label: "Settings" },
-  { id: "access_control", label: "Access Control" },
 ] as const;
 
 export type ModuleId = (typeof MODULES)[number]["id"];

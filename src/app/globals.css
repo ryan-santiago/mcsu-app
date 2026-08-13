@@ -244,6 +244,16 @@
   }
 }
 
+/* Keeps horizontal/vertical scroll working while hiding the browser's own scrollbar chrome. */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

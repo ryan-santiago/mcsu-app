@@ -29,17 +29,27 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import type { EmploymentType } from "@/db/schema";
 import type { ActionResult } from "@/lib/action-result";
-import { formatAddressSummary, formatEmployeeName } from "@/lib/employee-format";
+import { EMPLOYMENT_TYPE_LABELS, formatAddressSummary, formatEmployeeName } from "@/lib/employee-format";
 import { useDebounced } from "@/hooks/use-debounced";
 import { cn } from "@/lib/utils";
-import { deleteEmployee, fetchEmployees } from "@/server/employees/actions";
+import { deleteEmployee, fetchEmployees, fetchLookupOptions } from "@/server/employees/actions";
 import { employeesQueryKey } from "@/server/employees/query-key";
 import type { EmployeeFilters, EmployeeListResult, EmployeeListRow } from "@/server/employees/types";
 
 const PAGE_SIZE = 20;
+
+const EMPLOYMENT_TYPE_OPTIONS = Object.entries(EMPLOYMENT_TYPE_LABELS) as [EmploymentType, string][];
 
 type EmployeesViewProps = {
   initialFilters: EmployeeFilters;
@@ -51,17 +61,31 @@ export function EmployeesView({ initialFilters, canCreate, canDelete }: Employee
   const queryClient = useQueryClient();
   const [search, setSearch] = React.useState(initialFilters.search ?? "");
   const [includeResigned, setIncludeResigned] = React.useState(initialFilters.includeResigned ?? false);
+  const [clientFilter, setClientFilter] = React.useState(initialFilters.clientId ?? "all");
+  const [employmentTypeFilter, setEmploymentTypeFilter] = React.useState(initialFilters.employmentType ?? "all");
   const [page, setPage] = React.useState(1);
   const debouncedSearch = useDebounced(search);
 
+  const clientOptions = useQuery({
+    queryKey: ["employee-lookup-options", "client"],
+    queryFn: () => fetchLookupOptions("client"),
+  });
+
   const filters = React.useMemo<EmployeeFilters>(
-    () => ({ search: debouncedSearch || undefined, includeResigned, page, pageSize: PAGE_SIZE }),
-    [debouncedSearch, includeResigned, page],
+    () => ({
+      search: debouncedSearch || undefined,
+      includeResigned,
+      clientId: clientFilter === "all" ? undefined : clientFilter,
+      employmentType: employmentTypeFilter === "all" ? undefined : (employmentTypeFilter as EmploymentType),
+      page,
+      pageSize: PAGE_SIZE,
+    }),
+    [debouncedSearch, includeResigned, clientFilter, employmentTypeFilter, page],
   );
 
-  // A new search (or the resigned-employees toggle) should snap back to page
-  // 1 — same reasoning as Audit Trail and User Management's identical pattern.
-  const filterSignature = `${debouncedSearch}|${includeResigned}`;
+  // A new search (or any filter) should snap back to page 1 — same reasoning
+  // as Audit Trail and User Management's identical pattern.
+  const filterSignature = `${debouncedSearch}|${includeResigned}|${clientFilter}|${employmentTypeFilter}`;
   const [previousSignature, setPreviousSignature] = React.useState(filterSignature);
   if (previousSignature !== filterSignature) {
     setPreviousSignature(filterSignature);
@@ -111,6 +135,34 @@ export function EmployeesView({ initialFilters, canCreate, canDelete }: Employee
             />
           </div>
 
+          <Select value={clientFilter} onValueChange={setClientFilter}>
+            <SelectTrigger className="w-full sm:w-44">
+              <SelectValue placeholder="Client" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All clients</SelectItem>
+              {(clientOptions.data ?? []).map((option) => (
+                <SelectItem key={option.id} value={option.id}>
+                  {option.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={employmentTypeFilter} onValueChange={setEmploymentTypeFilter}>
+            <SelectTrigger className="w-full sm:w-44">
+              <SelectValue placeholder="Employment type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All employment types</SelectItem>
+              {EMPLOYMENT_TYPE_OPTIONS.map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
           <div className="flex shrink-0 items-center gap-2">
             <Checkbox
               id="show-resigned"
@@ -141,6 +193,7 @@ export function EmployeesView({ initialFilters, canCreate, canDelete }: Employee
                 <TableHead className="min-w-[220px]">Full name</TableHead>
                 <TableHead className="min-w-[120px]">Employee code</TableHead>
                 <TableHead className="min-w-[180px]">Latest role</TableHead>
+                <TableHead className="min-w-[140px]">Employment</TableHead>
                 <TableHead className="min-w-[180px]">Latest deployment</TableHead>
                 <TableHead className="min-w-[200px]">Address</TableHead>
                 <TableHead className="w-12" aria-label="Actions" />
@@ -161,6 +214,9 @@ export function EmployeesView({ initialFilters, canCreate, canDelete }: Employee
                       <Skeleton className="h-4 w-32" />
                     </TableCell>
                     <TableCell>
+                      <Skeleton className="h-4 w-24" />
+                    </TableCell>
+                    <TableCell>
                       <Skeleton className="h-4 w-32" />
                     </TableCell>
                     <TableCell>
@@ -171,7 +227,7 @@ export function EmployeesView({ initialFilters, canCreate, canDelete }: Employee
                 ))
               ) : employees.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={6} className="p-0">
+                  <TableCell colSpan={7} className="p-0">
                     <EmptyState
                       icon={IdCard}
                       title={search ? "No matching employees" : "No employees yet"}
@@ -202,6 +258,9 @@ export function EmployeesView({ initialFilters, canCreate, canDelete }: Employee
                     <TableCell className="font-mono text-sm">{row.code}</TableCell>
                     <TableCell className="text-sm">
                       {row.latestLevel && row.latestPosition ? `${row.latestLevel} - ${row.latestPosition}` : "—"}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {row.latestEmploymentType ? EMPLOYMENT_TYPE_LABELS[row.latestEmploymentType] : "—"}
                     </TableCell>
                     <TableCell className="text-sm">
                       {row.latestClient && row.latestProject ? `${row.latestClient} - ${row.latestProject}` : "—"}

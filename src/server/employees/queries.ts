@@ -22,7 +22,11 @@ import type { EmployeeDetail, EmployeeFilters, EmployeeListResult } from "./type
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 
-function buildWhere(filters: EmployeeFilters): SQL | undefined {
+function buildWhere(
+  filters: EmployeeFilters,
+  latestEmployment: ReturnType<typeof latestEmploymentSubquery>,
+  latestDeployment: ReturnType<typeof latestDeploymentSubquery>,
+): SQL | undefined {
   const clauses: SQL[] = [];
 
   const search = filters.search?.trim();
@@ -43,6 +47,14 @@ function buildWhere(filters: EmployeeFilters): SQL | undefined {
     clauses.push(eq(employee.isResigned, false));
   }
 
+  if (filters.clientId) {
+    clauses.push(eq(latestDeployment.clientId, filters.clientId));
+  }
+
+  if (filters.employmentType) {
+    clauses.push(eq(latestEmployment.employmentType, filters.employmentType));
+  }
+
   if (clauses.length === 0) return undefined;
   return clauses.length === 1 ? clauses[0] : and(...clauses);
 }
@@ -58,6 +70,7 @@ function latestEmploymentSubquery() {
       // disambiguate once this subquery is joined back in.
       levelName: sql<string>`${level.name}`.as("level_name"),
       positionName: sql<string>`${position.name}`.as("position_name"),
+      employmentType: employeeEmployment.employmentType,
     })
     .from(employeeEmployment)
     .innerJoin(level, eq(level.id, employeeEmployment.levelId))
@@ -98,6 +111,7 @@ function latestDeploymentSubquery() {
   return db
     .selectDistinctOn([employeeDeployment.employeeId], {
       employeeId: employeeDeployment.employeeId,
+      clientId: employeeDeployment.clientId,
       clientName: sql<string>`${client.name}`.as("client_name"),
       projectName: sql<string>`${project.name}`.as("project_name"),
     })
@@ -124,9 +138,9 @@ export async function listEmployees(filters: EmployeeFilters = {}): Promise<Empl
   const page = Math.max(1, filters.page ?? 1);
   const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, filters.pageSize ?? DEFAULT_PAGE_SIZE));
 
-  const where = buildWhere(filters);
   const latestEmployment = latestEmploymentSubquery();
   const latestDeployment = latestDeploymentSubquery();
+  const where = buildWhere(filters, latestEmployment, latestDeployment);
 
   const rows = await db
     .select({
@@ -137,6 +151,7 @@ export async function listEmployees(filters: EmployeeFilters = {}): Promise<Empl
       lastName: employee.lastName,
       latestLevel: latestEmployment.levelName,
       latestPosition: latestEmployment.positionName,
+      latestEmploymentType: latestEmployment.employmentType,
       latestClient: latestDeployment.clientName,
       latestProject: latestDeployment.projectName,
       currentBarangay: employeeAddress.barangayName,
@@ -155,7 +170,12 @@ export async function listEmployees(filters: EmployeeFilters = {}): Promise<Empl
     .limit(pageSize)
     .offset((page - 1) * pageSize);
 
-  const [{ value: total }] = await db.select({ value: count() }).from(employee).where(where);
+  const [{ value: total }] = await db
+    .select({ value: count() })
+    .from(employee)
+    .leftJoin(latestEmployment, eq(latestEmployment.employeeId, employee.id))
+    .leftJoin(latestDeployment, eq(latestDeployment.employeeId, employee.id))
+    .where(where);
 
   return {
     employees: rows.map((row) => ({
@@ -166,6 +186,7 @@ export async function listEmployees(filters: EmployeeFilters = {}): Promise<Empl
       lastName: row.lastName,
       latestLevel: row.latestLevel,
       latestPosition: row.latestPosition,
+      latestEmploymentType: row.latestEmploymentType,
       latestClient: row.latestClient,
       latestProject: row.latestProject,
       currentAddress:

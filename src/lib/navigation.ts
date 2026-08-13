@@ -1,5 +1,5 @@
-import type { Permission, Principal } from "@/lib/rbac";
-import { canAny } from "@/lib/rbac";
+import type { Permission, Principal } from '@/lib/rbac'
+import { canAny } from '@/lib/rbac'
 
 /**
  * Icon *names*, not component references.
@@ -10,7 +10,14 @@ import { canAny } from "@/lib/rbac";
  * runtime. Resolve the name to a component only on the client, in
  * `NAV_ICONS` (`sidebar-nav.tsx`).
  */
-export type NavIconKey = "dashboard" | "users" | "audit" | "employees" | "projects" | "maintenance" | "access-control";
+export type NavIconKey =
+	| 'dashboard'
+	| 'users'
+	| 'audit'
+	| 'employees'
+	| 'projects'
+	| 'maintenance'
+	| 'access-control'
 
 /**
  * A known sub-route of a nav item, for the topbar breadcrumb trail —
@@ -27,28 +34,28 @@ export type NavIconKey = "dashboard" | "users" | "audit" | "employees" | "projec
  * page's breadcrumb stays generic rather than showing the employee's name.
  */
 export type NavBreadcrumbChild = {
-  title: string;
-  path?: string;
-  dynamic?: boolean;
-};
+	title: string
+	path?: string
+	dynamic?: boolean
+}
 
 export type NavItem = {
-  title: string;
-  href: string;
-  icon: NavIconKey;
-  /** Item is hidden unless the user holds at least one of these. */
-  permissions?: readonly Permission[];
-  /** Match child routes too, e.g. /admin/users/123 highlights User Management. */
-  matchNested?: boolean;
-  /** Known sub-routes, deepest match wins — see `breadcrumbsFor()`. */
-  children?: readonly NavBreadcrumbChild[];
-};
+	title: string
+	href: string
+	icon: NavIconKey
+	/** Item is hidden unless the user holds at least one of these. */
+	permissions?: readonly Permission[]
+	/** Match child routes too, e.g. /admin/users/123 highlights User Management. */
+	matchNested?: boolean
+	/** Known sub-routes, deepest match wins — see `breadcrumbsFor()`. */
+	children?: readonly NavBreadcrumbChild[]
+}
 
 export type NavGroup = {
-  /** `null` renders the group without a heading — used for the top-level items. */
-  title: string | null;
-  items: readonly NavItem[];
-};
+	/** `null` renders the group without a heading — used for the top-level items. */
+	title: string | null
+	items: readonly NavItem[]
+}
 
 /**
  * The single source of truth for the sidebar. Adding a section means adding an
@@ -56,102 +63,102 @@ export type NavGroup = {
  * never drift from the page guard it points at.
  */
 export const NAVIGATION: readonly NavGroup[] = [
-  {
-    title: null,
-    items: [
-      {
-        title: "Dashboard",
-        href: "/dashboard",
-        icon: "dashboard",
-        permissions: ["dashboard:read"],
-      },
-    ],
-  },
-  {
-    title: "Workforce",
-    items: [
-      {
-        title: "Employees",
-        href: "/employees",
-        icon: "employees",
-        permissions: ["employees:read"],
-        matchNested: true,
-        children: [
-          { title: "Add employee", path: "/employees/new" },
-          { title: "View / Edit Employee", dynamic: true },
-        ],
-      },
-      {
-        title: "Projects",
-        href: "/projects",
-        icon: "projects",
-        permissions: ["projects:read"],
-        matchNested: true,
-        children: [
-          { title: "Add project", path: "/projects/new" },
-          { title: "View / Edit Project", dynamic: true },
-        ],
-      },
-    ],
-  },
-  {
-    title: "Administration",
-    items: [
-      {
-        title: "User Management",
-        href: "/admin/users",
-        icon: "users",
-        permissions: ["users:read"],
-        matchNested: true,
-      },
-      {
-        title: "Maintenance",
-        href: "/admin/maintenance",
-        icon: "maintenance",
-        permissions: ["maintenance:read"],
-        matchNested: true,
-      },
-      {
-        title: "Audit Trail",
-        href: "/admin/audit",
-        icon: "audit",
-        permissions: ["audit:read"],
-        matchNested: true,
-      },
-      {
-        title: "Access Control",
-        href: "/admin/access-control",
-        icon: "access-control",
-        permissions: ["access_control:read"],
-        matchNested: true,
-      },
-    ],
-  },
-];
+	{
+		title: null,
+		items: [
+			{
+				title: 'Dashboard',
+				href: '/dashboard',
+				icon: 'dashboard',
+				permissions: ['dashboard:read'],
+			},
+		],
+	},
+	{
+		title: 'Workforce',
+		items: [
+			{
+				title: 'Employees',
+				href: '/employees',
+				icon: 'employees',
+				permissions: ['employees:read'],
+				matchNested: true,
+				children: [
+					{ title: 'Add employee', path: '/employees/new' },
+					{ title: 'View / Edit Employee', dynamic: true },
+				],
+			},
+			{
+				title: 'Projects',
+				href: '/projects',
+				icon: 'projects',
+				permissions: ['projects:read'],
+				matchNested: true,
+				children: [
+					{ title: 'Add project', path: '/projects/new' },
+					{ title: 'View / Edit Project', dynamic: true },
+				],
+			},
+		],
+	},
+	{
+		title: 'Administration',
+		items: [
+			{
+				title: 'Maintenance',
+				href: '/admin/maintenance',
+				icon: 'maintenance',
+				permissions: ['maintenance:read'],
+				matchNested: true,
+			},
+			{
+				title: 'Access Control',
+				href: '/admin/access-control',
+				icon: 'access-control',
+				permissions: ['access_control:read'],
+				matchNested: true,
+			},
+			{
+				title: 'User Management',
+				href: '/admin/users',
+				icon: 'users',
+				permissions: ['users:read'],
+				matchNested: true,
+			},
+			{
+				title: 'Audit Trail',
+				href: '/admin/audit',
+				icon: 'audit',
+				permissions: ['audit:read'],
+				matchNested: true,
+			},
+		],
+	},
+]
 
 /** Drops items the user cannot reach, then drops groups left empty. */
 export function visibleNavigation(principal: Principal | null): NavGroup[] {
-  return NAVIGATION.map((group) => ({
-    ...group,
-    items: group.items.filter(
-      (item) => !item.permissions || canAny(principal, item.permissions),
-    ),
-  })).filter((group) => group.items.length > 0);
+	return NAVIGATION.map((group) => ({
+		...group,
+		items: group.items.filter(
+			(item) => !item.permissions || canAny(principal, item.permissions),
+		),
+	})).filter((group) => group.items.length > 0)
 }
 
 export function isNavItemActive(item: NavItem, pathname: string): boolean {
-  if (pathname === item.href) return true;
-  return Boolean(item.matchNested) && pathname.startsWith(`${item.href}/`);
+	if (pathname === item.href) return true
+	return Boolean(item.matchNested) && pathname.startsWith(`${item.href}/`)
 }
 
 /** Breadcrumb/title lookup for the topbar. */
 export function findNavItem(pathname: string): NavItem | undefined {
-  return NAVIGATION.flatMap((group) => group.items).find((item) =>
-    isNavItemActive(item, pathname),
-  );
+	return NAVIGATION.flatMap((group) => group.items).find((item) =>
+		isNavItemActive(item, pathname),
+	)
 }
 
-export type Breadcrumb = { title: string; href?: string };
+export type Breadcrumb = { title: string; href?: string }
 
 /**
  * The topbar's breadcrumb trail for a pathname — one crumb for the section
@@ -163,21 +170,23 @@ export type Breadcrumb = { title: string; href?: string };
  * its `NavItem` — nothing else in the topbar needs to change.
  */
 export function breadcrumbsFor(pathname: string): Breadcrumb[] {
-  const item = findNavItem(pathname);
-  if (!item) return [];
+	const item = findNavItem(pathname)
+	if (!item) return []
 
-  const children = item.children ?? [];
-  const exact = children.find((candidate) => candidate.path === pathname);
+	const children = item.children ?? []
+	const exact = children.find((candidate) => candidate.path === pathname)
 
-  // A `dynamic` child matches any single segment beyond the item's own href
-  // that no sibling already claims exactly — e.g. "/employees/abc123", but
-  // not "/employees/new" once that has its own exact `path` entry.
-  const remainder = pathname.slice(item.href.length).replace(/^\//, "");
-  const isSingleSegment = remainder.length > 0 && !remainder.includes("/");
-  const dynamic = isSingleSegment ? children.find((candidate) => candidate.dynamic) : undefined;
+	// A `dynamic` child matches any single segment beyond the item's own href
+	// that no sibling already claims exactly — e.g. "/employees/abc123", but
+	// not "/employees/new" once that has its own exact `path` entry.
+	const remainder = pathname.slice(item.href.length).replace(/^\//, '')
+	const isSingleSegment = remainder.length > 0 && !remainder.includes('/')
+	const dynamic = isSingleSegment
+		? children.find((candidate) => candidate.dynamic)
+		: undefined
 
-  const child = exact ?? dynamic;
-  if (!child) return [{ title: item.title }];
+	const child = exact ?? dynamic
+	if (!child) return [{ title: item.title }]
 
-  return [{ title: item.title, href: item.href }, { title: child.title }];
+	return [{ title: item.title, href: item.href }, { title: child.title }]
 }
