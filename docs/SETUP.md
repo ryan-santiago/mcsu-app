@@ -184,6 +184,26 @@ npm run dev
 Update `BETTER_AUTH_URL` to the real origin and redeploy. Auth callbacks and
 cookie domains are derived from it — a stale value breaks sign-in.
 
+### Carrying data into Production
+
+If a working database (dev/staging) already holds real Roles, Users,
+Maintenance lookups, Employees or Projects, snapshot it and replay that
+snapshot into Production instead of starting empty:
+
+```bash
+npm run db:backup              # snapshots the database DATABASE_URL currently points at
+                                # → scripts/seed-data/production-seed.json (gitignored — contains employee PII)
+DATABASE_URL="<production string>" npm run db:migrate
+DATABASE_URL="<production string>" npm run db:seed:production
+```
+
+Audit Trail and Approvals are deliberately excluded — Production starts with
+an empty audit log and no pending change requests. Every seeded user account
+gets the same password (`Questronix@2026` as of this writing — check
+`PRODUCTION_PASSWORD` in `scripts/seed-production.ts`); tell each person to
+change theirs after first sign-in. Re-running `db:seed:production` is safe —
+existing rows are left untouched.
+
 ### Preview deployments
 
 Neon **database branching** pairs well with Vercel previews: branch the database

@@ -45,6 +45,10 @@ next-env.d.ts
 # local screenshots from scripts/screenshot.mjs
 /.screenshots
 
+# data snapshot from scripts/backup-data.ts — contains employee PII
+# (mobile numbers, personal emails, home addresses), never commit it
+/scripts/seed-data
+
 # playwright
 /test-results/
 /playwright-report/
