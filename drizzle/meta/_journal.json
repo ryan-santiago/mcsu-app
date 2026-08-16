@@ -120,6 +120,20 @@
       "when": 1786624475079,
       "tag": "0016_make_work_email_required",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1786885990203,
+      "tag": "0017_add_device_inventory",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1786886105729,
+      "tag": "0018_grant_devices_permissions",
+      "breakpoints": true
     }
   ]
 }

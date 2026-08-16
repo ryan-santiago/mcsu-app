@@ -608,6 +608,78 @@ export const employeeChangeRequest = pgTable(
 );
 
 /* -------------------------------------------------------------------------- */
+/*  Device Inventory module                                                  */
+/* -------------------------------------------------------------------------- */
+
+export const deviceType = pgEnum("device_type", ["laptop", "phone"]);
+
+/**
+ * `available`/`under_repair`/`retired` are set by hand; `deployed` is also
+ * set by hand rather than derived from `deviceDeployment` — keeping Status
+ * and "who currently has it" as two independent fields avoids having to
+ * define what should happen to one when the other changes underneath it
+ * (e.g. an admin marking a device "Under Repair" while it's still assigned).
+ */
+export const deviceStatus = pgEnum("device_status", ["available", "deployed", "under_repair", "retired"]);
+
+export const device = pgTable(
+  "device",
+  {
+    id: text("id").primaryKey(),
+    deviceType: deviceType("device_type").notNull(),
+    brand: text("brand").notNull(),
+    model: text("model").notNull(),
+    os: text("os").notNull(),
+    serialNumber: text("serial_number").notNull().unique(),
+    purchaseDate: date("purchase_date").notNull(),
+    status: deviceStatus("status").default("available").notNull(),
+    remarks: text("remarks"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [uniqueIndex("device_serial_number_idx").on(table.serialNumber)],
+);
+
+/**
+ * Historical device assignment records — which employee had this device,
+ * over time. `endDate` null means "current holder", same convention as
+ * `employeeEmployment`/`employeeDeployment`. Both FKs cascade: deleting a
+ * device or an employee removes that device's own history rows, the same
+ * policy `employeeDeployment` already uses for `employeeId`.
+ */
+export const deviceDeployment = pgTable(
+  "device_deployment",
+  {
+    id: text("id").primaryKey(),
+    deviceId: text("device_id")
+      .notNull()
+      .references(() => device.id, { onDelete: "cascade" }),
+    employeeId: text("employee_id")
+      .notNull()
+      .references(() => employee.id, { onDelete: "cascade" }),
+    startDate: date("start_date").notNull(),
+    endDate: date("end_date"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("device_deployment_device_idx").on(table.deviceId),
+    index("device_deployment_device_end_idx").on(table.deviceId, table.endDate),
+    index("device_deployment_employee_idx").on(table.employeeId),
+  ],
+);
+
+/* -------------------------------------------------------------------------- */
 /*  Relations                                                                 */
 /* -------------------------------------------------------------------------- */
 
@@ -639,6 +711,7 @@ export const employeeRelations = relations(employee, ({ one, many }) => ({
   addresses: many(employeeAddress),
   employments: many(employeeEmployment),
   deployments: many(employeeDeployment),
+  deviceDeployments: many(deviceDeployment),
 }));
 
 export const employeeAddressRelations = relations(employeeAddress, ({ one }) => ({
@@ -693,6 +766,15 @@ export const projectDetailTeamRelations = relations(projectDetailTeam, ({ one })
   team: one(team, { fields: [projectDetailTeam.teamId], references: [team.id] }),
 }));
 
+export const deviceRelations = relations(device, ({ many }) => ({
+  deployments: many(deviceDeployment),
+}));
+
+export const deviceDeploymentRelations = relations(deviceDeployment, ({ one }) => ({
+  device: one(device, { fields: [deviceDeployment.deviceId], references: [device.id] }),
+  employee: one(employee, { fields: [deviceDeployment.employeeId], references: [employee.id] }),
+}));
+
 /* -------------------------------------------------------------------------- */
 /*  Inferred types                                                            */
 /* -------------------------------------------------------------------------- */
@@ -735,3 +817,10 @@ export type EmploymentType = (typeof employmentType.enumValues)[number];
 export type EmployeeChangeRequest = typeof employeeChangeRequest.$inferSelect;
 export type NewEmployeeChangeRequest = typeof employeeChangeRequest.$inferInsert;
 export type ChangeRequestStatus = (typeof changeRequestStatus.enumValues)[number];
+
+export type Device = typeof device.$inferSelect;
+export type NewDevice = typeof device.$inferInsert;
+export type DeviceType = (typeof deviceType.enumValues)[number];
+export type DeviceStatus = (typeof deviceStatus.enumValues)[number];
+export type DeviceDeployment = typeof deviceDeployment.$inferSelect;
+export type NewDeviceDeployment = typeof deviceDeployment.$inferInsert;

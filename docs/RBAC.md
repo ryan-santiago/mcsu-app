@@ -37,7 +37,7 @@ Delete/All matrix per module. No deploy required to change what a role can do.
 | Role | Rank | isSystem | Default permissions |
 | ---- | ---- | -------- | -------------------- |
 | **Administrator** | 40 | yes, **locked** | Every permission, forever — see below |
-| **Manager** | 30 | yes | Dashboard, Employees & Projects: full · Users & Access: read + edit · Maintenance/Audit Trail/Settings/Access Control: read only |
+| **Manager** | 30 | yes | Dashboard, Employees & Projects: full · Users & Access: read + edit · Maintenance/Device Inventory/Audit Trail/Settings/Access Control: read only |
 | **Engineer** | 20 | no | Dashboard: read only |
 | **Viewer** | 10 | no | Dashboard: read only |
 
@@ -80,7 +80,7 @@ deploy.
 
 ## Permissions
 
-8 modules × 4 actions = 32 permissions, all always defined (`PERMISSIONS` in
+9 modules × 4 actions = 36 permissions, all always defined (`PERMISSIONS` in
 `src/lib/rbac.ts`), whether or not every cell is wired to a real guard yet:
 
 ```
@@ -91,6 +91,8 @@ employees      read / write / edit / delete   (read includes salary visibility)
 projects       read / write / edit / delete   (edit covers S3P detail lines
                                                  and their team assignments)
 maintenance    read / write / edit / delete
+devices        read / write / edit / delete   (edit covers deployment history —
+                                                 assigning/returning a device)
 audit          read / write / edit / delete   (write/edit/delete permanently
                                                  inert — the log is immutable)
 settings       read / write / edit / delete   (screen not built yet)

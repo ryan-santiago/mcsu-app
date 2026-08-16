@@ -17,6 +17,7 @@ export type NavIconKey =
 	| 'employees'
 	| 'projects'
 	| 'maintenance'
+	| 'devices'
 	| 'access-control'
 	| 'approvals'
 	| 'settings'
@@ -112,6 +113,17 @@ export const NAVIGATION: readonly NavGroup[] = [
 				icon: 'maintenance',
 				permissions: ['maintenance:read'],
 				matchNested: true,
+			},
+			{
+				title: 'Device Inventory',
+				href: '/admin/devices',
+				icon: 'devices',
+				permissions: ['devices:read'],
+				matchNested: true,
+				children: [
+					{ title: 'Add device', path: '/admin/devices/new' },
+					{ title: 'View / Edit Device', dynamic: true },
+				],
 			},
 			{
 				title: 'Access Control',

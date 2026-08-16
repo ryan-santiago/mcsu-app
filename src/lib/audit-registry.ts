@@ -17,6 +17,7 @@ export const AUDIT_MODULES = [
   { value: "auth", label: "Authentication" },
   { value: "employees", label: "Employees" },
   { value: "projects", label: "Projects" },
+  { value: "devices", label: "Device Inventory" },
   { value: "clients", label: "Maintenance — Clients" },
   { value: "positions", label: "Maintenance — Positions" },
   { value: "levels", label: "Maintenance — Levels" },

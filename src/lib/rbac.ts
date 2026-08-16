@@ -44,6 +44,11 @@ export const PERMISSIONS = [
   "maintenance:edit",
   "maintenance:delete",
 
+  "devices:read",
+  "devices:write",
+  "devices:edit",
+  "devices:delete",
+
   "audit:read",
   "audit:write",
   "audit:edit",
@@ -72,6 +77,7 @@ export const MODULES = [
   { id: "employees", label: "Employees" },
   { id: "projects", label: "Projects" },
   { id: "maintenance", label: "Maintenance" },
+  { id: "devices", label: "Device Inventory" },
   { id: "access_control", label: "Access Control" },
   { id: "users", label: "Users & Access" },
   { id: "audit", label: "Audit Trail" },
