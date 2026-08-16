@@ -9,6 +9,7 @@ import {
   pgEnum,
   pgTable,
   text,
+  time,
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
@@ -680,6 +681,71 @@ export const deviceDeployment = pgTable(
 );
 
 /* -------------------------------------------------------------------------- */
+/*  Activity Report module                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A self-service daily log — at most one per employee per date, enforced by
+ * the unique index below (and a friendlier pre-check in the action layer).
+ * `timeIn`/`timeOut` use Postgres `time`, same string-mode convention as
+ * `date` throughout this file (reads/writes as plain `"HH:mm:ss"`, no
+ * timezone). "Day" is deliberately not a column — it's always derived from
+ * `date` for display, never stored, so it can't drift from it.
+ */
+export const activityReport = pgTable(
+  "activity_report",
+  {
+    id: text("id").primaryKey(),
+    employeeId: text("employee_id")
+      .notNull()
+      .references(() => employee.id, { onDelete: "cascade" }),
+    date: date("date").notNull(),
+    timeIn: time("time_in").notNull(),
+    timeOut: time("time_out").notNull(),
+    otHours: numeric("ot_hours", { precision: 5, scale: 2 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("activity_report_employee_date_idx").on(table.employeeId, table.date),
+    index("activity_report_date_idx").on(table.date),
+  ],
+);
+
+/**
+ * A report's activity line items — no independent lifecycle of their own,
+ * edited together with the report header in one form submit and
+ * whole-list-replaced on every save (same convention as
+ * `projectClientName`). `activityCode` is free-text the employee types
+ * (e.g. a ticket number), not a foreign key — named to avoid reading like
+ * the row's own `id`. `sortOrder` preserves entry order, since
+ * delete-all-and-reinsert doesn't otherwise guarantee read order.
+ */
+export const activityReportItem = pgTable(
+  "activity_report_item",
+  {
+    id: text("id").primaryKey(),
+    activityReportId: text("activity_report_id")
+      .notNull()
+      .references(() => activityReport.id, { onDelete: "cascade" }),
+    activityCode: text("activity_code").notNull(),
+    activityName: text("activity_name").notNull(),
+    description: text("description").notNull(),
+    issueBlockers: text("issue_blockers"),
+    sortOrder: integer("sort_order").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => [index("activity_report_item_report_idx").on(table.activityReportId)],
+);
+
+/* -------------------------------------------------------------------------- */
 /*  Relations                                                                 */
 /* -------------------------------------------------------------------------- */
 
@@ -712,6 +778,7 @@ export const employeeRelations = relations(employee, ({ one, many }) => ({
   employments: many(employeeEmployment),
   deployments: many(employeeDeployment),
   deviceDeployments: many(deviceDeployment),
+  activityReports: many(activityReport),
 }));
 
 export const employeeAddressRelations = relations(employeeAddress, ({ one }) => ({
@@ -775,6 +842,15 @@ export const deviceDeploymentRelations = relations(deviceDeployment, ({ one }) =
   employee: one(employee, { fields: [deviceDeployment.employeeId], references: [employee.id] }),
 }));
 
+export const activityReportRelations = relations(activityReport, ({ one, many }) => ({
+  employee: one(employee, { fields: [activityReport.employeeId], references: [employee.id] }),
+  items: many(activityReportItem),
+}));
+
+export const activityReportItemRelations = relations(activityReportItem, ({ one }) => ({
+  report: one(activityReport, { fields: [activityReportItem.activityReportId], references: [activityReport.id] }),
+}));
+
 /* -------------------------------------------------------------------------- */
 /*  Inferred types                                                            */
 /* -------------------------------------------------------------------------- */
@@ -824,3 +900,8 @@ export type DeviceType = (typeof deviceType.enumValues)[number];
 export type DeviceStatus = (typeof deviceStatus.enumValues)[number];
 export type DeviceDeployment = typeof deviceDeployment.$inferSelect;
 export type NewDeviceDeployment = typeof deviceDeployment.$inferInsert;
+
+export type ActivityReport = typeof activityReport.$inferSelect;
+export type NewActivityReport = typeof activityReport.$inferInsert;
+export type ActivityReportItem = typeof activityReportItem.$inferSelect;
+export type NewActivityReportItem = typeof activityReportItem.$inferInsert;

@@ -4,6 +4,14 @@ const dateFormatter = new Intl.DateTimeFormat("en-PH", {
   year: "numeric",
 });
 
+const dayNameFormatter = new Intl.DateTimeFormat("en-PH", { weekday: "long" });
+
+/** `getDayName("2026-03-05")` → "Thursday" — always derived from the date, never stored. */
+export function getDayName(date: string): string {
+  const parsed = new Date(`${date}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? "—" : dayNameFormatter.format(parsed);
+}
+
 const dateTimeFormatter = new Intl.DateTimeFormat("en-PH", {
   day: "numeric",
   month: "short",

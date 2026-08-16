@@ -134,6 +134,13 @@
       "when": 1786886105729,
       "tag": "0018_grant_devices_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1786892084449,
+      "tag": "0019_add_activity_reports",
+      "breakpoints": true
     }
   ]
 }

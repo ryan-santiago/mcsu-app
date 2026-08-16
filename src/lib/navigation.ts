@@ -16,6 +16,7 @@ export type NavIconKey =
 	| 'audit'
 	| 'employees'
 	| 'projects'
+	| 'activity-report'
 	| 'maintenance'
 	| 'devices'
 	| 'access-control'
@@ -100,6 +101,23 @@ export const NAVIGATION: readonly NavGroup[] = [
 				children: [
 					{ title: 'Add project', path: '/projects/new' },
 					{ title: 'View / Edit Project', dynamic: true },
+				],
+			},
+		],
+	},
+	{
+		title: 'Productivity',
+		items: [
+			{
+				title: 'Activity Report',
+				href: '/activity-reports',
+				icon: 'activity-report',
+				// No `permissions` — every active signed-in user reaches their own
+				// reports, same as Settings & Profile's nav item.
+				matchNested: true,
+				children: [
+					{ title: 'Add report', path: '/activity-reports/new' },
+					{ title: 'View / Edit Report', dynamic: true },
 				],
 			},
 		],

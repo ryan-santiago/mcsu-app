@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ClipboardList,
   FolderKanban,
   History,
   IdCard,
@@ -26,6 +27,7 @@ const NAV_ICONS: Record<NavIconKey, LucideIcon> = {
   audit: History,
   employees: IdCard,
   projects: FolderKanban,
+  "activity-report": ClipboardList,
   maintenance: Wrench,
   devices: Laptop,
   "access-control": ShieldCheck,
