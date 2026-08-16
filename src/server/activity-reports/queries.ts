@@ -42,6 +42,7 @@ export async function listMyActivityReports(filters: ActivityReportFilters = {})
     .select({
       id: activityReport.id,
       date: activityReport.date,
+      status: activityReport.status,
       timeIn: activityReport.timeIn,
       timeOut: activityReport.timeOut,
       otHours: activityReport.otHours,
@@ -69,8 +70,9 @@ export async function listMyActivityReports(filters: ActivityReportFilters = {})
     reports: rows.map((row) => ({
       id: row.id,
       date: row.date,
-      timeIn: formatTimeOfDay(row.timeIn),
-      timeOut: formatTimeOfDay(row.timeOut),
+      status: row.status,
+      timeIn: row.timeIn ? formatTimeOfDay(row.timeIn) : null,
+      timeOut: row.timeOut ? formatTimeOfDay(row.timeOut) : null,
       otHours: row.otHours,
       itemCount: countByReportId.get(row.id) ?? 0,
     })),
@@ -95,6 +97,7 @@ export async function getMyActivityReportById(id: string): Promise<ActivityRepor
     .select({
       id: activityReport.id,
       date: activityReport.date,
+      status: activityReport.status,
       timeIn: activityReport.timeIn,
       timeOut: activityReport.timeOut,
       otHours: activityReport.otHours,
@@ -120,8 +123,9 @@ export async function getMyActivityReportById(id: string): Promise<ActivityRepor
   return {
     id: row.id,
     date: row.date,
-    timeIn: formatTimeOfDay(row.timeIn),
-    timeOut: formatTimeOfDay(row.timeOut),
+    status: row.status,
+    timeIn: row.timeIn ? formatTimeOfDay(row.timeIn) : null,
+    timeOut: row.timeOut ? formatTimeOfDay(row.timeOut) : null,
     otHours: row.otHours,
     items,
   };

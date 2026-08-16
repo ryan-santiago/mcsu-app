@@ -1,5 +1,12 @@
 import { endOfMonth, startOfMonth, startOfToday } from "date-fns";
 
+import type { ActivityReportStatus } from "@/db/schema";
+
+export const ACTIVITY_REPORT_STATUS_LABELS: Record<ActivityReportStatus, string> = {
+  present: "Present",
+  on_leave: "On Leave",
+};
+
 /**
  * The Activity Report search's default filter — the current calendar month.
  *

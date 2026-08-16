@@ -95,17 +95,20 @@ export async function createMyActivityReport(
       .limit(1);
     if (existing) return { ok: false, error: "You already have an entry for that date — edit it instead." };
 
+    const onLeave = data.status === "on_leave";
+
     const id = crypto.randomUUID();
     await db.insert(activityReport).values({
       id,
       employeeId: actor.employeeId,
       date: data.date,
-      timeIn: data.timeIn,
-      timeOut: data.timeOut,
-      otHours: data.otHours,
+      status: data.status,
+      timeIn: onLeave ? null : data.timeIn,
+      timeOut: onLeave ? null : data.timeOut,
+      otHours: onLeave ? null : data.otHours,
     });
 
-    await replaceActivityItems(id, data.items);
+    await replaceActivityItems(id, onLeave ? [] : data.items);
 
     await recordAudit({
       module: "activity_reports",
@@ -114,7 +117,7 @@ export async function createMyActivityReport(
       entityLabel: data.date,
       actorId: actor.id,
       actorEmail: actor.email,
-      changes: diffFields(null, { date: data.date }, { date: "Date" }),
+      changes: diffFields(null, { date: data.date, status: data.status }, { date: "Date", status: "Status" }),
     });
 
     refreshMyActivityReports(id);
@@ -153,12 +156,20 @@ export async function updateMyActivityReport(
       if (duplicate) return { ok: false, error: "You already have an entry for that date — edit it instead." };
     }
 
+    const onLeave = data.status === "on_leave";
+
     await db
       .update(activityReport)
-      .set({ date: data.date, timeIn: data.timeIn, timeOut: data.timeOut, otHours: data.otHours })
+      .set({
+        date: data.date,
+        status: data.status,
+        timeIn: onLeave ? null : data.timeIn,
+        timeOut: onLeave ? null : data.timeOut,
+        otHours: onLeave ? null : data.otHours,
+      })
       .where(eq(activityReport.id, id));
 
-    await replaceActivityItems(id, data.items);
+    await replaceActivityItems(id, onLeave ? [] : data.items);
 
     await recordAudit({
       module: "activity_reports",
@@ -170,12 +181,19 @@ export async function updateMyActivityReport(
       changes: diffFields(
         {
           date: existing.date,
-          timeIn: formatTimeOfDay(existing.timeIn),
-          timeOut: formatTimeOfDay(existing.timeOut),
+          status: existing.status,
+          timeIn: existing.timeIn ? formatTimeOfDay(existing.timeIn) : null,
+          timeOut: existing.timeOut ? formatTimeOfDay(existing.timeOut) : null,
           otHours: existing.otHours,
         },
-        { date: data.date, timeIn: data.timeIn, timeOut: data.timeOut, otHours: data.otHours },
-        { date: "Date", timeIn: "Time in", timeOut: "Time out", otHours: "OT hours" },
+        {
+          date: data.date,
+          status: data.status,
+          timeIn: onLeave ? null : data.timeIn,
+          timeOut: onLeave ? null : data.timeOut,
+          otHours: onLeave ? null : data.otHours,
+        },
+        { date: "Date", status: "Status", timeIn: "Time in", timeOut: "Time out", otHours: "OT hours" },
       ),
     });
 

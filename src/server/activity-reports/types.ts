@@ -1,9 +1,12 @@
+import type { ActivityReportStatus } from "@/db/schema";
+
 export type ActivityReportRow = {
   id: string;
   date: string;
-  timeIn: string;
-  timeOut: string;
-  otHours: string;
+  status: ActivityReportStatus;
+  timeIn: string | null;
+  timeOut: string | null;
+  otHours: string | null;
   itemCount: number;
 };
 
@@ -35,8 +38,9 @@ export type ActivityReportLineItem = {
 export type ActivityReportDetail = {
   id: string;
   date: string;
-  timeIn: string;
-  timeOut: string;
-  otHours: string;
+  status: ActivityReportStatus;
+  timeIn: string | null;
+  timeOut: string | null;
+  otHours: string | null;
   items: ActivityReportLineItem[];
 };

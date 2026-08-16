@@ -684,6 +684,8 @@ export const deviceDeployment = pgTable(
 /*  Activity Report module                                                   */
 /* -------------------------------------------------------------------------- */
 
+export const activityReportStatus = pgEnum("activity_report_status", ["present", "on_leave"]);
+
 /**
  * A self-service daily log — at most one per employee per date, enforced by
  * the unique index below (and a friendlier pre-check in the action layer).
@@ -691,6 +693,8 @@ export const deviceDeployment = pgTable(
  * `date` throughout this file (reads/writes as plain `"HH:mm:ss"`, no
  * timezone). "Day" is deliberately not a column — it's always derived from
  * `date` for display, never stored, so it can't drift from it.
+ * `timeIn`/`timeOut`/`otHours` are nullable — an `on_leave` day has none of
+ * them, enforced in the action layer rather than a DB constraint.
  */
 export const activityReport = pgTable(
   "activity_report",
@@ -700,9 +704,10 @@ export const activityReport = pgTable(
       .notNull()
       .references(() => employee.id, { onDelete: "cascade" }),
     date: date("date").notNull(),
-    timeIn: time("time_in").notNull(),
-    timeOut: time("time_out").notNull(),
-    otHours: numeric("ot_hours", { precision: 5, scale: 2 }).notNull(),
+    status: activityReportStatus("status").notNull().default("present"),
+    timeIn: time("time_in"),
+    timeOut: time("time_out"),
+    otHours: numeric("ot_hours", { precision: 5, scale: 2 }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .$defaultFn(() => new Date())
       .notNull(),
@@ -903,5 +908,6 @@ export type NewDeviceDeployment = typeof deviceDeployment.$inferInsert;
 
 export type ActivityReport = typeof activityReport.$inferSelect;
 export type NewActivityReport = typeof activityReport.$inferInsert;
+export type ActivityReportStatus = (typeof activityReportStatus.enumValues)[number];
 export type ActivityReportItem = typeof activityReportItem.$inferSelect;
 export type NewActivityReportItem = typeof activityReportItem.$inferInsert;

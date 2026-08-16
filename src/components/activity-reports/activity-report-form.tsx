@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, Plus, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useFieldArray, useForm } from "react-hook-form";
+import { useFieldArray, useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -19,9 +19,12 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { ACTIVITY_REPORT_STATUS_LABELS } from "@/lib/activity-report-format";
 import {
   activityReportFormSchema,
+  activityReportStatusValues,
   type ActivityReportFormInput,
 } from "@/lib/validation/activity-report";
 import {
@@ -43,6 +46,7 @@ function toFormValues(
   if (!detail) {
     return {
       date: "",
+      status: "present",
       timeIn: "",
       timeOut: "",
       otHours: "0",
@@ -52,15 +56,21 @@ function toFormValues(
 
   return {
     date: detail.date,
-    timeIn: detail.timeIn,
-    timeOut: detail.timeOut,
-    otHours: detail.otHours,
-    items: detail.items.map((item) => ({
-      activityCode: item.activityCode,
-      activityName: item.activityName,
-      description: item.description,
-      issueBlockers: item.issueBlockers ?? "",
-    })),
+    status: detail.status,
+    timeIn: detail.timeIn ?? "",
+    timeOut: detail.timeOut ?? "",
+    otHours: detail.otHours ?? "0",
+    items:
+      detail.status === "on_leave"
+        ? []
+        : detail.items.length > 0
+          ? detail.items.map((item) => ({
+              activityCode: item.activityCode,
+              activityName: item.activityName,
+              description: item.description,
+              issueBlockers: item.issueBlockers ?? "",
+            }))
+          : [BLANK_ITEM],
   };
 }
 
@@ -85,6 +95,20 @@ export function ActivityReportForm(props: ActivityReportFormProps) {
   });
 
   const isSubmitting = form.formState.isSubmitting;
+  const status = useWatch({ control: form.control, name: "status" });
+  const isOnLeave = status === "on_leave";
+
+  function handleStatusChange(value: ActivityReportFormInput["status"]) {
+    form.setValue("status", value);
+    if (value === "on_leave") {
+      form.setValue("timeIn", "");
+      form.setValue("timeOut", "");
+      form.setValue("otHours", "");
+      form.setValue("items", []);
+    } else if (form.getValues("items").length === 0) {
+      form.setValue("items", [BLANK_ITEM]);
+    }
+  }
 
   async function onSubmit(values: ActivityReportFormInput) {
     if (props.mode === "create") {
@@ -138,18 +162,24 @@ export function ActivityReportForm(props: ActivityReportFormProps) {
 
             <FormField
               control={form.control}
-              name="otHours"
+              name="status"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>OT hours</FormLabel>
-                  <FormControl>
-                    <Input
-                      {...field}
-                      disabled={isSubmitting}
-                      inputMode="decimal"
-                      placeholder="0"
-                    />
-                  </FormControl>
+                  <FormLabel>Status</FormLabel>
+                  <Select value={field.value} onValueChange={handleStatusChange} disabled={isSubmitting}>
+                    <FormControl>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {activityReportStatusValues.map((value) => (
+                        <SelectItem key={value} value={value}>
+                          {ACTIVITY_REPORT_STATUS_LABELS[value]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <FormMessage />
                 </FormItem>
               )}
@@ -162,7 +192,7 @@ export function ActivityReportForm(props: ActivityReportFormProps) {
                 <FormItem>
                   <FormLabel>Time in</FormLabel>
                   <FormControl>
-                    <Input {...field} type="time" disabled={isSubmitting} />
+                    <Input {...field} type="time" disabled={isSubmitting || isOnLeave} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -176,7 +206,26 @@ export function ActivityReportForm(props: ActivityReportFormProps) {
                 <FormItem>
                   <FormLabel>Time out</FormLabel>
                   <FormControl>
-                    <Input {...field} type="time" disabled={isSubmitting} />
+                    <Input {...field} type="time" disabled={isSubmitting || isOnLeave} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="otHours"
+              render={({ field }) => (
+                <FormItem className="sm:col-span-2">
+                  <FormLabel>OT hours</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      disabled={isSubmitting || isOnLeave}
+                      inputMode="decimal"
+                      placeholder="0"
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -185,113 +234,119 @@ export function ActivityReportForm(props: ActivityReportFormProps) {
           </div>
         </div>
 
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold">Activities</h3>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={isSubmitting}
-              onClick={() => append(BLANK_ITEM)}
-            >
-              <Plus className="size-4" aria-hidden />
-              Add activity
-            </Button>
+        {isOnLeave ? (
+          <p className="text-muted-foreground text-sm">
+            Activities aren&apos;t required for an on-leave day.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold">Activities</h3>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={isSubmitting}
+                onClick={() => append(BLANK_ITEM)}
+              >
+                <Plus className="size-4" aria-hidden />
+                Add activity
+              </Button>
+            </div>
+
+            {form.formState.errors.items?.root ? (
+              <p className="text-destructive text-sm">
+                {form.formState.errors.items.root.message}
+              </p>
+            ) : null}
+
+            {fields.map((item, index) => (
+              <Card key={item.id}>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0">
+                  <CardTitle className="text-sm">Activity {index + 1}</CardTitle>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    disabled={isSubmitting || fields.length === 1}
+                    aria-label={`Remove activity ${index + 1}`}
+                    onClick={() => remove(index)}
+                  >
+                    <Trash2 className="size-4" aria-hidden />
+                  </Button>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <FormField
+                      control={form.control}
+                      name={`items.${index}.activityCode`}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Activity ID</FormLabel>
+                          <FormControl>
+                            <Input
+                              {...field}
+                              disabled={isSubmitting}
+                              placeholder="TASK-001 or N/A"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name={`items.${index}.activityName`}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Activity name</FormLabel>
+                          <FormControl>
+                            <Input {...field} disabled={isSubmitting} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <FormField
+                    control={form.control}
+                    name={`items.${index}.description`}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Description</FormLabel>
+                        <FormControl>
+                          <Textarea {...field} disabled={isSubmitting} rows={2} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name={`items.${index}.issueBlockers`}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          Issue / blockers{" "}
+                          <span className="text-muted-foreground font-normal">
+                            (optional)
+                          </span>
+                        </FormLabel>
+                        <FormControl>
+                          <Textarea {...field} disabled={isSubmitting} rows={2} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </CardContent>
+              </Card>
+            ))}
           </div>
-
-          {form.formState.errors.items?.root ? (
-            <p className="text-destructive text-sm">
-              {form.formState.errors.items.root.message}
-            </p>
-          ) : null}
-
-          {fields.map((item, index) => (
-            <Card key={item.id}>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0">
-                <CardTitle className="text-sm">Activity {index + 1}</CardTitle>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  disabled={isSubmitting || fields.length === 1}
-                  aria-label={`Remove activity ${index + 1}`}
-                  onClick={() => remove(index)}
-                >
-                  <Trash2 className="size-4" aria-hidden />
-                </Button>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <FormField
-                    control={form.control}
-                    name={`items.${index}.activityCode`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Activity ID</FormLabel>
-                        <FormControl>
-                          <Input
-                            {...field}
-                            disabled={isSubmitting}
-                            placeholder="TASK-001 or N/A"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name={`items.${index}.activityName`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Activity name</FormLabel>
-                        <FormControl>
-                          <Input {...field} disabled={isSubmitting} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <FormField
-                  control={form.control}
-                  name={`items.${index}.description`}
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Description</FormLabel>
-                      <FormControl>
-                        <Textarea {...field} disabled={isSubmitting} rows={2} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name={`items.${index}.issueBlockers`}
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        Issue / blockers{" "}
-                        <span className="text-muted-foreground font-normal">
-                          (optional)
-                        </span>
-                      </FormLabel>
-                      <FormControl>
-                        <Textarea {...field} disabled={isSubmitting} rows={2} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        )}
 
         <div className="flex justify-end gap-2">
           <Button type="submit" disabled={isSubmitting}>
