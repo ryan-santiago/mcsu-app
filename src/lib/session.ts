@@ -22,6 +22,8 @@ export type CurrentUser = Principal & {
   position: string | null;
   /** The Employee record matched by email, if any — used to block self-service edits through the Employee module. */
   employeeId: string | null;
+  /** The matched Employee record's team, if any — used to scope Employees module visibility for non-admins. */
+  teamId: string | null;
   createdAt: Date;
 };
 
@@ -68,6 +70,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     status: u.status ?? "pending",
     position: identity?.position ?? null,
     employeeId: identity?.id ?? null,
+    teamId: identity?.teamId ?? null,
     createdAt: u.createdAt,
   };
 });

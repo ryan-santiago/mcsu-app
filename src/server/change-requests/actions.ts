@@ -8,8 +8,8 @@ import { db } from "@/db";
 import { employee, employeeChangeRequest } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
 import { formatEmployeeName } from "@/lib/employee-format";
-import { denyReasonForActingOn } from "@/lib/rbac";
-import { AuthorizationError, authorize } from "@/lib/session";
+import { denyReasonForActingOn, hasUnrestrictedAccess } from "@/lib/rbac";
+import { AuthorizationError, authorize, type CurrentUser } from "@/lib/session";
 import type { AddressInput } from "@/lib/validation/ph";
 import type { SelfServiceProfileInput } from "@/lib/validation/employee";
 import { upsertEmployeeAddresses } from "@/server/employees/actions";
@@ -56,6 +56,18 @@ function checkReviewerOutranksRequester(
   if (denial) throw new AuthorizationError(denial);
 }
 
+/**
+ * Mirrors `assertEmployeeInScope` in `src/server/employees/actions.ts`: a
+ * non-admin reviewing a request about an employee outside their own team is
+ * treated the same as one lacking the permission at all.
+ */
+function assertRequestInScope(actor: CurrentUser, employeeTeamId: string | null): void {
+  if (hasUnrestrictedAccess(actor)) return;
+  if (!actor.teamId || employeeTeamId !== actor.teamId) {
+    throw new AuthorizationError("You can only review change requests for your own team.");
+  }
+}
+
 /** Server-action entry point for the Approvals table's TanStack Query `queryFn`. */
 export async function fetchChangeRequests(filters: ChangeRequestFilters): Promise<ChangeRequestListResult> {
   return listChangeRequests(filters);
@@ -70,6 +82,7 @@ export async function approveChangeRequest(input: { id: string }): Promise<Actio
     if (!request) return { ok: false, error: "That request no longer exists." };
     if (request.status !== "pending") return { ok: false, error: "This request has already been reviewed." };
 
+    assertRequestInScope(actor, request.employeeTeamId);
     checkReviewerOutranksRequester(actor, request.requesterId, request.requesterRank, request.requesterRoleLabel);
 
     const profile = request.proposedProfile as SelfServiceProfileInput;
@@ -133,6 +146,7 @@ export async function rejectChangeRequest(input: { id: string; note?: string }):
     if (!request) return { ok: false, error: "That request no longer exists." };
     if (request.status !== "pending") return { ok: false, error: "This request has already been reviewed." };
 
+    assertRequestInScope(actor, request.employeeTeamId);
     checkReviewerOutranksRequester(actor, request.requesterId, request.requesterRank, request.requesterRoleLabel);
 
     await db

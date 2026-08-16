@@ -15,6 +15,7 @@ import {
   project,
   team,
 } from "@/db/schema";
+import { hasUnrestrictedAccess } from "@/lib/rbac";
 import { authorize } from "@/lib/session";
 
 import type { EmployeeDetail, EmployeeFilters, EmployeeListResult } from "./types";
@@ -26,8 +27,14 @@ function buildWhere(
   filters: EmployeeFilters,
   latestEmployment: ReturnType<typeof latestEmploymentSubquery>,
   latestDeployment: ReturnType<typeof latestDeploymentSubquery>,
+  /** Non-null when the caller isn't `hasUnrestrictedAccess()` — narrows the result to their own team. */
+  scopeTeamId: string | null,
 ): SQL | undefined {
   const clauses: SQL[] = [];
+
+  if (scopeTeamId) {
+    clauses.push(eq(employee.teamId, scopeTeamId));
+  }
 
   const search = filters.search?.trim();
   if (search) {
@@ -99,6 +106,7 @@ export function employeeIdentitySubquery() {
       firstName: employee.firstName,
       middleName: employee.middleName,
       lastName: employee.lastName,
+      teamId: employee.teamId,
       levelName: latestEmployment.levelName,
       positionName: latestEmployment.positionName,
     })
@@ -134,14 +142,19 @@ function latestDeploymentSubquery() {
  * Paginated, same shape as `listUsers`/`listAuditEntries`.
  */
 export async function listEmployees(filters: EmployeeFilters = {}): Promise<EmployeeListResult> {
-  await authorize("employees:read");
+  const actor = await authorize("employees:read");
 
   const page = Math.max(1, filters.page ?? 1);
   const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, filters.pageSize ?? DEFAULT_PAGE_SIZE));
 
+  // Non-admins with no resolved team see nothing rather than everyone.
+  if (!hasUnrestrictedAccess(actor) && !actor.teamId) {
+    return { employees: [], total: 0, page, pageSize };
+  }
+
   const latestEmployment = latestEmploymentSubquery();
   const latestDeployment = latestDeploymentSubquery();
-  const where = buildWhere(filters, latestEmployment, latestDeployment);
+  const where = buildWhere(filters, latestEmployment, latestDeployment, hasUnrestrictedAccess(actor) ? null : actor.teamId);
 
   const rows = await db
     .select({
@@ -203,8 +216,11 @@ export async function listEmployees(filters: EmployeeFilters = {}): Promise<Empl
 }
 
 export async function getEmployeeById(id: string): Promise<EmployeeDetail | null> {
-  await authorize("employees:read");
-  return loadEmployeeDetail(id);
+  const actor = await authorize("employees:read");
+  const detail = await loadEmployeeDetail(id);
+  if (!detail) return null;
+  if (!hasUnrestrictedAccess(actor) && detail.teamId !== actor.teamId) return null;
+  return detail;
 }
 
 /**

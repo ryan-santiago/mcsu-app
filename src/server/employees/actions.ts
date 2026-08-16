@@ -9,7 +9,8 @@ import { employee, employeeAddress, employeeDeployment, employeeEmployment, proj
 import type { ActionResult } from "@/lib/action-result";
 import { diffFields, recordAudit } from "@/lib/audit";
 import { formatEmployeeName } from "@/lib/employee-format";
-import { AuthorizationError, authorize } from "@/lib/session";
+import { hasUnrestrictedAccess } from "@/lib/rbac";
+import { AuthorizationError, authorize, type CurrentUser } from "@/lib/session";
 import {
   deploymentRecordSchema,
   employeeFormSchema,
@@ -53,6 +54,20 @@ async function loadEmployeeLabel(employeeId: string): Promise<string | null> {
     .where(eq(employee.id, employeeId))
     .limit(1);
   return row ? formatEmployeeName(row) : null;
+}
+
+/**
+ * Mirrors the read-side scoping in `listEmployees`/`getEmployeeById`
+ * (`./queries.ts`) for mutations: a non-admin acting on an employee outside
+ * their own team is treated the same as one lacking the permission at all.
+ */
+async function assertEmployeeInScope(actor: CurrentUser, employeeId: string): Promise<void> {
+  if (hasUnrestrictedAccess(actor)) return;
+
+  const [row] = await db.select({ teamId: employee.teamId }).from(employee).where(eq(employee.id, employeeId)).limit(1);
+  if (!actor.teamId || row?.teamId !== actor.teamId) {
+    throw new AuthorizationError("You can only manage employees on your own team.");
+  }
 }
 
 /**
@@ -127,6 +142,10 @@ export async function createEmployee(input: EmployeeFormInput): Promise<ActionRe
     const actor = await authorize("employees:write");
     const { profile, currentAddress, permanentAddress } = employeeFormSchema.parse(input);
 
+    if (!hasUnrestrictedAccess(actor) && profile.teamId !== actor.teamId) {
+      return { ok: false, error: "You can only add employees to your own team." };
+    }
+
     if (profile.code) {
       const [existingCode] = await db
         .select({ id: employee.id })
@@ -190,6 +209,11 @@ export async function updateEmployee(
     const actor = await authorize("employees:edit");
     const id = idSchema.parse(input.id);
     const { profile, currentAddress, permanentAddress } = employeeFormSchema.parse(input);
+
+    await assertEmployeeInScope(actor, id);
+    if (!hasUnrestrictedAccess(actor) && profile.teamId !== actor.teamId) {
+      return { ok: false, error: "You can only reassign employees within your own team." };
+    }
 
     const [existing] = await db.select().from(employee).where(eq(employee.id, id)).limit(1);
     if (!existing) return { ok: false, error: "That employee no longer exists." };
@@ -288,6 +312,7 @@ export async function deleteEmployee(input: { id: string }): Promise<ActionResul
   return run(async () => {
     const actor = await authorize("employees:delete");
     const id = idSchema.parse(input.id);
+    await assertEmployeeInScope(actor, id);
 
     const [target] = await db.select().from(employee).where(eq(employee.id, id)).limit(1);
     if (!target) return { ok: false, error: "That employee no longer exists." };
@@ -366,6 +391,7 @@ export async function addEmploymentRecord(
     const actor = await authorize("employees:edit");
     const employeeId = idSchema.parse(input.employeeId);
     const data = employmentRecordSchema.parse(input);
+    await assertEmployeeInScope(actor, employeeId);
 
     const label = await loadEmployeeLabel(employeeId);
     if (!label) return { ok: false, error: "That employee no longer exists." };
@@ -413,6 +439,7 @@ export async function updateEmploymentRecord(
     const id = idSchema.parse(input.id);
     const employeeId = idSchema.parse(input.employeeId);
     const data = employmentRecordSchema.parse(input);
+    await assertEmployeeInScope(actor, employeeId);
 
     const [existing] = await db
       .select()
@@ -464,6 +491,7 @@ export async function deleteEmploymentRecord(input: { id: string; employeeId: st
     const actor = await authorize("employees:delete");
     const id = idSchema.parse(input.id);
     const employeeId = idSchema.parse(input.employeeId);
+    await assertEmployeeInScope(actor, employeeId);
 
     const [existing] = await db
       .select()
@@ -502,6 +530,7 @@ export async function addDeploymentRecord(
     const actor = await authorize("employees:edit");
     const employeeId = idSchema.parse(input.employeeId);
     const data = deploymentRecordSchema.parse(input);
+    await assertEmployeeInScope(actor, employeeId);
 
     const label = await loadEmployeeLabel(employeeId);
     if (!label) return { ok: false, error: "That employee no longer exists." };
@@ -548,6 +577,7 @@ export async function updateDeploymentRecord(
     const id = idSchema.parse(input.id);
     const employeeId = idSchema.parse(input.employeeId);
     const data = deploymentRecordSchema.parse(input);
+    await assertEmployeeInScope(actor, employeeId);
 
     const [existing] = await db
       .select()
@@ -606,6 +636,7 @@ export async function deleteDeploymentRecord(input: { id: string; employeeId: st
     const actor = await authorize("employees:delete");
     const id = idSchema.parse(input.id);
     const employeeId = idSchema.parse(input.employeeId);
+    await assertEmployeeInScope(actor, employeeId);
 
     const [existing] = await db
       .select()

@@ -11,6 +11,7 @@ export type EmployeeIdentity = {
   id: string;
   displayName: string;
   position: string | null;
+  teamId: string | null;
 };
 
 /**
@@ -28,6 +29,7 @@ export async function getEmployeeIdentityByEmail(email: string): Promise<Employe
       id: identity.id,
       firstName: identity.firstName,
       lastName: identity.lastName,
+      teamId: identity.teamId,
       levelName: identity.levelName,
       positionName: identity.positionName,
     })
@@ -41,5 +43,6 @@ export async function getEmployeeIdentityByEmail(email: string): Promise<Employe
     id: row.id,
     displayName: formatEmployeeDisplayName(row),
     position: row.levelName && row.positionName ? `${row.levelName} - ${row.positionName}` : null,
+    teamId: row.teamId,
   };
 }

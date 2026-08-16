@@ -182,6 +182,16 @@ export function canActOn(actor: Pick<Principal, "id" | "rank">, target: RankedTa
 }
 
 /**
+ * Whether the principal's admin bypass extends to row-level scoping, not
+ * just permission checks — e.g. Employees restricting non-admins to their
+ * own team. Only `admin` qualifies today, mirroring the bypass `can()`
+ * already grants it.
+ */
+export function hasUnrestrictedAccess(principal: Pick<Principal, "roleId"> | null | undefined): boolean {
+  return !!principal && principal.roleId === "admin";
+}
+
+/**
  * A user may only grant a role at or below their own rank — otherwise a
  * manager could promote a colleague to administrator and inherit that access.
  * `allRoles` is fetched server-side (`listRoleOptions()` in

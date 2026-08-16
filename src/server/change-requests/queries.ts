@@ -1,11 +1,12 @@
 import "server-only";
 
-import { count, desc, eq, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
 import { db } from "@/db";
 import { employee, employeeChangeRequest, role, user, type AuditChange, type ChangeRequestStatus } from "@/db/schema";
 import { formatEmployeeName } from "@/lib/employee-format";
+import { hasUnrestrictedAccess } from "@/lib/rbac";
 import { authorize } from "@/lib/session";
 
 import type { ChangeRequestCounts, ChangeRequestFilters, ChangeRequestListResult, ChangeRequestRow } from "./types";
@@ -16,11 +17,23 @@ const STATUSES: ChangeRequestStatus[] = ["pending", "approved", "rejected"];
 
 const reviewer = alias(user, "reviewer");
 
-function buildWhere(filters: ChangeRequestFilters): SQL | undefined {
-  if (filters.status && filters.status !== "all") {
-    return eq(employeeChangeRequest.status, filters.status);
+function buildWhere(
+  filters: ChangeRequestFilters,
+  /** Non-null when the caller isn't `hasUnrestrictedAccess()` — narrows to requests about their own team. */
+  scopeTeamId: string | null,
+): SQL | undefined {
+  const clauses: SQL[] = [];
+
+  if (scopeTeamId) {
+    clauses.push(eq(employee.teamId, scopeTeamId));
   }
-  return undefined;
+
+  if (filters.status && filters.status !== "all") {
+    clauses.push(eq(employeeChangeRequest.status, filters.status));
+  }
+
+  if (clauses.length === 0) return undefined;
+  return clauses.length === 1 ? clauses[0] : and(...clauses);
 }
 
 function selection() {
@@ -93,11 +106,18 @@ function toRow(row: {
  * `listUsers`'s `counts` in `src/server/users/queries.ts`).
  */
 export async function listChangeRequests(filters: ChangeRequestFilters = {}): Promise<ChangeRequestListResult> {
-  await authorize("employees:edit");
+  const actor = await authorize("employees:edit");
 
   const page = Math.max(1, filters.page ?? 1);
   const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, filters.pageSize ?? DEFAULT_PAGE_SIZE));
-  const where = buildWhere(filters);
+
+  // Non-admins with no resolved team see nothing rather than everyone's requests.
+  if (!hasUnrestrictedAccess(actor) && !actor.teamId) {
+    return { requests: [], counts: { pending: 0, approved: 0, rejected: 0 }, total: 0, page, pageSize };
+  }
+
+  const scopeTeamId = hasUnrestrictedAccess(actor) ? null : actor.teamId;
+  const where = buildWhere(filters, scopeTeamId);
 
   const rows = await db
     .select(selection())
@@ -111,11 +131,17 @@ export async function listChangeRequests(filters: ChangeRequestFilters = {}): Pr
     .limit(pageSize)
     .offset((page - 1) * pageSize);
 
-  const [{ value: total }] = await db.select({ value: count() }).from(employeeChangeRequest).where(where);
+  const [{ value: total }] = await db
+    .select({ value: count() })
+    .from(employeeChangeRequest)
+    .innerJoin(employee, eq(employee.id, employeeChangeRequest.employeeId))
+    .where(where);
 
   const grouped = await db
     .select({ status: employeeChangeRequest.status, total: count() })
     .from(employeeChangeRequest)
+    .innerJoin(employee, eq(employee.id, employeeChangeRequest.employeeId))
+    .where(scopeTeamId ? eq(employee.teamId, scopeTeamId) : undefined)
     .groupBy(employeeChangeRequest.status);
 
   const counts: ChangeRequestCounts = { pending: 0, approved: 0, rejected: 0 };
@@ -147,6 +173,7 @@ export async function getChangeRequestById(id: string) {
       employeeFirstName: employee.firstName,
       employeeMiddleName: employee.middleName,
       employeeLastName: employee.lastName,
+      employeeTeamId: employee.teamId,
     })
     .from(employeeChangeRequest)
     .innerJoin(employee, eq(employee.id, employeeChangeRequest.employeeId))
