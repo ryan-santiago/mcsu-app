@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
-import { CalendarClock, MoreHorizontal, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { CalendarClock, Download, MoreHorizontal, Plus, RotateCcw, Trash2 } from "lucide-react";
 import Link from "next/link";
 import * as React from "react";
 import type { DateRange } from "react-day-picker";
@@ -21,6 +21,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { ActivityReportStatusBadge } from "@/components/activity-reports/activity-report-badges";
+import { ExportActivityReportDialog } from "@/components/activity-reports/export-activity-report-dialog";
 import { EmptyState } from "@/components/layout/empty-state";
 import { PaginationFooter } from "@/components/layout/pagination-footer";
 import {
@@ -80,6 +81,7 @@ export function ActivityReportsView({ initialFilters }: ActivityReportsViewProps
   });
 
   const [deleting, setDeleting] = React.useState<ActivityReportRow | null>(null);
+  const [exportOpen, setExportOpen] = React.useState(false);
 
   const mutation = useMutation({
     mutationFn: async (task: () => Promise<ActionResult>) => task(),
@@ -103,13 +105,21 @@ export function ActivityReportsView({ initialFilters }: ActivityReportsViewProps
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <DateRangePicker value={range} onChange={setRange} />
 
-        <Button asChild className="shrink-0">
-          <Link href="/activity-reports/new">
-            <Plus className="size-4" aria-hidden />
-            Add report
-          </Link>
-        </Button>
+        <div className="flex shrink-0 gap-2">
+          <Button variant="outline" onClick={() => setExportOpen(true)}>
+            <Download className="size-4" aria-hidden />
+            Export report
+          </Button>
+          <Button asChild>
+            <Link href="/activity-reports/new">
+              <Plus className="size-4" aria-hidden />
+              Add report
+            </Link>
+          </Button>
+        </div>
       </div>
+
+      <ExportActivityReportDialog open={exportOpen} onOpenChange={setExportOpen} />
 
       <div className="bg-card overflow-hidden rounded-xl border">
         <div className="overflow-x-auto">

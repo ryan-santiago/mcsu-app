@@ -9,16 +9,29 @@ import { activityReport, activityReportItem } from "@/db/schema";
 import type { ActionResult } from "@/lib/action-result";
 import { formatTimeOfDay } from "@/lib/activity-report-format";
 import { diffFields, recordAudit } from "@/lib/audit";
+import { formatEmployeeDisplayName } from "@/lib/employee-format";
 import { AuthorizationError } from "@/lib/session";
 import {
+  activityReportExportInputSchema,
   activityReportFormSchema,
   type ActivityLineItemInput,
+  type ActivityReportExportInput,
   type ActivityReportFormInput,
 } from "@/lib/validation/activity-report";
-import { requireActiveUser } from "@/server/settings/queries";
+import { getMyEmployeeDetail, requireActiveUser } from "@/server/settings/queries";
 
-import { getMyActivityReportById, listMyActivityReports } from "./queries";
-import type { ActivityReportDetail, ActivityReportFilters, ActivityReportListResult } from "./types";
+import {
+  getMyActivityReportById,
+  listActiveClientOptions,
+  listMyActivityReports,
+  listMyActivityReportsForExport,
+} from "./queries";
+import type {
+  ActivityReportDetail,
+  ActivityReportExportDefaults,
+  ActivityReportFilters,
+  ActivityReportListResult,
+} from "./types";
 
 const idSchema = z.string().min(1, "A report must be selected");
 
@@ -73,6 +86,45 @@ export async function fetchMyActivityReports(filters: ActivityReportFilters): Pr
 
 export async function fetchMyActivityReport(id: string): Promise<ActivityReportDetail | null> {
   return getMyActivityReportById(id);
+}
+
+/** Prefill data for the Export Report dialog — employee name, active clients, and the latest deployment's client/project as defaults. */
+export async function fetchActivityReportExportDefaults(): Promise<ActionResult<ActivityReportExportDefaults>> {
+  return run(async () => {
+    const [employee, clientOptions] = await Promise.all([getMyEmployeeDetail(), listActiveClientOptions()]);
+    if (!employee) return { ok: false, error: "Your account has no linked employee record." };
+
+    const latestDeployment = employee.deployments[0] ?? null;
+
+    return {
+      ok: true,
+      data: {
+        employeeName: formatEmployeeDisplayName(employee),
+        clientOptions,
+        defaultClientName: latestDeployment?.clientName ?? "",
+        defaultProjectName: latestDeployment?.projectName ?? "",
+      },
+      message: "",
+    };
+  });
+}
+
+/** The signed-in user's activity reports (with line items) for one calendar month — the Export Report PDF's data source. */
+export async function fetchActivityReportExportData(
+  input: ActivityReportExportInput,
+): Promise<ActionResult<{ reports: ActivityReportDetail[] }>> {
+  return run(async () => {
+    const actor = await requireActiveUser();
+    if (!actor.employeeId) return { ok: false, error: "Your account has no linked employee record." };
+
+    const { month, year } = activityReportExportInputSchema.parse(input);
+    const from = `${year}-${String(month).padStart(2, "0")}-01`;
+    const lastDay = new Date(year, month, 0).getDate();
+    const to = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+
+    const reports = await listMyActivityReportsForExport(from, to);
+    return { ok: true, data: { reports }, message: "" };
+  });
 }
 
 /* -------------------------------------------------------------------------- */

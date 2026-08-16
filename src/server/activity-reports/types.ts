@@ -44,3 +44,16 @@ export type ActivityReportDetail = {
   otHours: string | null;
   items: ActivityReportLineItem[];
 };
+
+export type ClientOption = {
+  id: string;
+  name: string;
+};
+
+/** Prefilled state for the Export Report dialog — employee identity and the client/project pickers' defaults. */
+export type ActivityReportExportDefaults = {
+  employeeName: string;
+  clientOptions: ClientOption[];
+  defaultClientName: string;
+  defaultProjectName: string;
+};
