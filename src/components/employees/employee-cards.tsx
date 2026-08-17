@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EMPLOYMENT_TYPE_LABELS, formatAddressSummary, formatEmployeeName } from "@/lib/employee-format";
+import { formatAddressSummary, formatEmployeeName } from "@/lib/employee-format";
 import { cn } from "@/lib/utils";
 import type { EmployeeListRow } from "@/server/employees/types";
 
@@ -127,10 +127,7 @@ export function EmployeeCards({
               label="Role"
               value={row.latestLevel && row.latestPosition ? `${row.latestLevel} - ${row.latestPosition}` : "—"}
             />
-            <Field
-              label="Employment"
-              value={row.latestEmploymentType ? EMPLOYMENT_TYPE_LABELS[row.latestEmploymentType] : "—"}
-            />
+            <Field label="Employment" value={row.latestEmploymentType ?? "—"} />
             <Field
               label="Deployment"
               value={row.latestClient && row.latestProject ? `${row.latestClient} - ${row.latestProject}` : "—"}

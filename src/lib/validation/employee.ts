@@ -70,14 +70,7 @@ export const employmentRecordSchema = z
     transportationAllowance: allowanceSchema,
     levelId: z.string().min(1, "Select a level"),
     positionId: z.string().min(1, "Select a position"),
-    employmentType: z.enum([
-      "regular",
-      "probationary",
-      "contractual",
-      "project_based",
-      "consultant",
-      "intern",
-    ]),
+    employmentTypeId: z.string().min(1, "Select an employment type"),
     startDate: z.string().min(1, "Select a start date"),
     endDate: z.string().optional().or(z.literal("")),
   })

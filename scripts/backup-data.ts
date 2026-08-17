@@ -40,6 +40,7 @@ async function main() {
     client: await db.select().from(schema.client),
     position: await db.select().from(schema.position),
     level: await db.select().from(schema.level),
+    employmentType: await db.select().from(schema.employmentType),
     team: await db.select().from(schema.team),
     salesRepresentative: await db.select().from(schema.salesRepresentative),
     solutionsManager: await db.select().from(schema.solutionsManager),

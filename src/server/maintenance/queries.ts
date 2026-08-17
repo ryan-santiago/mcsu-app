@@ -3,7 +3,17 @@ import "server-only";
 import { asc, eq } from "drizzle-orm";
 
 import { db } from "@/db";
-import { client, engagementType, gender, level, position, salesRepresentative, solutionsManager, team } from "@/db/schema";
+import {
+  client,
+  employmentType,
+  engagementType,
+  gender,
+  level,
+  position,
+  salesRepresentative,
+  solutionsManager,
+  team,
+} from "@/db/schema";
 import { authorize } from "@/lib/session";
 
 import type { LookupKind, LookupOption, LookupRow } from "./types";
@@ -27,6 +37,8 @@ function tableFor(kind: LookupKind) {
       return solutionsManager;
     case "engagement_type":
       return engagementType;
+    case "employment_type":
+      return employmentType;
   }
 }
 

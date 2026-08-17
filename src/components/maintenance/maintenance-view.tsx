@@ -1,6 +1,16 @@
 "use client";
 
-import { Briefcase, Building2, Contact, Handshake, TrendingUp, UserCog, UsersRound, VenetianMask } from "lucide-react";
+import {
+  Briefcase,
+  Building2,
+  Contact,
+  FileSignature,
+  Handshake,
+  TrendingUp,
+  UserCog,
+  UsersRound,
+  VenetianMask,
+} from "lucide-react";
 
 import { LookupTable } from "@/components/maintenance/lookup-table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -15,6 +25,7 @@ const TAB_ICONS = {
   sales_representative: Contact,
   solutions_manager: UserCog,
   engagement_type: Handshake,
+  employment_type: FileSignature,
 } as const;
 
 const KINDS: LookupKind[] = [
@@ -26,6 +37,7 @@ const KINDS: LookupKind[] = [
   "sales_representative",
   "solutions_manager",
   "engagement_type",
+  "employment_type",
 ];
 
 type MaintenanceViewProps = {

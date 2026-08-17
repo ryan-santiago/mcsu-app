@@ -407,7 +407,7 @@ export async function addEmploymentRecord(
       transportationAllowance: data.transportationAllowance,
       levelId: data.levelId,
       positionId: data.positionId,
-      employmentType: data.employmentType,
+      employmentTypeId: data.employmentTypeId,
       startDate: data.startDate,
       endDate,
     });
@@ -463,7 +463,7 @@ export async function updateEmploymentRecord(
         transportationAllowance: data.transportationAllowance,
         levelId: data.levelId,
         positionId: data.positionId,
-        employmentType: data.employmentType,
+        employmentTypeId: data.employmentTypeId,
         startDate: data.startDate,
         endDate,
       })

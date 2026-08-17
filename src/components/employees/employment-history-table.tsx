@@ -42,13 +42,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { ActionResult } from "@/lib/action-result";
-import {
-  EMPLOYMENT_TYPE_LABELS,
-  formatPeriod,
-  formatSalary,
-  sortHistoryRecords,
-  type HistorySortOrder,
-} from "@/lib/employee-format";
+import { formatPeriod, formatSalary, sortHistoryRecords, type HistorySortOrder } from "@/lib/employee-format";
 import { employmentRecordSchema, type EmploymentRecordInput } from "@/lib/validation/employee";
 import { addEmploymentRecord, deleteEmploymentRecord, fetchLookupOptions, updateEmploymentRecord } from "@/server/employees/actions";
 import type { EmploymentRecordRow } from "@/server/employees/types";
@@ -147,7 +141,7 @@ export function EmploymentHistoryTable({
                     <TableCell className="whitespace-nowrap">{formatPeriod(record.startDate, record.endDate)}</TableCell>
                     <TableCell>{record.levelName}</TableCell>
                     <TableCell>{record.positionName}</TableCell>
-                    <TableCell>{EMPLOYMENT_TYPE_LABELS[record.employmentType]}</TableCell>
+                    <TableCell>{record.employmentTypeName}</TableCell>
                     {canViewSalary ? <TableCell className="tabular-nums">{formatSalary(record.salary)}</TableCell> : null}
                     {canViewSalary ? (
                       <TableCell className="tabular-nums">{formatSalary(record.communicationAllowance)}</TableCell>
@@ -283,6 +277,10 @@ function EmploymentRecordForm({
     queryKey: ["employee-lookup-options", "position"],
     queryFn: () => fetchLookupOptions("position"),
   });
+  const employmentTypeOptions = useQuery({
+    queryKey: ["employee-lookup-options", "employment_type"],
+    queryFn: () => fetchLookupOptions("employment_type"),
+  });
 
   const form = useForm<EmploymentRecordInput>({
     resolver: zodResolver(employmentRecordSchema),
@@ -292,7 +290,7 @@ function EmploymentRecordForm({
       transportationAllowance: record?.transportationAllowance ?? "0",
       levelId: record?.levelId ?? "",
       positionId: record?.positionId ?? "",
-      employmentType: record?.employmentType ?? "regular",
+      employmentTypeId: record?.employmentTypeId ?? "",
       startDate: record?.startDate ?? "",
       endDate: record?.endDate ?? "",
     },
@@ -360,20 +358,20 @@ function EmploymentRecordForm({
 
             <FormField
               control={form.control}
-              name="employmentType"
+              name="employmentTypeId"
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Employment type</FormLabel>
                   <Select value={field.value} onValueChange={field.onChange} disabled={pending}>
                     <FormControl>
                       <SelectTrigger className="w-full">
-                        <SelectValue />
+                        <SelectValue placeholder="Select employment type" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {Object.entries(EMPLOYMENT_TYPE_LABELS).map(([value, label]) => (
-                        <SelectItem key={value} value={value}>
-                          {label}
+                      {employmentTypeOptions.data?.map((option) => (
+                        <SelectItem key={option.id} value={option.id}>
+                          {option.name}
                         </SelectItem>
                       ))}
                     </SelectContent>

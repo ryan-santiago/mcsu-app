@@ -1,4 +1,4 @@
-import type { EmployeeAddressType, EmploymentType } from "@/db/schema";
+import type { EmployeeAddressType } from "@/db/schema";
 
 export type EmployeeListRow = {
   id: string;
@@ -8,7 +8,7 @@ export type EmployeeListRow = {
   lastName: string;
   latestLevel: string | null;
   latestPosition: string | null;
-  latestEmploymentType: EmploymentType | null;
+  latestEmploymentType: string | null;
   latestClient: string | null;
   latestProject: string | null;
   currentAddress: { barangayName: string; cityName: string } | null;
@@ -21,8 +21,8 @@ export type EmployeeFilters = {
   includeResigned?: boolean;
   /** Matches the employee's latest deployment's client. Omitted/"all" = no filter. */
   clientId?: string;
-  /** Matches the employee's latest employment record's type. Omitted/"all" = no filter. */
-  employmentType?: EmploymentType;
+  /** Matches the employee's latest employment record's type (an Employment Type lookup id). Omitted/"all" = no filter. */
+  employmentTypeId?: string;
   /** 1-indexed. */
   page?: number;
   pageSize?: number;
@@ -58,7 +58,8 @@ export type EmploymentRecordRow = {
   levelName: string;
   positionId: string;
   positionName: string;
-  employmentType: EmploymentType;
+  employmentTypeId: string;
+  employmentTypeName: string;
   startDate: string;
   endDate: string | null;
 };

@@ -1,5 +1,3 @@
-import type { EmploymentType } from "@/db/schema";
-
 /** `formatEmployeeName({ lastName: "Dela Cruz", firstName: "Juan", middleName: "Fernandez" })` → "DELA CRUZ, Juan F." */
 export function formatEmployeeName(person: {
   firstName: string;
@@ -21,14 +19,6 @@ export function formatEmployeeDisplayName(person: { firstName: string; lastName:
   return `${person.firstName.trim()} ${person.lastName.trim()}`;
 }
 
-export const EMPLOYMENT_TYPE_LABELS: Record<EmploymentType, string> = {
-  regular: "Regular",
-  probationary: "Probationary",
-  contractual: "Contractual",
-  project_based: "Project-based",
-  consultant: "Consultant",
-  intern: "Intern",
-};
 
 export function formatAddressSummary(
   address: { barangayName: string; cityName: string } | null | undefined,

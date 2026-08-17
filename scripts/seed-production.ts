@@ -52,6 +52,7 @@ interface SeedSnapshot {
   client: JsonRow[];
   position: JsonRow[];
   level: JsonRow[];
+  employmentType: JsonRow[];
   team: JsonRow[];
   salesRepresentative: JsonRow[];
   solutionsManager: JsonRow[];
@@ -122,6 +123,13 @@ async function seedLevels(rows: JsonRow[]) {
   if (!values.length) return;
   await db.insert(schema.level).values(values).onConflictDoNothing({ target: schema.level.id });
   report("level", values.length);
+}
+
+async function seedEmploymentTypes(rows: JsonRow[]) {
+  const values = reviveDates(rows) as (typeof schema.employmentType.$inferInsert)[];
+  if (!values.length) return;
+  await db.insert(schema.employmentType).values(values).onConflictDoNothing({ target: schema.employmentType.id });
+  report("employmentType", values.length);
 }
 
 async function seedTeams(rows: JsonRow[]) {
@@ -288,6 +296,7 @@ async function main() {
   await seedClients(snapshot.client);
   await seedPositions(snapshot.position);
   await seedLevels(snapshot.level);
+  await seedEmploymentTypes(snapshot.employmentType);
   await seedTeams(snapshot.team);
   await seedSalesRepresentatives(snapshot.salesRepresentative);
   await seedSolutionsManagers(snapshot.solutionsManager);

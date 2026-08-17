@@ -9,6 +9,7 @@ import {
   employeeAddress,
   employeeDeployment,
   employeeEmployment,
+  employmentType,
   gender,
   level,
   position,
@@ -58,8 +59,8 @@ function buildWhere(
     clauses.push(eq(latestDeployment.clientId, filters.clientId));
   }
 
-  if (filters.employmentType) {
-    clauses.push(eq(latestEmployment.employmentType, filters.employmentType));
+  if (filters.employmentTypeId) {
+    clauses.push(eq(latestEmployment.employmentTypeId, filters.employmentTypeId));
   }
 
   if (clauses.length === 0) return undefined;
@@ -77,11 +78,13 @@ function latestEmploymentSubquery() {
       // disambiguate once this subquery is joined back in.
       levelName: sql<string>`${level.name}`.as("level_name"),
       positionName: sql<string>`${position.name}`.as("position_name"),
-      employmentType: employeeEmployment.employmentType,
+      employmentTypeId: employeeEmployment.employmentTypeId,
+      employmentTypeName: sql<string>`${employmentType.name}`.as("employment_type_name"),
     })
     .from(employeeEmployment)
     .innerJoin(level, eq(level.id, employeeEmployment.levelId))
     .innerJoin(position, eq(position.id, employeeEmployment.positionId))
+    .innerJoin(employmentType, eq(employmentType.id, employeeEmployment.employmentTypeId))
     .orderBy(
       employeeEmployment.employeeId,
       sql`${employeeEmployment.endDate} IS NULL DESC`,
@@ -165,7 +168,7 @@ export async function listEmployees(filters: EmployeeFilters = {}): Promise<Empl
       lastName: employee.lastName,
       latestLevel: latestEmployment.levelName,
       latestPosition: latestEmployment.positionName,
-      latestEmploymentType: latestEmployment.employmentType,
+      latestEmploymentType: latestEmployment.employmentTypeName,
       latestClient: latestDeployment.clientName,
       latestProject: latestDeployment.projectName,
       currentBarangay: employeeAddress.barangayName,
@@ -273,13 +276,15 @@ export async function loadEmployeeDetail(id: string): Promise<EmployeeDetail | n
       levelName: level.name,
       positionId: employeeEmployment.positionId,
       positionName: position.name,
-      employmentType: employeeEmployment.employmentType,
+      employmentTypeId: employeeEmployment.employmentTypeId,
+      employmentTypeName: employmentType.name,
       startDate: employeeEmployment.startDate,
       endDate: employeeEmployment.endDate,
     })
     .from(employeeEmployment)
     .innerJoin(level, eq(level.id, employeeEmployment.levelId))
     .innerJoin(position, eq(position.id, employeeEmployment.positionId))
+    .innerJoin(employmentType, eq(employmentType.id, employeeEmployment.employmentTypeId))
     .where(eq(employeeEmployment.employeeId, id))
     .orderBy(sql`${employeeEmployment.endDate} IS NULL DESC`, desc(employeeEmployment.startDate));
 

@@ -40,9 +40,8 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import type { EmploymentType } from "@/db/schema";
 import type { ActionResult } from "@/lib/action-result";
-import { EMPLOYMENT_TYPE_LABELS, formatAddressSummary, formatEmployeeName } from "@/lib/employee-format";
+import { formatAddressSummary, formatEmployeeName } from "@/lib/employee-format";
 import { useDebounced } from "@/hooks/use-debounced";
 import { useViewMode } from "@/hooks/use-view-mode";
 import { cn } from "@/lib/utils";
@@ -51,8 +50,6 @@ import { employeesQueryKey } from "@/server/employees/query-key";
 import type { EmployeeFilters, EmployeeListResult, EmployeeListRow } from "@/server/employees/types";
 
 const PAGE_SIZE = 20;
-
-const EMPLOYMENT_TYPE_OPTIONS = Object.entries(EMPLOYMENT_TYPE_LABELS) as [EmploymentType, string][];
 
 type EmployeesViewProps = {
   initialFilters: EmployeeFilters;
@@ -65,7 +62,7 @@ export function EmployeesView({ initialFilters, canCreate, canDelete }: Employee
   const [search, setSearch] = React.useState(initialFilters.search ?? "");
   const [includeResigned, setIncludeResigned] = React.useState(initialFilters.includeResigned ?? false);
   const [clientFilter, setClientFilter] = React.useState(initialFilters.clientId ?? "all");
-  const [employmentTypeFilter, setEmploymentTypeFilter] = React.useState(initialFilters.employmentType ?? "all");
+  const [employmentTypeFilter, setEmploymentTypeFilter] = React.useState(initialFilters.employmentTypeId ?? "all");
   const [page, setPage] = React.useState(1);
   const debouncedSearch = useDebounced(search);
   const [viewMode, setViewMode] = useViewMode();
@@ -74,13 +71,17 @@ export function EmployeesView({ initialFilters, canCreate, canDelete }: Employee
     queryKey: ["employee-lookup-options", "client"],
     queryFn: () => fetchLookupOptions("client"),
   });
+  const employmentTypeOptions = useQuery({
+    queryKey: ["employee-lookup-options", "employment_type"],
+    queryFn: () => fetchLookupOptions("employment_type"),
+  });
 
   const filters = React.useMemo<EmployeeFilters>(
     () => ({
       search: debouncedSearch || undefined,
       includeResigned,
       clientId: clientFilter === "all" ? undefined : clientFilter,
-      employmentType: employmentTypeFilter === "all" ? undefined : (employmentTypeFilter as EmploymentType),
+      employmentTypeId: employmentTypeFilter === "all" ? undefined : employmentTypeFilter,
       page,
       pageSize: PAGE_SIZE,
     }),
@@ -159,9 +160,9 @@ export function EmployeesView({ initialFilters, canCreate, canDelete }: Employee
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All employment types</SelectItem>
-              {EMPLOYMENT_TYPE_OPTIONS.map(([value, label]) => (
-                <SelectItem key={value} value={value}>
-                  {label}
+              {(employmentTypeOptions.data ?? []).map((option) => (
+                <SelectItem key={option.id} value={option.id}>
+                  {option.name}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -278,7 +279,7 @@ export function EmployeesView({ initialFilters, canCreate, canDelete }: Employee
                         {row.latestLevel && row.latestPosition ? `${row.latestLevel} - ${row.latestPosition}` : "—"}
                       </TableCell>
                       <TableCell className="text-sm">
-                        {row.latestEmploymentType ? EMPLOYMENT_TYPE_LABELS[row.latestEmploymentType] : "—"}
+                        {row.latestEmploymentType ?? "—"}
                       </TableCell>
                       <TableCell className="text-sm">
                         {row.latestClient && row.latestProject ? `${row.latestClient} - ${row.latestProject}` : "—"}

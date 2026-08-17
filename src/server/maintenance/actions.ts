@@ -10,6 +10,7 @@ import {
   employee,
   employeeDeployment,
   employeeEmployment,
+  employmentType,
   engagementType,
   gender,
   level,
@@ -36,6 +37,7 @@ const kindSchema = z.enum([
   "sales_representative",
   "solutions_manager",
   "engagement_type",
+  "employment_type",
 ]);
 const nameSchema = z.string().trim().min(1, "Name is required").max(100, "That name is too long");
 const idSchema = z.string().min(1, "A record must be selected");
@@ -58,6 +60,8 @@ function tableFor(kind: LookupKind) {
       return solutionsManager;
     case "engagement_type":
       return engagementType;
+    case "employment_type":
+      return employmentType;
   }
 }
 
@@ -117,6 +121,13 @@ async function usageCount(kind: LookupKind, id: string): Promise<number> {
         .select({ total: count() })
         .from(project)
         .where(eq(project.engagementTypeId, id));
+      return row?.total ?? 0;
+    }
+    case "employment_type": {
+      const [row] = await db
+        .select({ total: count() })
+        .from(employeeEmployment)
+        .where(eq(employeeEmployment.employmentTypeId, id));
       return row?.total ?? 0;
     }
   }

@@ -237,10 +237,10 @@ export const auditLog = pgTable(
 
 /**
  * Shared shape for every Maintenance-managed lookup list (Client, Position,
- * Level, Gender, Team). Each is a *separate* physical table rather than one
- * generic table with a `category` column, so a foreign key can only ever
- * point at the right kind of row (a Position id can never land in a column
- * that expects a Level id).
+ * Level, Employment Type, Gender, Team, ...). Each is a *separate* physical
+ * table rather than one generic table with a `category` column, so a
+ * foreign key can only ever point at the right kind of row (a Position id
+ * can never land in a column that expects a Level id).
  *
  * `isActive` lets an admin retire a value without breaking historical rows
  * that still reference it: inactive entries drop out of pickers for new
@@ -271,6 +271,16 @@ export const position = pgTable("position", lookupColumns, (table) => [
 
 export const level = pgTable("level", lookupColumns, (table) => [
   uniqueIndex("level_name_idx").on(table.name),
+]);
+
+/**
+ * Table name is `employment_type_lookup`, not `employment_type` — it was
+ * created (drizzle/0022) while the legacy `employment_type` enum type still
+ * existed and claimed that name; the enum is gone now (0025), but renaming
+ * the table to match wasn't worth a further migration.
+ */
+export const employmentType = pgTable("employment_type_lookup", lookupColumns, (table) => [
+  uniqueIndex("employment_type_lookup_name_idx").on(table.name),
 ]);
 
 export const gender = pgTable("gender", lookupColumns, (table) => [
@@ -490,20 +500,10 @@ export const employeeAddress = pgTable(
 /**
  * Historical employment records. `endDate` null means "current" — the row
  * with no end date (or, failing that, the latest `startDate`) is what the
- * employee list and profile show as the active role.
- *
- * `employmentType` stays a Postgres enum rather than a Maintenance lookup —
- * unlike Level and Position, it wasn't asked for as an admin-editable list.
+ * employee list and profile show as the active role. `employmentTypeId`
+ * used to be a fixed Postgres enum — converted to a Maintenance-managed
+ * lookup (like Level/Position) in drizzle/0022–0025.
  */
-export const employmentType = pgEnum("employment_type", [
-  "regular",
-  "probationary",
-  "contractual",
-  "project_based",
-  "consultant",
-  "intern",
-]);
-
 export const employeeEmployment = pgTable(
   "employee_employment",
   {
@@ -524,7 +524,9 @@ export const employeeEmployment = pgTable(
     positionId: text("position_id")
       .notNull()
       .references(() => position.id, { onDelete: "restrict" }),
-    employmentType: employmentType("employment_type").notNull(),
+    employmentTypeId: text("employment_type_id")
+      .notNull()
+      .references(() => employmentType.id, { onDelete: "restrict" }),
     startDate: date("start_date").notNull(),
     endDate: date("end_date"),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -899,7 +901,6 @@ export type EmployeeDeployment = typeof employeeDeployment.$inferSelect;
 export type NewEmployeeDeployment = typeof employeeDeployment.$inferInsert;
 
 export type EmployeeAddressType = (typeof employeeAddressType.enumValues)[number];
-export type EmploymentType = (typeof employmentType.enumValues)[number];
 
 export type EmployeeChangeRequest = typeof employeeChangeRequest.$inferSelect;
 export type NewEmployeeChangeRequest = typeof employeeChangeRequest.$inferInsert;

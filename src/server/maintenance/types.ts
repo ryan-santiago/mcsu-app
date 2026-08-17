@@ -9,7 +9,8 @@ export type LookupKind =
   | "team"
   | "sales_representative"
   | "solutions_manager"
-  | "engagement_type";
+  | "engagement_type"
+  | "employment_type";
 
 export const LOOKUP_KINDS: readonly LookupKind[] = [
   "client",
@@ -20,6 +21,7 @@ export const LOOKUP_KINDS: readonly LookupKind[] = [
   "sales_representative",
   "solutions_manager",
   "engagement_type",
+  "employment_type",
 ];
 
 export type LookupRow = {
@@ -49,4 +51,5 @@ export const LOOKUP_META: Record<LookupKind, { label: string; singular: string; 
     auditModule: "solutions_managers",
   },
   engagement_type: { label: "Engagement Types", singular: "Engagement Type", auditModule: "engagement_types" },
+  employment_type: { label: "Employment Types", singular: "Employment Type", auditModule: "employment_types" },
 };
