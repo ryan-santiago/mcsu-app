@@ -148,6 +148,13 @@
       "when": 1786895845066,
       "tag": "0020_add_activity_report_status",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1786979489965,
+      "tag": "0021_add_employment_allowances",
+      "breakpoints": true
     }
   ]
 }

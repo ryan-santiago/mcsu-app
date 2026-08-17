@@ -57,9 +57,17 @@ const salarySchema = z
   .min(1, "Enter a salary")
   .refine((value) => Number.isFinite(Number(value)) && Number(value) > 0, "Enter a salary greater than zero");
 
+const allowanceSchema = z
+  .string()
+  .trim()
+  .min(1, "Enter an amount (0 if none)")
+  .refine((value) => Number.isFinite(Number(value)) && Number(value) >= 0, "Enter a valid amount");
+
 export const employmentRecordSchema = z
   .object({
     salary: salarySchema,
+    communicationAllowance: allowanceSchema,
+    transportationAllowance: allowanceSchema,
     levelId: z.string().min(1, "Select a level"),
     positionId: z.string().min(1, "Select a position"),
     employmentType: z.enum([

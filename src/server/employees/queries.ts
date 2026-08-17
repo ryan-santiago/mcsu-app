@@ -267,6 +267,8 @@ export async function loadEmployeeDetail(id: string): Promise<EmployeeDetail | n
     .select({
       id: employeeEmployment.id,
       salary: employeeEmployment.salary,
+      communicationAllowance: employeeEmployment.communicationAllowance,
+      transportationAllowance: employeeEmployment.transportationAllowance,
       levelId: employeeEmployment.levelId,
       levelName: level.name,
       positionId: employeeEmployment.positionId,

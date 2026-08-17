@@ -1,0 +1,2 @@
+ALTER TABLE "employee_employment" ADD COLUMN "communication_allowance" numeric(12, 2) DEFAULT '0' NOT NULL;--> statement-breakpoint
+ALTER TABLE "employee_employment" ADD COLUMN "transportation_allowance" numeric(12, 2) DEFAULT '0' NOT NULL;

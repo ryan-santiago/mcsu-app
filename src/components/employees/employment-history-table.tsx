@@ -136,6 +136,8 @@ export function EmploymentHistoryTable({
                   <TableHead>Position</TableHead>
                   <TableHead>Type</TableHead>
                   {canViewSalary ? <TableHead>Salary</TableHead> : null}
+                  {canViewSalary ? <TableHead>Comm. allowance</TableHead> : null}
+                  {canViewSalary ? <TableHead>Transpo. allowance</TableHead> : null}
                   {canEdit || canDelete ? <TableHead className="w-12" aria-label="Actions" /> : null}
                 </TableRow>
               </TableHeader>
@@ -147,6 +149,12 @@ export function EmploymentHistoryTable({
                     <TableCell>{record.positionName}</TableCell>
                     <TableCell>{EMPLOYMENT_TYPE_LABELS[record.employmentType]}</TableCell>
                     {canViewSalary ? <TableCell className="tabular-nums">{formatSalary(record.salary)}</TableCell> : null}
+                    {canViewSalary ? (
+                      <TableCell className="tabular-nums">{formatSalary(record.communicationAllowance)}</TableCell>
+                    ) : null}
+                    {canViewSalary ? (
+                      <TableCell className="tabular-nums">{formatSalary(record.transportationAllowance)}</TableCell>
+                    ) : null}
                     {canEdit || canDelete ? (
                       <TableCell>
                         <DropdownMenu>
@@ -280,6 +288,8 @@ function EmploymentRecordForm({
     resolver: zodResolver(employmentRecordSchema),
     defaultValues: {
       salary: record?.salary ?? "",
+      communicationAllowance: record?.communicationAllowance ?? "0",
+      transportationAllowance: record?.transportationAllowance ?? "0",
       levelId: record?.levelId ?? "",
       positionId: record?.positionId ?? "",
       employmentType: record?.employmentType ?? "regular",
@@ -312,6 +322,34 @@ function EmploymentRecordForm({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Salary (₱)</FormLabel>
+                  <FormControl>
+                    <Input {...field} type="number" step="0.01" min="0" disabled={pending} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="communicationAllowance"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Communication allowance (₱)</FormLabel>
+                  <FormControl>
+                    <Input {...field} type="number" step="0.01" min="0" disabled={pending} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="transportationAllowance"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Transportation allowance (₱)</FormLabel>
                   <FormControl>
                     <Input {...field} type="number" step="0.01" min="0" disabled={pending} />
                   </FormControl>

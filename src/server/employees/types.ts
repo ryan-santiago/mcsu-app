@@ -52,6 +52,8 @@ export type EmployeeAddressDetail = {
 export type EmploymentRecordRow = {
   id: string;
   salary: string;
+  communicationAllowance: string;
+  transportationAllowance: string;
   levelId: string;
   levelName: string;
   positionId: string;

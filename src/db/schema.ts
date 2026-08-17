@@ -512,6 +512,12 @@ export const employeeEmployment = pgTable(
       .notNull()
       .references(() => employee.id, { onDelete: "cascade" }),
     salary: numeric("salary", { precision: 12, scale: 2 }).notNull(),
+    communicationAllowance: numeric("communication_allowance", { precision: 12, scale: 2 })
+      .notNull()
+      .default("0"),
+    transportationAllowance: numeric("transportation_allowance", { precision: 12, scale: 2 })
+      .notNull()
+      .default("0"),
     levelId: text("level_id")
       .notNull()
       .references(() => level.id, { onDelete: "restrict" }),

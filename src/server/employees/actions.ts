@@ -403,6 +403,8 @@ export async function addEmploymentRecord(
       id,
       employeeId,
       salary: data.salary,
+      communicationAllowance: data.communicationAllowance,
+      transportationAllowance: data.transportationAllowance,
       levelId: data.levelId,
       positionId: data.positionId,
       employmentType: data.employmentType,
@@ -457,6 +459,8 @@ export async function updateEmploymentRecord(
       .update(employeeEmployment)
       .set({
         salary: data.salary,
+        communicationAllowance: data.communicationAllowance,
+        transportationAllowance: data.transportationAllowance,
         levelId: data.levelId,
         positionId: data.positionId,
         employmentType: data.employmentType,
