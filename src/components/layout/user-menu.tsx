@@ -1,5 +1,6 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { ChevronsUpDown, LogOut, Monitor, Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useRouter } from "next/navigation";
@@ -30,6 +31,7 @@ export function initialsOf(name: string): string {
 
 export function UserMenu({ user }: { user: CurrentUser }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { theme, setTheme } = useTheme();
   const [signingOut, setSigningOut] = React.useState(false);
 
@@ -37,6 +39,11 @@ export function UserMenu({ user }: { user: CurrentUser }) {
     setSigningOut(true);
     try {
       await signOut();
+      // The QueryClient is a browser-tab-lifetime singleton (`providers.tsx`),
+      // not per-session — without this, the next person to sign in on this
+      // tab would see this user's cached rows (e.g. Activity Report) until
+      // each query's staleTime elapsed on its own.
+      queryClient.clear();
       router.push("/login");
       router.refresh();
     } catch {
