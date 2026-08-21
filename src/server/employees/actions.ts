@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq, isNull, ne } from "drizzle-orm";
+import { and, desc, eq, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/db";
@@ -92,16 +92,25 @@ async function closeOtherOpenEmployments(employeeId: string, keepId: string, clo
 }
 
 /**
- * A resignation date means the employee's current ("Present") role ended
- * that day — closes any open employment record to match. Safe to call every
- * time a resignation date is saved: re-closing an already-closed record at
- * the same date is a no-op.
+ * A resignation date means the employee's latest employment record ended
+ * that day — whether it was still open ("Currently in this role") or
+ * already closed with some other end date, its `endDate` is force-set to
+ * the resignation date. "Latest" uses the same ordering as
+ * `loadEmployeeDetail`'s employments list (open row first, else newest
+ * `startDate`), so this always targets the one row the Employee module
+ * shows as current. Safe to call every time a resignation date is saved:
+ * re-setting an already-matching end date is a no-op.
  */
-async function closeOpenEmploymentAtResignation(employeeId: string, resignationDate: string) {
-  await db
-    .update(employeeEmployment)
-    .set({ endDate: resignationDate })
-    .where(and(eq(employeeEmployment.employeeId, employeeId), isNull(employeeEmployment.endDate)));
+async function closeLatestEmploymentAtResignation(employeeId: string, resignationDate: string) {
+  const [latest] = await db
+    .select({ id: employeeEmployment.id })
+    .from(employeeEmployment)
+    .where(eq(employeeEmployment.employeeId, employeeId))
+    .orderBy(sql`${employeeEmployment.endDate} IS NULL DESC`, desc(employeeEmployment.startDate))
+    .limit(1);
+  if (!latest) return;
+
+  await db.update(employeeEmployment).set({ endDate: resignationDate }).where(eq(employeeEmployment.id, latest.id));
 }
 
 /* -------------------------------------------------------------------------- */
@@ -178,6 +187,7 @@ export async function createEmployee(input: EmployeeFormInput): Promise<ActionRe
       workEmail: profile.workEmail,
       teamId: profile.teamId,
       resignationDate,
+      reasonForLeaving: profile.reasonForLeaving || null,
       isResigned: Boolean(resignationDate),
     });
 
@@ -235,6 +245,7 @@ export async function updateEmployee(
     if (duplicateEmail) return { ok: false, error: `Work email "${profile.workEmail}" is already in use.` };
 
     const resignationDate = profile.resignationDate || null;
+    const reasonForLeaving = profile.reasonForLeaving || null;
 
     await db
       .update(employee)
@@ -250,11 +261,12 @@ export async function updateEmployee(
         workEmail: profile.workEmail,
         teamId: profile.teamId,
         resignationDate,
+        reasonForLeaving,
         isResigned: Boolean(resignationDate),
       })
       .where(eq(employee.id, id));
 
-    if (resignationDate) await closeOpenEmploymentAtResignation(id, resignationDate);
+    if (resignationDate) await closeLatestEmploymentAtResignation(id, resignationDate);
 
     await upsertEmployeeAddresses(id, currentAddress, permanentAddress);
 
@@ -277,6 +289,7 @@ export async function updateEmployee(
           personalEmail: existing.personalEmail,
           workEmail: existing.workEmail,
           resignationDate: existing.resignationDate,
+          reasonForLeaving: existing.reasonForLeaving,
         },
         {
           code: profile.code || null,
@@ -288,6 +301,7 @@ export async function updateEmployee(
           personalEmail: profile.personalEmail || null,
           workEmail: profile.workEmail,
           resignationDate,
+          reasonForLeaving,
         },
         {
           code: "Employee code",
@@ -299,6 +313,7 @@ export async function updateEmployee(
           personalEmail: "Personal email",
           workEmail: "Work email",
           resignationDate: "Resignation date",
+          reasonForLeaving: "Reason for leaving",
         },
       ),
     });

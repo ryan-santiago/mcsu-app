@@ -20,6 +20,7 @@ export const employeeProfileSchema = z.object({
   teamId: z.string().min(1, "Select a team"),
   /** `isResigned` is never a form field — it's always derived from this. */
   resignationDate: z.string().optional().or(z.literal("")),
+  reasonForLeaving: z.string().trim().max(500, "That's too long").optional().or(z.literal("")),
 });
 
 export const employeeFormSchema = z.object({
@@ -33,13 +34,15 @@ export type EmployeeFormInput = z.infer<typeof employeeFormSchema>;
 
 /**
  * The subset of `employeeProfileSchema` an employee may request a change to
- * about themselves — excludes `code`, `teamId` and `resignationDate`, which
- * stay HR-administrative fields edited only through the Employee module.
+ * about themselves — excludes `code`, `teamId`, `resignationDate` and
+ * `reasonForLeaving`, which stay HR-administrative fields edited only
+ * through the Employee module.
  */
 export const selfServiceProfileSchema = employeeProfileSchema.omit({
   code: true,
   teamId: true,
   resignationDate: true,
+  reasonForLeaving: true,
 });
 
 export const selfServiceFormSchema = z.object({

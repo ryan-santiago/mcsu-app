@@ -89,6 +89,7 @@ export type EmployeeDetail = {
   teamId: string | null;
   teamName: string | null;
   resignationDate: string | null;
+  reasonForLeaving: string | null;
   isResigned: boolean;
   currentAddress: EmployeeAddressDetail | null;
   permanentAddress: EmployeeAddressDetail | null;

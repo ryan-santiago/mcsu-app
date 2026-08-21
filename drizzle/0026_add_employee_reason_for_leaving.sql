@@ -1,0 +1,1 @@
+ALTER TABLE "employee" ADD COLUMN "reason_for_leaving" text;

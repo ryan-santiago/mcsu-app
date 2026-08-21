@@ -55,6 +55,9 @@ type EmploymentHistoryTableProps = {
   canViewSalary: boolean;
 };
 
+/** A project-hired record's start/end dates are often set in advance — worth a comfortable margin, not just the current year. */
+const MAX_DATE_PICKER_YEAR = new Date().getFullYear() + 10;
+
 export function EmploymentHistoryTable({
   employeeId,
   records,
@@ -437,7 +440,7 @@ function EmploymentRecordForm({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Start date</FormLabel>
-                  <DatePicker value={field.value} onChange={field.onChange} disabled={pending} />
+                  <DatePicker value={field.value} onChange={field.onChange} disabled={pending} toYear={MAX_DATE_PICKER_YEAR} />
                   <FormMessage />
                 </FormItem>
               )}
@@ -450,7 +453,7 @@ function EmploymentRecordForm({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>End date</FormLabel>
-                    <DatePicker value={field.value} onChange={field.onChange} disabled={pending} />
+                    <DatePicker value={field.value} onChange={field.onChange} disabled={pending} toYear={MAX_DATE_PICKER_YEAR} />
                     <FormMessage />
                   </FormItem>
                 )}

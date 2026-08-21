@@ -49,6 +49,7 @@ function toFormValues(detail: EmployeeDetail | undefined): EmployeeFormInput {
         workEmail: "",
         teamId: "",
         resignationDate: "",
+        reasonForLeaving: "",
       },
       currentAddress: EMPTY_ADDRESS,
       permanentAddress: EMPTY_ADDRESS,
@@ -83,6 +84,7 @@ function toFormValues(detail: EmployeeDetail | undefined): EmployeeFormInput {
       workEmail: detail.workEmail ?? "",
       teamId: detail.teamId ?? "",
       resignationDate: detail.resignationDate ?? "",
+      reasonForLeaving: detail.reasonForLeaving ?? "",
     },
     currentAddress: toAddress(detail.currentAddress),
     permanentAddress: toAddress(detail.permanentAddress),
@@ -349,19 +351,39 @@ export function EmployeeForm(props: EmployeeFormProps) {
                   )}
                 />
 
-                <FormField
-                  control={form.control}
-                  name="profile.resignationDate"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        Resignation date <span className="text-muted-foreground font-normal">(optional)</span>
-                      </FormLabel>
-                      <DatePicker value={field.value} onChange={field.onChange} disabled={fieldDisabled} />
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                {props.mode === "edit" ? (
+                  <>
+                    <FormField
+                      control={form.control}
+                      name="profile.resignationDate"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>
+                            Resignation date <span className="text-muted-foreground font-normal">(optional)</span>
+                          </FormLabel>
+                          <DatePicker value={field.value} onChange={field.onChange} disabled={fieldDisabled} />
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="profile.reasonForLeaving"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>
+                            Reason for leaving <span className="text-muted-foreground font-normal">(optional)</span>
+                          </FormLabel>
+                          <FormControl>
+                            <Input {...field} disabled={fieldDisabled} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </>
+                ) : null}
               </div>
             ) : null}
 

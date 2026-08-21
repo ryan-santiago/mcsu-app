@@ -183,6 +183,13 @@
       "when": 1786982126750,
       "tag": "0025_finalize_employment_type_id",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1786983213292,
+      "tag": "0026_add_employee_reason_for_leaving",
+      "breakpoints": true
     }
   ]
 }

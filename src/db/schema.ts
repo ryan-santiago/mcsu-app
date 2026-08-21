@@ -436,6 +436,7 @@ export const employee = pgTable(
     workEmail: text("work_email").notNull(),
     teamId: text("team_id").references(() => team.id, { onDelete: "set null" }),
     resignationDate: date("resignation_date"),
+    reasonForLeaving: text("reason_for_leaving"),
     /** Always derived from `resignationDate` in the action layer — never a direct user input. */
     isResigned: boolean("is_resigned").default(false).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })

@@ -252,6 +252,7 @@ export async function loadEmployeeDetail(id: string): Promise<EmployeeDetail | n
       teamId: employee.teamId,
       teamName: team.name,
       resignationDate: employee.resignationDate,
+      reasonForLeaving: employee.reasonForLeaving,
       isResigned: employee.isResigned,
     })
     .from(employee)
@@ -319,6 +320,7 @@ export async function loadEmployeeDetail(id: string): Promise<EmployeeDetail | n
     teamId: row.teamId,
     teamName: row.teamName,
     resignationDate: row.resignationDate,
+    reasonForLeaving: row.reasonForLeaving,
     isResigned: row.isResigned,
     currentAddress,
     permanentAddress,
