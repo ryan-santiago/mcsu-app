@@ -1,4 +1,15 @@
-import { CircleCheck, CircleSlash, Clock3, ShieldCheck, UserCog, Wrench, Eye, ShieldQuestion } from "lucide-react";
+import {
+  CircleCheck,
+  CircleSlash,
+  Clock3,
+  ShieldCheck,
+  UserCog,
+  Wrench,
+  Eye,
+  ShieldQuestion,
+  Landmark,
+  Users,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -6,9 +17,11 @@ import type { UserStatus } from "@/db/schema";
 import { STATUS_LABELS } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 
-/** The four built-in roles keep dedicated icons; any custom role falls back to a generic one. */
+/** The built-in roles keep dedicated icons; any custom role falls back to a generic one. */
 const ROLE_ICONS: Record<string, LucideIcon> = {
   admin: ShieldCheck,
+  department_head: Landmark,
+  unit_manager: Users,
   manager: UserCog,
   engineer: Wrench,
   viewer: Eye,

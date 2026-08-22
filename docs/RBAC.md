@@ -37,9 +37,23 @@ Delete/All matrix per module. No deploy required to change what a role can do.
 | Role | Rank | isSystem | Default permissions |
 | ---- | ---- | -------- | -------------------- |
 | **Administrator** | 40 | yes, **locked** | Every permission, forever — see below |
+| **Department Head** | 38 | yes | Every permission (seeded admin-equivalent — `drizzle/0027_seed_dept_head_unit_manager_roles.sql`) |
+| **Unit Manager** | 35 | yes | Every permission (seeded admin-equivalent — same migration) |
 | **Manager** | 30 | yes | Dashboard, Employees & Projects: full · Users & Access: read + edit · Maintenance/Device Inventory/Audit Trail/Settings/Access Control: read only |
 | **Engineer** | 20 | no | Dashboard: read only |
 | **Viewer** | 10 | no | Dashboard: read only |
+
+**Department Head and Unit Manager** exist for approval workflows above
+Manager but below Administrator — the first consumer is the planned Employee
+Recommendation module, where a Manager submits a recommendation for a team
+member and one of these roles approves it. They're seeded with every
+permission ("admin access") so they can act immediately, and marked
+`isSystem` (`drizzle/0028_mark_dept_head_unit_manager_required.sql`) so they
+show as "Required" in Access Control and can't be deleted — same protection
+as Manager. Unlike Administrator, they are **not** special-cased in `can()`,
+so their access comes entirely from their stored `permissions` row: an
+administrator can still narrow or widen what either role can do from Access
+Control, exactly like Manager's permissions today.
 
 **Administrator's permissions are locked** two ways, not just seeded that way:
 `can()` (`src/lib/rbac.ts`) short-circuits to `true` for `principal.roleId ===
