@@ -19,6 +19,8 @@ export const AUDIT_MODULES = [
   { value: "projects", label: "Projects" },
   { value: "devices", label: "Device Inventory" },
   { value: "activity_reports", label: "Activity Reports" },
+  { value: "staff_augmentation", label: "Staff Augmentation" },
+  { value: "one_lot_projects", label: "One-Lot Projects" },
   { value: "clients", label: "Maintenance — Clients" },
   { value: "positions", label: "Maintenance — Positions" },
   { value: "levels", label: "Maintenance — Levels" },

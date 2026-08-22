@@ -11,17 +11,19 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import type { NavGroup } from "@/lib/navigation";
 import type { CurrentUser } from "@/lib/session";
+import type { EngagementNavData } from "@/server/engagement/nav";
 
 type AppSidebarProps = {
   groups: NavGroup[];
   user: CurrentUser;
+  dynamicNav: EngagementNavData;
 };
 
-function SidebarBody({ groups, user, onNavigate }: AppSidebarProps & { onNavigate?: () => void }) {
+function SidebarBody({ groups, user, dynamicNav, onNavigate }: AppSidebarProps & { onNavigate?: () => void }) {
   return (
     <>
       <div className="min-h-0 flex-1 overflow-y-auto py-4">
-        <SidebarNav groups={groups} onNavigate={onNavigate} />
+        <SidebarNav groups={groups} dynamicNav={dynamicNav} onNavigate={onNavigate} />
       </div>
 
       <div className="border-sidebar-border border-t p-2">
@@ -32,7 +34,7 @@ function SidebarBody({ groups, user, onNavigate }: AppSidebarProps & { onNavigat
 }
 
 /** Fixed rail on desktop; a slide-over drawer on small screens. */
-export function AppSidebar({ groups, user }: AppSidebarProps) {
+export function AppSidebar({ groups, user, dynamicNav }: AppSidebarProps) {
   return (
     <aside className="bg-sidebar border-sidebar-border hidden w-64 shrink-0 flex-col border-r lg:flex">
       <div className="border-sidebar-border flex h-16 items-center border-b px-5">
@@ -41,12 +43,12 @@ export function AppSidebar({ groups, user }: AppSidebarProps) {
         </Link>
       </div>
 
-      <SidebarBody groups={groups} user={user} />
+      <SidebarBody groups={groups} user={user} dynamicNav={dynamicNav} />
     </aside>
   );
 }
 
-export function MobileSidebar({ groups, user }: AppSidebarProps) {
+export function MobileSidebar({ groups, user, dynamicNav }: AppSidebarProps) {
   const [open, setOpen] = React.useState(false);
 
   return (
@@ -63,7 +65,7 @@ export function MobileSidebar({ groups, user }: AppSidebarProps) {
           <Logo height={26} />
         </SheetHeader>
 
-        <SidebarBody groups={groups} user={user} onNavigate={() => setOpen(false)} />
+        <SidebarBody groups={groups} user={user} dynamicNav={dynamicNav} onNavigate={() => setOpen(false)} />
       </SheetContent>
     </Sheet>
   );

@@ -37,7 +37,13 @@ export type CurrentUser = Principal & {
  * lookup.
  */
 export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
-  const result = await auth.api.getSession({ headers: await headers() });
+  const result = await auth.api.getSession({ headers: await headers() }).catch((error: unknown) => {
+    // An expired or otherwise unreadable session must not crash the render —
+    // treat it as signed-out so requireUser() redirects to /login instead of
+    // surfacing the generic error boundary.
+    console.error("[session] getSession failed", error);
+    return null;
+  });
   if (!result?.user) return null;
 
   const u = result.user as typeof result.user & {

@@ -760,6 +760,74 @@ export const activityReportItem = pgTable(
 );
 
 /* -------------------------------------------------------------------------- */
+/*  Engagement — Staff Augmentation & One-Lot Project                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Flat item — the future contract/employee-tracking content lives on this
+ * record but isn't built yet. Visibility is pure RBAC (`staff_augmentation:read`),
+ * no membership scoping, unlike One-Lot Project below.
+ */
+export const staffAugmentationEngagement = pgTable(
+  "staff_augmentation_engagement",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [index("staff_augmentation_engagement_name_idx").on(table.name)],
+);
+
+/**
+ * Parent record for a JIRA-style project (Dashboard/List/Kanban/Calendar —
+ * none of that content is built yet). Unlike Staff Augmentation, visibility
+ * is scoped to the creator plus whoever is added via `oneLotProjectMember`
+ * (see `hasUnrestrictedAccess` for the admin bypass) — see
+ * `src/server/one-lot-projects/queries.ts`.
+ */
+export const oneLotProject = pgTable(
+  "one_lot_project",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [index("one_lot_project_name_idx").on(table.name)],
+);
+
+/** Who can see/work in a One-Lot project beyond its creator — picked from Employees. */
+export const oneLotProjectMember = pgTable(
+  "one_lot_project_member",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => oneLotProject.id, { onDelete: "cascade" }),
+    employeeId: text("employee_id")
+      .notNull()
+      .references(() => employee.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => [uniqueIndex("one_lot_project_member_project_employee_idx").on(table.projectId, table.employeeId)],
+);
+
+/* -------------------------------------------------------------------------- */
 /*  Relations                                                                 */
 /* -------------------------------------------------------------------------- */
 
@@ -865,6 +933,15 @@ export const activityReportItemRelations = relations(activityReportItem, ({ one 
   report: one(activityReport, { fields: [activityReportItem.activityReportId], references: [activityReport.id] }),
 }));
 
+export const oneLotProjectRelations = relations(oneLotProject, ({ many }) => ({
+  members: many(oneLotProjectMember),
+}));
+
+export const oneLotProjectMemberRelations = relations(oneLotProjectMember, ({ one }) => ({
+  project: one(oneLotProject, { fields: [oneLotProjectMember.projectId], references: [oneLotProject.id] }),
+  employee: one(employee, { fields: [oneLotProjectMember.employeeId], references: [employee.id] }),
+}));
+
 /* -------------------------------------------------------------------------- */
 /*  Inferred types                                                            */
 /* -------------------------------------------------------------------------- */
@@ -919,3 +996,11 @@ export type NewActivityReport = typeof activityReport.$inferInsert;
 export type ActivityReportStatus = (typeof activityReportStatus.enumValues)[number];
 export type ActivityReportItem = typeof activityReportItem.$inferSelect;
 export type NewActivityReportItem = typeof activityReportItem.$inferInsert;
+
+export type StaffAugmentationEngagement = typeof staffAugmentationEngagement.$inferSelect;
+export type NewStaffAugmentationEngagement = typeof staffAugmentationEngagement.$inferInsert;
+
+export type OneLotProject = typeof oneLotProject.$inferSelect;
+export type NewOneLotProject = typeof oneLotProject.$inferInsert;
+export type OneLotProjectMember = typeof oneLotProjectMember.$inferSelect;
+export type NewOneLotProjectMember = typeof oneLotProjectMember.$inferInsert;

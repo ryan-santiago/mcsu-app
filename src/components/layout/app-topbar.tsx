@@ -17,19 +17,21 @@ import {
 import { breadcrumbsFor } from "@/lib/navigation";
 import type { NavGroup } from "@/lib/navigation";
 import type { CurrentUser } from "@/lib/session";
+import type { EngagementNavData } from "@/server/engagement/nav";
 
 type AppTopbarProps = {
   groups: NavGroup[];
   user: CurrentUser;
+  dynamicNav: EngagementNavData;
 };
 
-export function AppTopbar({ groups, user }: AppTopbarProps) {
+export function AppTopbar({ groups, user, dynamicNav }: AppTopbarProps) {
   const pathname = usePathname();
   const trail = breadcrumbsFor(pathname);
 
   return (
     <header className="bg-background/80 sticky top-0 z-30 flex h-16 shrink-0 items-center gap-3 border-b px-4 backdrop-blur-sm sm:px-6">
-      <MobileSidebar groups={groups} user={user} />
+      <MobileSidebar groups={groups} user={user} dynamicNav={dynamicNav} />
 
       <div className="min-w-0 flex-1">
         {trail.length === 0 ? (

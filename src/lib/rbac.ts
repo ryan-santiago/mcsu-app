@@ -63,6 +63,16 @@ export const PERMISSIONS = [
   "access_control:write",
   "access_control:edit",
   "access_control:delete",
+
+  "staff_augmentation:read",
+  "staff_augmentation:write",
+  "staff_augmentation:edit",
+  "staff_augmentation:delete",
+
+  "one_lot_projects:read",
+  "one_lot_projects:write",
+  "one_lot_projects:edit",
+  "one_lot_projects:delete",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -76,6 +86,8 @@ export const MODULES = [
   { id: "dashboard", label: "Dashboard" },
   { id: "employees", label: "Employees" },
   { id: "projects", label: "Projects" },
+  { id: "staff_augmentation", label: "Staff Augmentation" },
+  { id: "one_lot_projects", label: "One-Lot Projects" },
   { id: "maintenance", label: "Maintenance" },
   { id: "devices", label: "Device Inventory" },
   { id: "access_control", label: "Access Control" },

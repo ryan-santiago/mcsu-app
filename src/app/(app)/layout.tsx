@@ -2,6 +2,7 @@ import { AppSidebar } from "@/components/layout/app-sidebar";
 import { AppTopbar } from "@/components/layout/app-topbar";
 import { visibleNavigation } from "@/lib/navigation";
 import { requireUser } from "@/lib/session";
+import { getEngagementNavData } from "@/server/engagement/nav";
 
 /**
  * The authenticated shell.
@@ -13,13 +14,14 @@ import { requireUser } from "@/lib/session";
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const user = await requireUser();
   const groups = visibleNavigation(user);
+  const dynamicNav = await getEngagementNavData(user);
 
   return (
     <div className="flex min-h-svh">
-      <AppSidebar groups={groups} user={user} />
+      <AppSidebar groups={groups} user={user} dynamicNav={dynamicNav} />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <AppTopbar groups={groups} user={user} />
+        <AppTopbar groups={groups} user={user} dynamicNav={dynamicNav} />
         <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
       </div>
     </div>

@@ -5,11 +5,13 @@ import {
   FolderKanban,
   History,
   IdCard,
+  Kanban,
   Laptop,
   LayoutDashboard,
   ListChecks,
   Settings,
   ShieldCheck,
+  UserRoundCog,
   Users,
   Wrench,
   type LucideIcon,
@@ -17,8 +19,10 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { EngagementNavGroup } from "@/components/layout/engagement-nav-group";
 import { cn } from "@/lib/utils";
 import { isNavItemActive, type NavGroup, type NavIconKey } from "@/lib/navigation";
+import type { EngagementNavData } from "@/server/engagement/nav";
 
 /** Resolves the serializable icon key from `lib/navigation.ts` to a component. */
 const NAV_ICONS: Record<NavIconKey, LucideIcon> = {
@@ -33,10 +37,14 @@ const NAV_ICONS: Record<NavIconKey, LucideIcon> = {
   "access-control": ShieldCheck,
   approvals: ListChecks,
   settings: Settings,
+  "staff-augmentation": UserRoundCog,
+  "one-lot-projects": Kanban,
 };
 
 type SidebarNavProps = {
   groups: NavGroup[];
+  /** Item lists for `dynamicKind` nav items — fetched server-side, see `getEngagementNavData()`. */
+  dynamicNav: EngagementNavData;
   /** Called after a link is followed, so the mobile drawer can close itself. */
   onNavigate?: () => void;
 };
@@ -48,7 +56,7 @@ type SidebarNavProps = {
  * orange bar for everyone else — the one place the brand accent appears in the
  * app chrome.
  */
-export function SidebarNav({ groups, onNavigate }: SidebarNavProps) {
+export function SidebarNav({ groups, dynamicNav, onNavigate }: SidebarNavProps) {
   const pathname = usePathname();
 
   return (
@@ -65,6 +73,7 @@ export function SidebarNav({ groups, onNavigate }: SidebarNavProps) {
             {group.items.map((item) => {
               const active = isNavItemActive(item, pathname);
               const Icon = NAV_ICONS[item.icon];
+              const dynamicGroup = item.dynamicKind ? dynamicNav[item.dynamicKind] : undefined;
 
               return (
                 <li key={item.href}>
@@ -89,6 +98,10 @@ export function SidebarNav({ groups, onNavigate }: SidebarNavProps) {
                     <Icon className="size-4 shrink-0" aria-hidden />
                     <span className="truncate">{item.title}</span>
                   </Link>
+
+                  {dynamicGroup ? (
+                    <EngagementNavGroup data={dynamicGroup} pathname={pathname} onNavigate={onNavigate} />
+                  ) : null}
                 </li>
               );
             })}

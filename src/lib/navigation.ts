@@ -22,6 +22,8 @@ export type NavIconKey =
 	| 'access-control'
 	| 'approvals'
 	| 'settings'
+	| 'staff-augmentation'
+	| 'one-lot-projects'
 
 /**
  * A known sub-route of a nav item, for the topbar breadcrumb trail —
@@ -53,6 +55,13 @@ export type NavItem = {
 	matchNested?: boolean
 	/** Known sub-routes, deepest match wins — see `breadcrumbsFor()`. */
 	children?: readonly NavBreadcrumbChild[]
+	/**
+	 * Set only on items whose sidebar sub-tree is DB-driven rather than
+	 * static — the actual item list is fetched server-side per request
+	 * (`getEngagementNavData()` in `src/server/engagement/nav.ts`) and passed
+	 * to `SidebarNav` as a separate prop, since this module has no DB access.
+	 */
+	dynamicKind?: 'staff-augmentation' | 'one-lot-projects'
 }
 
 export type NavGroup = {
@@ -102,6 +111,32 @@ export const NAVIGATION: readonly NavGroup[] = [
 					{ title: 'Add project', path: '/projects/new' },
 					{ title: 'View / Edit Project', dynamic: true },
 				],
+			},
+		],
+	},
+	{
+		title: 'Engagement',
+		items: [
+			{
+				title: 'Staff Augmentation Module',
+				href: '/staff-augmentation',
+				icon: 'staff-augmentation',
+				permissions: ['staff_augmentation:read'],
+				matchNested: true,
+				dynamicKind: 'staff-augmentation',
+				children: [
+					{ title: 'Add engagement', path: '/staff-augmentation/new' },
+					{ title: 'View engagement', dynamic: true },
+				],
+			},
+			{
+				title: 'One-Lot Project Module',
+				href: '/one-lot-projects',
+				icon: 'one-lot-projects',
+				permissions: ['one_lot_projects:read'],
+				matchNested: true,
+				dynamicKind: 'one-lot-projects',
+				children: [{ title: 'Add project', path: '/one-lot-projects/new' }],
 			},
 		],
 	},
