@@ -8,17 +8,18 @@ import { getOneLotProjectById } from "@/server/one-lot-projects/queries";
 
 type OneLotProjectPageShellProps = {
   projectId: string;
-  /** Which of the four fixed pages this is — shown as the page header's subtitle. */
+  /** Which of the still-placeholder pages this is — shown as the page header's subtitle. */
   pageTitle: string;
   icon: LucideIcon;
   description: string;
 };
 
 /**
- * Shared guard + blank-content shell for the four fixed One-Lot Project
- * pages (Summary/Backlog/Kanban Board/Calendar) — identical access check and
- * layout, differing only in copy. `getOneLotProjectById` returning `null`
- * covers both "doesn't exist" and "you're not a member", same as
+ * Shared guard + blank-content shell for the still-placeholder One-Lot
+ * Project pages (Kanban Board/Calendar) — identical access check and
+ * layout, differing only in copy. Summary and Backlog have moved off this
+ * shell now that they have real content. `getOneLotProjectById` returning
+ * `null` covers both "doesn't exist" and "you're not a member", same as
  * `getEmployeeById`'s team scoping — either way this is a 404, not a 403.
  */
 export async function OneLotProjectPageShell({ projectId, pageTitle, icon, description }: OneLotProjectPageShellProps) {

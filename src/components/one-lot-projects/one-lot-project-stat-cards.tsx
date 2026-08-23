@@ -4,8 +4,8 @@ import * as React from "react";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
-import { PERIOD_OPTIONS, STAT_CARDS_DUMMY, type PeriodValue } from "./dummy-data";
+import { PERIOD_OPTIONS, type PeriodValue } from "@/lib/one-lot-project-backlog-format";
+import type { StatCardsData } from "@/server/one-lot-projects/backlog-types";
 
 function StatCard({
   label,
@@ -44,27 +44,26 @@ function StatCard({
   );
 }
 
-/** All four values are placeholders — Backlog/Kanban don't exist yet, see `dummy-data.ts`. */
-export function OneLotProjectStatCards() {
+export function OneLotProjectStatCards({ data }: { data: StatCardsData }) {
   const [updatedPeriod, setUpdatedPeriod] = React.useState<PeriodValue>("7d");
   const [createdPeriod, setCreatedPeriod] = React.useState<PeriodValue>("7d");
 
   return (
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-      <StatCard label="Completed" value={STAT_CARDS_DUMMY.completed} />
+      <StatCard label="Completed" value={data.completed} />
       <StatCard
         label="Updated"
-        value={STAT_CARDS_DUMMY.updated[updatedPeriod]}
+        value={data.updated[updatedPeriod]}
         period={updatedPeriod}
         onPeriodChange={setUpdatedPeriod}
       />
       <StatCard
         label="Created"
-        value={STAT_CARDS_DUMMY.created[createdPeriod]}
+        value={data.created[createdPeriod]}
         period={createdPeriod}
         onPeriodChange={setCreatedPeriod}
       />
-      <StatCard label="Due Soon" value={STAT_CARDS_DUMMY.dueSoon} />
+      <StatCard label="Due Soon" value={data.dueSoon} />
     </div>
   );
 }

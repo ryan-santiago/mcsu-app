@@ -1,6 +1,13 @@
 import { can } from "@/lib/rbac";
 import type { CurrentUser } from "@/lib/session";
 import {
+  getOneLotProjectPriorityBreakdown,
+  getOneLotProjectStatCards,
+  getOneLotProjectStatusOverview,
+  getOneLotProjectTypesOfWork,
+  getOneLotProjectWorkload,
+} from "@/server/one-lot-projects/backlog-queries";
+import {
   listOneLotProjectActivity,
   listOneLotProjectMembers,
   listOneLotProjectS3pLinks,
@@ -21,11 +28,17 @@ type OneLotProjectSummaryProps = {
 };
 
 export async function OneLotProjectSummary({ projectId, actor }: OneLotProjectSummaryProps) {
-  const [members, s3pLinks, activity] = await Promise.all([
-    listOneLotProjectMembers(projectId),
-    listOneLotProjectS3pLinks(projectId),
-    listOneLotProjectActivity(projectId, 10),
-  ]);
+  const [members, s3pLinks, activity, statusOverview, priorityBreakdown, typesOfWork, statCards, workload] =
+    await Promise.all([
+      listOneLotProjectMembers(projectId),
+      listOneLotProjectS3pLinks(projectId),
+      listOneLotProjectActivity(projectId, 10),
+      getOneLotProjectStatusOverview(projectId),
+      getOneLotProjectPriorityBreakdown(projectId),
+      getOneLotProjectTypesOfWork(projectId),
+      getOneLotProjectStatCards(projectId),
+      getOneLotProjectWorkload(projectId),
+    ]);
 
   const canEdit = can(actor, "one_lot_projects:edit");
   const canDelete = can(actor, "one_lot_projects:delete");
@@ -37,19 +50,19 @@ export async function OneLotProjectSummary({ projectId, actor }: OneLotProjectSu
         <OneLotProjectS3pLinksTable oneLotProjectId={projectId} links={s3pLinks} canEdit={canEdit} canDelete={canDelete} />
       </div>
 
-      <OneLotProjectStatCards />
+      <OneLotProjectStatCards data={statCards} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <OneLotProjectStatusOverview />
+        <OneLotProjectStatusOverview data={statusOverview} />
         <OneLotProjectRecentActivity activity={activity} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <OneLotProjectPriorityBreakdown />
-        <OneLotProjectTypesOfWork />
+        <OneLotProjectPriorityBreakdown data={priorityBreakdown} />
+        <OneLotProjectTypesOfWork data={typesOfWork} />
       </div>
 
-      <OneLotProjectTeamWorkload members={members} />
+      <OneLotProjectTeamWorkload workload={workload} />
     </div>
   );
 }

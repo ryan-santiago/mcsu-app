@@ -1,15 +1,15 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { BreakdownRow } from "@/server/one-lot-projects/backlog-types";
 
 import { DistributionBarRow } from "./distribution-bar-row";
-import { TYPES_OF_WORK_DUMMY } from "./dummy-data";
 
-// Fixed categorical order — Task/Subtask/Bug are distinct identities, not an
-// ordered scale, so each gets its own hue rather than opacity steps.
-const CATEGORY_COLORS = ["bg-chart-1", "bg-chart-3", "bg-chart-2"];
+// Fixed categorical order — Task/Bug are distinct identities, not an ordered
+// scale, so each gets its own hue rather than opacity steps. Subtasks are
+// never a category here — they're always a child of a Task/Bug.
+const CATEGORY_COLORS = ["bg-chart-1", "bg-chart-2"];
 
-/** Placeholder — work-item types come from the future Backlog/Kanban, see `dummy-data.ts`. */
-export function OneLotProjectTypesOfWork() {
-  const max = Math.max(1, ...TYPES_OF_WORK_DUMMY.map((row) => row.value));
+export function OneLotProjectTypesOfWork({ data }: { data: BreakdownRow[] }) {
+  const max = Math.max(1, ...data.map((row) => row.value));
 
   return (
     <Card>
@@ -17,7 +17,7 @@ export function OneLotProjectTypesOfWork() {
         <CardTitle>Types of Work</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {TYPES_OF_WORK_DUMMY.map((row, index) => (
+        {data.map((row, index) => (
           <DistributionBarRow
             key={row.label}
             label={row.label}

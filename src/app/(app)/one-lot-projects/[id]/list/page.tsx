@@ -1,7 +1,11 @@
-import { ListChecks } from "lucide-react";
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 
-import { OneLotProjectPageShell } from "@/components/one-lot-projects/one-lot-project-page";
+import { PageHeader } from "@/components/layout/page-header";
+import { OneLotProjectBacklogBoard } from "@/components/one-lot-projects/backlog/one-lot-project-backlog-board";
+import { requirePermission } from "@/lib/session";
+import { getOneLotProjectBacklogBoard } from "@/server/one-lot-projects/backlog-queries";
+import { getOneLotProjectById } from "@/server/one-lot-projects/queries";
 
 export const metadata: Metadata = { title: "Backlog" };
 
@@ -11,13 +15,19 @@ type OneLotProjectListPageProps = {
 
 export default async function OneLotProjectListPage({ params }: OneLotProjectListPageProps) {
   const { id } = await params;
+  const actor = await requirePermission("one_lot_projects:read");
+  const project = await getOneLotProjectById(id, actor);
+  if (!project) notFound();
+
+  const board = await getOneLotProjectBacklogBoard(id, actor);
 
   return (
-    <OneLotProjectPageShell
-      projectId={id}
-      pageTitle="Backlog"
-      icon={ListChecks}
-      description="The backlog list isn't built yet."
-    />
+    <div className="mx-auto w-full max-w-7xl space-y-6">
+      <PageHeader title={project.name} description="Backlog" />
+      {/* Reaching this page already required content access to the project (see the `getOneLotProjectById`
+          guard above), and per this module's RBAC design that's the same bar as being allowed to edit its
+          Backlog content — there's no separate read-only-member tier today. */}
+      <OneLotProjectBacklogBoard projectId={id} initialBoard={board} canEdit />
+    </div>
   );
 }

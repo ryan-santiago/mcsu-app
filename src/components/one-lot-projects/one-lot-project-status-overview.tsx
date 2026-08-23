@@ -2,10 +2,10 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { WORK_ITEM_STATUS_COLORS } from "@/lib/one-lot-project-backlog-format";
+import type { BreakdownRow } from "@/server/one-lot-projects/backlog-types";
 
-import { STATUS_OVERVIEW_DUMMY } from "./dummy-data";
-
-const CATEGORY_COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)"];
+const CATEGORY_COLORS = Object.values(WORK_ITEM_STATUS_COLORS);
 
 const SIZE = 160;
 const CENTER = SIZE / 2;
@@ -32,10 +32,9 @@ function computeArcs(rows: { label: string; value: number }[], total: number): A
   });
 }
 
-/** Placeholder — statuses come from the future Kanban Board, see `dummy-data.ts`. */
-export function OneLotProjectStatusOverview() {
-  const total = STATUS_OVERVIEW_DUMMY.reduce((sum, row) => sum + row.value, 0);
-  const arcs = computeArcs(STATUS_OVERVIEW_DUMMY, total);
+export function OneLotProjectStatusOverview({ data }: { data: BreakdownRow[] }) {
+  const total = data.reduce((sum, row) => sum + row.value, 0);
+  const arcs = computeArcs(data, total);
 
   return (
     <Card>
@@ -76,7 +75,7 @@ export function OneLotProjectStatusOverview() {
         </div>
 
         <ul className="w-full space-y-1.5">
-          {STATUS_OVERVIEW_DUMMY.map((row, index) => (
+          {data.map((row, index) => (
             <li key={row.label} className="flex items-center justify-between gap-2 text-sm">
               <span className="flex min-w-0 items-center gap-2">
                 <span

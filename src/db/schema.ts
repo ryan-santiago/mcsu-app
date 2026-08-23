@@ -1,5 +1,6 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   boolean,
   date,
   index,
@@ -841,6 +842,8 @@ export const oneLotProject = pgTable(
     id: text("id").primaryKey(),
     name: text("name").notNull(),
     createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    /** Counter for Backlog-scoped work item codes ("Backlog-001", ...) — see `oneLotProjectWorkItem.code`. */
+    nextBacklogItemNumber: integer("next_backlog_item_number").notNull().default(1),
     createdAt: timestamp("created_at", { withTimezone: true })
       .$defaultFn(() => new Date())
       .notNull(),
@@ -896,6 +899,119 @@ export const oneLotProjectS3pProject = pgTable(
       table.projectId,
     ),
   ],
+);
+
+export const workItemType = pgEnum("work_item_type", ["task", "bug"]);
+export const workItemStatus = pgEnum("work_item_status", ["todo", "in_progress", "done"]);
+export const workItemPriority = pgEnum("work_item_priority", ["highest", "high", "medium", "low", "lowest"]);
+export const sprintStatus = pgEnum("sprint_status", ["planned", "active", "completed"]);
+
+/**
+ * A sprint always starts `planned`; `startOneLotProjectSprint` moves it to
+ * `active` (only one active sprint per project — enforced by the partial
+ * unique index below, not just the app-layer pre-check, since there's no
+ * `db.transaction()` on the Neon HTTP driver); `completeOneLotProjectSprint`
+ * moves it to `completed` and migrates its unfinished items back to the
+ * Backlog. `itemCode` is the prefix ("SCRUM") used for this sprint's own
+ * item codes — editing it later doesn't retroactively change codes already
+ * generated, since those are stored as literal strings on the item row.
+ */
+export const oneLotProjectSprint = pgTable(
+  "one_lot_project_sprint",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => oneLotProject.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    itemCode: text("item_code").notNull(),
+    startDate: date("start_date").notNull(),
+    endDate: date("end_date").notNull(),
+    goal: text("goal"),
+    status: sprintStatus("status").notNull().default("planned"),
+    /** Counter for this sprint's own item codes ("{itemCode}-1", "{itemCode}-2", ...). */
+    nextItemNumber: integer("next_item_number").notNull().default(1),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("one_lot_project_sprint_project_idx").on(table.projectId),
+    uniqueIndex("one_lot_project_sprint_one_active_idx")
+      .on(table.projectId)
+      .where(sql`${table.status} = 'active'`),
+  ],
+);
+
+/**
+ * A task/bug (`parentId` null) or a subtask (`parentId` set) — subtasks are
+ * the same row shape, never their own type distinction beyond that. `code`
+ * is generated once (see `createOneLotProjectWorkItem`'s counter step) and
+ * never changes — permanent even if the item later moves between Backlog
+ * and a Sprint (`sprintId` is the only thing that changes then).
+ */
+export const oneLotProjectWorkItem = pgTable(
+  "one_lot_project_work_item",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => oneLotProject.id, { onDelete: "cascade" }),
+    /** Null = Backlog. */
+    sprintId: text("sprint_id").references(() => oneLotProjectSprint.id, { onDelete: "set null" }),
+    /** Null = top-level item; set = subtask, always parented to a top-level item. */
+    parentId: text("parent_id").references((): AnyPgColumn => oneLotProjectWorkItem.id, { onDelete: "cascade" }),
+    code: text("code").notNull(),
+    type: workItemType("type").notNull(),
+    title: text("title").notNull(),
+    description: text("description"),
+    status: workItemStatus("status").notNull().default("todo"),
+    priority: workItemPriority("priority").notNull().default("medium"),
+    assigneeId: text("assignee_id").references(() => user.id, { onDelete: "set null" }),
+    dueDate: date("due_date"),
+    /** 1 story point ≈ 2 hours (a team convention, not enforced here). */
+    storyPoints: numeric("story_points", { precision: 5, scale: 1 }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("one_lot_project_work_item_project_idx").on(table.projectId),
+    index("one_lot_project_work_item_sprint_idx").on(table.sprintId),
+    index("one_lot_project_work_item_parent_idx").on(table.parentId),
+    index("one_lot_project_work_item_assignee_idx").on(table.assigneeId),
+    index("one_lot_project_work_item_board_idx").on(table.projectId, table.sprintId, table.sortOrder),
+    uniqueIndex("one_lot_project_work_item_project_code_idx").on(table.projectId, table.code),
+  ],
+);
+
+export const oneLotProjectWorkItemComment = pgTable(
+  "one_lot_project_work_item_comment",
+  {
+    id: text("id").primaryKey(),
+    workItemId: text("work_item_id")
+      .notNull()
+      .references(() => oneLotProjectWorkItem.id, { onDelete: "cascade" }),
+    body: text("body").notNull(),
+    authorId: text("author_id").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => [index("one_lot_project_work_item_comment_work_item_idx").on(table.workItemId)],
 );
 
 /* -------------------------------------------------------------------------- */
@@ -1007,6 +1123,8 @@ export const activityReportItemRelations = relations(activityReportItem, ({ one 
 export const oneLotProjectRelations = relations(oneLotProject, ({ many }) => ({
   members: many(oneLotProjectMember),
   s3pProjects: many(oneLotProjectS3pProject),
+  sprints: many(oneLotProjectSprint),
+  workItems: many(oneLotProjectWorkItem),
 }));
 
 export const oneLotProjectMemberRelations = relations(oneLotProjectMember, ({ one }) => ({
@@ -1020,6 +1138,32 @@ export const oneLotProjectS3pProjectRelations = relations(oneLotProjectS3pProjec
     references: [oneLotProject.id],
   }),
   project: one(project, { fields: [oneLotProjectS3pProject.projectId], references: [project.id] }),
+}));
+
+export const oneLotProjectSprintRelations = relations(oneLotProjectSprint, ({ one, many }) => ({
+  project: one(oneLotProject, { fields: [oneLotProjectSprint.projectId], references: [oneLotProject.id] }),
+  items: many(oneLotProjectWorkItem),
+}));
+
+export const oneLotProjectWorkItemRelations = relations(oneLotProjectWorkItem, ({ one, many }) => ({
+  project: one(oneLotProject, { fields: [oneLotProjectWorkItem.projectId], references: [oneLotProject.id] }),
+  sprint: one(oneLotProjectSprint, { fields: [oneLotProjectWorkItem.sprintId], references: [oneLotProjectSprint.id] }),
+  parent: one(oneLotProjectWorkItem, {
+    fields: [oneLotProjectWorkItem.parentId],
+    references: [oneLotProjectWorkItem.id],
+    relationName: "subtasks",
+  }),
+  subtasks: many(oneLotProjectWorkItem, { relationName: "subtasks" }),
+  assignee: one(user, { fields: [oneLotProjectWorkItem.assigneeId], references: [user.id] }),
+  comments: many(oneLotProjectWorkItemComment),
+}));
+
+export const oneLotProjectWorkItemCommentRelations = relations(oneLotProjectWorkItemComment, ({ one }) => ({
+  workItem: one(oneLotProjectWorkItem, {
+    fields: [oneLotProjectWorkItemComment.workItemId],
+    references: [oneLotProjectWorkItem.id],
+  }),
+  author: one(user, { fields: [oneLotProjectWorkItemComment.authorId], references: [user.id] }),
 }));
 
 export const staffAugmentationEngagementRelations = relations(staffAugmentationEngagement, ({ many }) => ({
@@ -1100,3 +1244,13 @@ export type OneLotProjectMember = typeof oneLotProjectMember.$inferSelect;
 export type NewOneLotProjectMember = typeof oneLotProjectMember.$inferInsert;
 export type OneLotProjectS3pProject = typeof oneLotProjectS3pProject.$inferSelect;
 export type NewOneLotProjectS3pProject = typeof oneLotProjectS3pProject.$inferInsert;
+export type OneLotProjectSprint = typeof oneLotProjectSprint.$inferSelect;
+export type NewOneLotProjectSprint = typeof oneLotProjectSprint.$inferInsert;
+export type SprintStatus = (typeof sprintStatus.enumValues)[number];
+export type OneLotProjectWorkItem = typeof oneLotProjectWorkItem.$inferSelect;
+export type NewOneLotProjectWorkItem = typeof oneLotProjectWorkItem.$inferInsert;
+export type WorkItemType = (typeof workItemType.enumValues)[number];
+export type WorkItemStatus = (typeof workItemStatus.enumValues)[number];
+export type WorkItemPriority = (typeof workItemPriority.enumValues)[number];
+export type OneLotProjectWorkItemComment = typeof oneLotProjectWorkItemComment.$inferSelect;
+export type NewOneLotProjectWorkItemComment = typeof oneLotProjectWorkItemComment.$inferInsert;

@@ -12,7 +12,7 @@ import {
   user,
 } from "@/db/schema";
 import { hasUnrestrictedAccess } from "@/lib/rbac";
-import { authorize, type CurrentUser } from "@/lib/session";
+import { authorize, AuthorizationError, type CurrentUser } from "@/lib/session";
 import type { ProjectSearchOption } from "@/server/projects/types";
 import type { AuditEntry } from "@/server/audit/types";
 
@@ -84,6 +84,22 @@ export async function getOneLotProjectByIdUnrestricted(id: string): Promise<OneL
     .limit(1);
 
   return row ?? null;
+}
+
+/**
+ * Content-access gate for Backlog/Sprint/work-item actions — reuses
+ * `getOneLotProjectById` itself rather than re-deriving
+ * `contentVisibilityWhere`, since that function already *is* "does this
+ * actor have content access to this project." Throws the same
+ * `AuthorizationError` every action's `run()` wrapper already catches.
+ */
+export async function assertOneLotProjectContentAccess(
+  projectId: string,
+  actor: CurrentUser,
+): Promise<OneLotProjectRow> {
+  const project = await getOneLotProjectById(projectId, actor);
+  if (!project) throw new AuthorizationError("You do not have access to this project.");
+  return project;
 }
 
 export async function listOneLotProjectMembers(projectId: string): Promise<OneLotProjectMemberRow[]> {
