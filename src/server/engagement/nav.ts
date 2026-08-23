@@ -47,15 +47,15 @@ export async function getEngagementNavData(user: CurrentUser): Promise<Engagemen
   }
 
   if (can(user, "one_lot_projects:read")) {
-    const rows = await listVisibleOneLotProjects(user);
+    const rows = await listVisibleOneLotProjects();
     data["one-lot-projects"] = {
       items: rows.map((row) => ({
         id: row.id,
         label: row.name,
         href: `/one-lot-projects/${row.id}/dashboard`,
         children: [
-          { label: "Dashboard", href: `/one-lot-projects/${row.id}/dashboard` },
-          { label: "List", href: `/one-lot-projects/${row.id}/list` },
+          { label: "Summary", href: `/one-lot-projects/${row.id}/dashboard` },
+          { label: "Backlog", href: `/one-lot-projects/${row.id}/list` },
           { label: "Kanban Board", href: `/one-lot-projects/${row.id}/kanban` },
           { label: "Calendar", href: `/one-lot-projects/${row.id}/calendar` },
         ],

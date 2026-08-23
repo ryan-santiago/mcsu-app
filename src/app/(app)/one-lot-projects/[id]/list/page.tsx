@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 
 import { OneLotProjectPageShell } from "@/components/one-lot-projects/one-lot-project-page";
 
-export const metadata: Metadata = { title: "List" };
+export const metadata: Metadata = { title: "Backlog" };
 
 type OneLotProjectListPageProps = {
   params: Promise<{ id: string }>;
@@ -15,7 +15,7 @@ export default async function OneLotProjectListPage({ params }: OneLotProjectLis
   return (
     <OneLotProjectPageShell
       projectId={id}
-      pageTitle="List"
+      pageTitle="Backlog"
       icon={ListChecks}
       description="The backlog list isn't built yet."
     />

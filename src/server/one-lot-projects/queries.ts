@@ -13,13 +13,14 @@ export type OneLotProjectRow = {
 };
 
 /**
- * A project is visible to its creator, to anyone added as a member (matched
- * via the caller's linked Employee record), or to anyone with unrestricted
- * access — same bypass rule Employees' team-scoping uses. `staff_augmentation`
- * has no equivalent restriction; this is the one module in the app where
- * `read` alone isn't enough to see every row.
+ * A project's *content* (the Summary/Backlog/Kanban/Calendar pages) is
+ * gated separately from the module permission: visible to the project's
+ * creator, to anyone added as a member (matched via the caller's linked
+ * Employee record), or to anyone with unrestricted access — same bypass
+ * rule Employees' team-scoping uses. This is what stands in for the
+ * per-project access-user module until that's built.
  */
-function visibilityWhere(actor: CurrentUser) {
+function contentVisibilityWhere(actor: CurrentUser) {
   if (hasUnrestrictedAccess(actor)) return undefined;
 
   const memberOf = db
@@ -30,20 +31,24 @@ function visibilityWhere(actor: CurrentUser) {
   return or(eq(oneLotProject.createdBy, actor.id), inArray(oneLotProject.id, memberOf));
 }
 
-export async function listVisibleOneLotProjects(actor: CurrentUser): Promise<OneLotProjectRow[]> {
+/**
+ * `one_lot_projects:read` alone is enough to see every project — the list
+ * is not membership-scoped. Only a project's content (see
+ * `contentVisibilityWhere`) is restricted to members.
+ */
+export async function listVisibleOneLotProjects(): Promise<OneLotProjectRow[]> {
   await authorize("one_lot_projects:read");
 
   return db
     .select({ id: oneLotProject.id, name: oneLotProject.name })
     .from(oneLotProject)
-    .where(visibilityWhere(actor))
     .orderBy(asc(oneLotProject.name));
 }
 
 export async function getOneLotProjectById(id: string, actor: CurrentUser): Promise<OneLotProjectRow | null> {
   await authorize("one_lot_projects:read");
 
-  const where = visibilityWhere(actor);
+  const where = contentVisibilityWhere(actor);
   const [row] = await db
     .select({ id: oneLotProject.id, name: oneLotProject.name })
     .from(oneLotProject)

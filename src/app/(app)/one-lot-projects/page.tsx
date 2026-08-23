@@ -15,14 +15,14 @@ export const metadata: Metadata = {
 
 export default async function OneLotProjectsPage() {
   const actor = await requirePermission("one_lot_projects:read");
-  const projects = await listVisibleOneLotProjects(actor);
+  const projects = await listVisibleOneLotProjects();
   const canCreate = can(actor, "one_lot_projects:write");
 
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6">
       <PageHeader
         title="One-Lot Projects"
-        description="Projects you created or were added to — dashboard, backlog, board and calendar for each."
+        description="Summary, backlog, board and calendar for each project."
         actions={
           canCreate ? (
             <Button asChild>
@@ -39,7 +39,7 @@ export default async function OneLotProjectsPage() {
           description={
             canCreate
               ? "Add one to start tracking it here."
-              : "You haven't been added to any project yet."
+              : "No projects have been created yet."
           }
           action={
             canCreate ? (

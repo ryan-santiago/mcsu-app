@@ -16,7 +16,7 @@ type OneLotProjectPageShellProps = {
 
 /**
  * Shared guard + blank-content shell for the four fixed One-Lot Project
- * pages (Dashboard/List/Kanban Board/Calendar) — identical access check and
+ * pages (Summary/Backlog/Kanban Board/Calendar) — identical access check and
  * layout, differing only in copy. `getOneLotProjectById` returning `null`
  * covers both "doesn't exist" and "you're not a member", same as
  * `getEmployeeById`'s team scoping — either way this is a 404, not a 403.

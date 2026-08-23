@@ -828,10 +828,11 @@ export const staffAugmentationAssignment = pgTable(
 );
 
 /**
- * Parent record for a JIRA-style project (Dashboard/List/Kanban/Calendar —
- * none of that content is built yet). Unlike Staff Augmentation, visibility
- * is scoped to the creator plus whoever is added via `oneLotProjectMember`
- * (see `hasUnrestrictedAccess` for the admin bypass) — see
+ * Parent record for a JIRA-style project (Summary/Backlog/Kanban/Calendar —
+ * none of that content is built yet). Anyone with `one_lot_projects:read`
+ * sees every project; only the project's *content* is restricted, to the
+ * creator plus whoever is added via `oneLotProjectMember` (see
+ * `hasUnrestrictedAccess` for the admin bypass) — see
  * `src/server/one-lot-projects/queries.ts`.
  */
 export const oneLotProject = pgTable(
