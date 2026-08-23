@@ -1,6 +1,9 @@
 import {
   CircleCheck,
   CircleSlash,
+  FolderMinus,
+  FolderPlus,
+  Kanban,
   KeyRound,
   LogIn,
   Pencil,
@@ -9,6 +12,8 @@ import {
   Trash2,
   UserCheck,
   UserCog,
+  UserMinus,
+  UserPlus,
   Users,
   XCircle,
   type LucideIcon,
@@ -21,6 +26,7 @@ import { cn } from "@/lib/utils";
 const MODULE_ICONS: Record<string, LucideIcon> = {
   users: Users,
   auth: KeyRound,
+  one_lot_projects: Kanban,
 };
 
 const MODULE_LABELS: Record<string, string> = Object.fromEntries(
@@ -51,6 +57,22 @@ const ACTION_META: Record<string, ActionMeta> = {
   suspended: { label: "Suspended", icon: CircleSlash, className: "border-destructive/30 bg-destructive/10 text-destructive" },
   deleted: { label: "Deleted", icon: Trash2, className: "border-destructive/30 bg-destructive/10 text-destructive" },
   login: { label: "Signed in", icon: LogIn, className: "border-border bg-muted text-muted-foreground" },
+  member_added: { label: "Member added", icon: UserPlus, className: "border-success/30 bg-success/10 text-success" },
+  member_removed: {
+    label: "Member removed",
+    icon: UserMinus,
+    className: "border-destructive/30 bg-destructive/10 text-destructive",
+  },
+  s3p_project_linked: {
+    label: "S3P project linked",
+    icon: FolderPlus,
+    className: "border-success/30 bg-success/10 text-success",
+  },
+  s3p_project_unlinked: {
+    label: "S3P project unlinked",
+    icon: FolderMinus,
+    className: "border-destructive/30 bg-destructive/10 text-destructive",
+  },
 };
 
 /** Falls back to a neutral badge with the raw action string for anything not yet in the map. */

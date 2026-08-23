@@ -1,7 +1,10 @@
-import { LayoutDashboard } from "lucide-react";
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 
-import { OneLotProjectPageShell } from "@/components/one-lot-projects/one-lot-project-page";
+import { PageHeader } from "@/components/layout/page-header";
+import { OneLotProjectSummary } from "@/components/one-lot-projects/one-lot-project-summary";
+import { requirePermission } from "@/lib/session";
+import { getOneLotProjectById } from "@/server/one-lot-projects/queries";
 
 export const metadata: Metadata = { title: "Summary" };
 
@@ -11,13 +14,14 @@ type OneLotProjectDashboardPageProps = {
 
 export default async function OneLotProjectDashboardPage({ params }: OneLotProjectDashboardPageProps) {
   const { id } = await params;
+  const actor = await requirePermission("one_lot_projects:read");
+  const project = await getOneLotProjectById(id, actor);
+  if (!project) notFound();
 
   return (
-    <OneLotProjectPageShell
-      projectId={id}
-      pageTitle="Summary"
-      icon={LayoutDashboard}
-      description="Project health, member roster and activity summary aren't built yet."
-    />
+    <div className="mx-auto w-full max-w-7xl space-y-6">
+      <PageHeader title={project.name} description="Summary" />
+      <OneLotProjectSummary projectId={id} actor={actor} />
+    </div>
   );
 }

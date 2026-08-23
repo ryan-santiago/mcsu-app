@@ -232,6 +232,20 @@
       "when": 1787495496682,
       "tag": "0032_add_sales_rep_solutions_manager_email",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1787503101971,
+      "tag": "0033_add_one_lot_project_user_column_and_s3p_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1787503131540,
+      "tag": "0034_drop_one_lot_project_member_employee_id",
+      "breakpoints": true
     }
   ]
 }

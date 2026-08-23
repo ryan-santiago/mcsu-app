@@ -64,6 +64,10 @@ export const AUDIT_ACTIONS = [
   { value: "line_item_added", label: "S3P detail added" },
   { value: "line_item_updated", label: "S3P detail updated" },
   { value: "line_item_removed", label: "S3P detail removed" },
+  { value: "member_added", label: "Member added" },
+  { value: "member_removed", label: "Member removed" },
+  { value: "s3p_project_linked", label: "S3P project linked" },
+  { value: "s3p_project_unlinked", label: "S3P project unlinked" },
   { value: "deleted", label: "Deleted" },
   { value: "login", label: "Signed in" },
 ] as const;

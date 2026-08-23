@@ -852,7 +852,11 @@ export const oneLotProject = pgTable(
   (table) => [index("one_lot_project_name_idx").on(table.name)],
 );
 
-/** Who can see/work in a One-Lot project beyond its creator — picked from Employees. */
+/**
+ * Who can see/work in a One-Lot project beyond its creator — picked from
+ * User Management accounts, not Employees (the two are only loosely linked
+ * by email match, see `getCurrentUser` in `src/lib/session.ts`).
+ */
 export const oneLotProjectMember = pgTable(
   "one_lot_project_member",
   {
@@ -860,14 +864,38 @@ export const oneLotProjectMember = pgTable(
     projectId: text("project_id")
       .notNull()
       .references(() => oneLotProject.id, { onDelete: "cascade" }),
-    employeeId: text("employee_id")
+    userId: text("user_id")
       .notNull()
-      .references(() => employee.id, { onDelete: "cascade" }),
+      .references(() => user.id, { onDelete: "cascade" }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .$defaultFn(() => new Date())
       .notNull(),
   },
-  (table) => [uniqueIndex("one_lot_project_member_project_employee_idx").on(table.projectId, table.employeeId)],
+  (table) => [uniqueIndex("one_lot_project_member_project_user_idx").on(table.projectId, table.userId)],
+);
+
+/** Which S3P (Projects-module) records a One-Lot project spans — a pure link, styled like `oneLotProjectMember`/`staffAugmentationAssignment`. */
+export const oneLotProjectS3pProject = pgTable(
+  "one_lot_project_s3p_project",
+  {
+    id: text("id").primaryKey(),
+    oneLotProjectId: text("one_lot_project_id")
+      .notNull()
+      .references(() => oneLotProject.id, { onDelete: "cascade" }),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => project.id, { onDelete: "cascade" }),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("one_lot_project_s3p_project_one_lot_project_id_project_id_idx").on(
+      table.oneLotProjectId,
+      table.projectId,
+    ),
+  ],
 );
 
 /* -------------------------------------------------------------------------- */
@@ -978,11 +1006,20 @@ export const activityReportItemRelations = relations(activityReportItem, ({ one 
 
 export const oneLotProjectRelations = relations(oneLotProject, ({ many }) => ({
   members: many(oneLotProjectMember),
+  s3pProjects: many(oneLotProjectS3pProject),
 }));
 
 export const oneLotProjectMemberRelations = relations(oneLotProjectMember, ({ one }) => ({
   project: one(oneLotProject, { fields: [oneLotProjectMember.projectId], references: [oneLotProject.id] }),
-  employee: one(employee, { fields: [oneLotProjectMember.employeeId], references: [employee.id] }),
+  user: one(user, { fields: [oneLotProjectMember.userId], references: [user.id] }),
+}));
+
+export const oneLotProjectS3pProjectRelations = relations(oneLotProjectS3pProject, ({ one }) => ({
+  oneLotProject: one(oneLotProject, {
+    fields: [oneLotProjectS3pProject.oneLotProjectId],
+    references: [oneLotProject.id],
+  }),
+  project: one(project, { fields: [oneLotProjectS3pProject.projectId], references: [project.id] }),
 }));
 
 export const staffAugmentationEngagementRelations = relations(staffAugmentationEngagement, ({ many }) => ({
@@ -1061,3 +1098,5 @@ export type OneLotProject = typeof oneLotProject.$inferSelect;
 export type NewOneLotProject = typeof oneLotProject.$inferInsert;
 export type OneLotProjectMember = typeof oneLotProjectMember.$inferSelect;
 export type NewOneLotProjectMember = typeof oneLotProjectMember.$inferInsert;
+export type OneLotProjectS3pProject = typeof oneLotProjectS3pProject.$inferSelect;
+export type NewOneLotProjectS3pProject = typeof oneLotProjectS3pProject.$inferInsert;
