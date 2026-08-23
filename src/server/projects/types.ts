@@ -71,3 +71,18 @@ export type ProjectOption = {
   startDate: string | null;
   endDate: string | null;
 };
+
+/**
+ * Search-only picker result for flows outside the Projects module that need
+ * to attach a specific project (e.g. Staff Augmentation's "add this to
+ * deployment history" shortcut) — carries `s3pNumber` so the picker can
+ * disambiguate same-named projects, unlike the plain `ProjectOption` above.
+ */
+export type ProjectSearchOption = {
+  id: string;
+  s3pNumber: string;
+  name: string;
+  clientId: string;
+  startDate: string | null;
+  endDate: string | null;
+};

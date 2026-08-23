@@ -7,3 +7,9 @@ export const staffAugmentationFormSchema = z.object({
 });
 
 export type StaffAugmentationFormInput = z.infer<typeof staffAugmentationFormSchema>;
+
+export const staffAugmentationAssignmentSchema = z.object({
+  employeeId: z.string().min(1, "Select an employee"),
+});
+
+export type StaffAugmentationAssignmentInput = z.infer<typeof staffAugmentationAssignmentSchema>;

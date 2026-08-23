@@ -218,6 +218,20 @@
       "when": 1787415058407,
       "tag": "0030_grant_engagement_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1787489103808,
+      "tag": "0031_add_staff_augmentation_assignment",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1787495496682,
+      "tag": "0032_add_sales_rep_solutions_manager_email",
+      "breakpoints": true
     }
   ]
 }

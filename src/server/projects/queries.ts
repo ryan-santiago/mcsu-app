@@ -16,7 +16,7 @@ import {
 } from "@/db/schema";
 import { authorize } from "@/lib/session";
 
-import type { ProjectDetail, ProjectFilters, ProjectListResult, ProjectOption } from "./types";
+import type { ProjectDetail, ProjectFilters, ProjectListResult, ProjectOption, ProjectSearchOption } from "./types";
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
@@ -194,4 +194,31 @@ export async function listProjectOptions(clientId?: string): Promise<ProjectOpti
     .from(project)
     .where(clientId ? eq(project.clientId, clientId) : undefined)
     .orderBy(asc(project.name));
+}
+
+/**
+ * Search-only picker for flows outside the Projects module that need to
+ * attach a specific project by name or S3P number (e.g. Staff Augmentation's
+ * "add this to deployment history" shortcut). Deliberately not
+ * authorization-gated — same convention as `listProjectOptions` above:
+ * callers authorize on their own module's edit permission first. Capped
+ * rather than paginated since it's feeding a dropdown, not a directory.
+ */
+export async function searchProjectOptions(search: string): Promise<ProjectSearchOption[]> {
+  const term = search.trim();
+  const where = term ? or(ilike(project.s3pNumber, `%${term}%`), ilike(project.name, `%${term}%`)) : undefined;
+
+  return db
+    .select({
+      id: project.id,
+      s3pNumber: project.s3pNumber,
+      name: project.name,
+      clientId: project.clientId,
+      startDate: project.startDate,
+      endDate: project.endDate,
+    })
+    .from(project)
+    .where(where)
+    .orderBy(asc(project.name))
+    .limit(20);
 }

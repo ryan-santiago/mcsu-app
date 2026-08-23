@@ -291,13 +291,23 @@ export const team = pgTable("team", lookupColumns, (table) => [
   uniqueIndex("team_name_idx").on(table.name),
 ]);
 
-export const salesRepresentative = pgTable("sales_representative", lookupColumns, (table) => [
-  uniqueIndex("sales_representative_name_idx").on(table.name),
-]);
+/**
+ * The only two lookup kinds that carry an email — for future notifications
+ * (e.g. contract renewal alerts). Everything else about them still goes
+ * through the same generic Maintenance CRUD as every other lookup; only
+ * `src/server/maintenance/actions.ts`'s create/update branch on `email`.
+ */
+export const salesRepresentative = pgTable(
+  "sales_representative",
+  () => ({ ...lookupColumns(), email: text("email") }),
+  (table) => [uniqueIndex("sales_representative_name_idx").on(table.name)],
+);
 
-export const solutionsManager = pgTable("solutions_manager", lookupColumns, (table) => [
-  uniqueIndex("solutions_manager_name_idx").on(table.name),
-]);
+export const solutionsManager = pgTable(
+  "solutions_manager",
+  () => ({ ...lookupColumns(), email: text("email") }),
+  (table) => [uniqueIndex("solutions_manager_name_idx").on(table.name)],
+);
 
 export const engagementType = pgTable("engagement_type", lookupColumns, (table) => [
   uniqueIndex("engagement_type_name_idx").on(table.name),
@@ -764,9 +774,9 @@ export const activityReportItem = pgTable(
 /* -------------------------------------------------------------------------- */
 
 /**
- * Flat item — the future contract/employee-tracking content lives on this
- * record but isn't built yet. Visibility is pure RBAC (`staff_augmentation:read`),
- * no membership scoping, unlike One-Lot Project below.
+ * Visibility is pure RBAC (`staff_augmentation:read`), no membership scoping,
+ * unlike One-Lot Project below. Employee-level staffing lives on
+ * `staffAugmentationAssignment`.
  */
 export const staffAugmentationEngagement = pgTable(
   "staff_augmentation_engagement",
@@ -783,6 +793,38 @@ export const staffAugmentationEngagement = pgTable(
       .notNull(),
   },
   (table) => [index("staff_augmentation_engagement_name_idx").on(table.name)],
+);
+
+/**
+ * Who's staffed on an engagement — a pure link, styled like
+ * `oneLotProjectMember`. Level/Position, Project and dates are never stored
+ * here: the sidebar/table always reads them live from the employee's current
+ * `employeeEmployment` row and latest `employeeDeployment` row (see
+ * `latestEmploymentSubquery`/`latestDeploymentSubquery` in
+ * `src/server/employees/queries.ts`), so this table never drifts from the
+ * Employee module's own record of the same person.
+ */
+export const staffAugmentationAssignment = pgTable(
+  "staff_augmentation_assignment",
+  {
+    id: text("id").primaryKey(),
+    engagementId: text("engagement_id")
+      .notNull()
+      .references(() => staffAugmentationEngagement.id, { onDelete: "cascade" }),
+    employeeId: text("employee_id")
+      .notNull()
+      .references(() => employee.id, { onDelete: "cascade" }),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("staff_augmentation_assignment_engagement_employee_idx").on(
+      table.engagementId,
+      table.employeeId,
+    ),
+  ],
 );
 
 /**
@@ -942,6 +984,18 @@ export const oneLotProjectMemberRelations = relations(oneLotProjectMember, ({ on
   employee: one(employee, { fields: [oneLotProjectMember.employeeId], references: [employee.id] }),
 }));
 
+export const staffAugmentationEngagementRelations = relations(staffAugmentationEngagement, ({ many }) => ({
+  assignments: many(staffAugmentationAssignment),
+}));
+
+export const staffAugmentationAssignmentRelations = relations(staffAugmentationAssignment, ({ one }) => ({
+  engagement: one(staffAugmentationEngagement, {
+    fields: [staffAugmentationAssignment.engagementId],
+    references: [staffAugmentationEngagement.id],
+  }),
+  employee: one(employee, { fields: [staffAugmentationAssignment.employeeId], references: [employee.id] }),
+}));
+
 /* -------------------------------------------------------------------------- */
 /*  Inferred types                                                            */
 /* -------------------------------------------------------------------------- */
@@ -999,6 +1053,8 @@ export type NewActivityReportItem = typeof activityReportItem.$inferInsert;
 
 export type StaffAugmentationEngagement = typeof staffAugmentationEngagement.$inferSelect;
 export type NewStaffAugmentationEngagement = typeof staffAugmentationEngagement.$inferInsert;
+export type StaffAugmentationAssignment = typeof staffAugmentationAssignment.$inferSelect;
+export type NewStaffAugmentationAssignment = typeof staffAugmentationAssignment.$inferInsert;
 
 export type OneLotProject = typeof oneLotProject.$inferSelect;
 export type NewOneLotProject = typeof oneLotProject.$inferInsert;

@@ -21,8 +21,8 @@ import {
 } from "@/lib/validation/employee";
 import { listLookupOptions } from "@/server/maintenance/queries";
 import type { LookupKind, LookupOption } from "@/server/maintenance/types";
-import { listProjectOptions } from "@/server/projects/queries";
-import type { ProjectOption } from "@/server/projects/types";
+import { listProjectOptions, searchProjectOptions } from "@/server/projects/queries";
+import type { ProjectOption, ProjectSearchOption } from "@/server/projects/types";
 
 import { getEmployeeById, listEmployees } from "./queries";
 import type { EmployeeDetail, EmployeeFilters, EmployeeListResult } from "./types";
@@ -135,6 +135,17 @@ export async function fetchLookupOptions(kind: LookupKind): Promise<LookupOption
 export async function fetchProjectOptions(clientId?: string): Promise<ProjectOption[]> {
   await authorize("employees:read");
   return listProjectOptions(clientId);
+}
+
+/**
+ * Search-by-name-or-S3P-number project picker for the deployment history
+ * form's "start from a project" flow (e.g. Staff Augmentation's "add this to
+ * deployment history" shortcut, which picks a project first and derives the
+ * client from it rather than picking a client first).
+ */
+export async function searchProjectsForDeployment(search: string): Promise<ProjectSearchOption[]> {
+  await authorize("employees:read");
+  return searchProjectOptions(search);
 }
 
 async function loadProjectName(projectId: string): Promise<string | null> {

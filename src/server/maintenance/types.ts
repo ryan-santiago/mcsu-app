@@ -27,6 +27,8 @@ export const LOOKUP_KINDS: readonly LookupKind[] = [
 export type LookupRow = {
   id: string;
   name: string;
+  /** Only present for kinds where `LOOKUP_META[kind].hasEmail` is true. */
+  email?: string | null;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -34,22 +36,41 @@ export type LookupRow = {
 
 export type LookupOption = { id: string; name: string };
 
-export const LOOKUP_META: Record<LookupKind, { label: string; singular: string; auditModule: AuditModule }> = {
-  client: { label: "Clients", singular: "Client", auditModule: "clients" },
-  position: { label: "Positions", singular: "Position", auditModule: "positions" },
-  level: { label: "Levels", singular: "Level", auditModule: "levels" },
-  gender: { label: "Genders", singular: "Gender", auditModule: "genders" },
-  team: { label: "Teams", singular: "Team", auditModule: "teams" },
+export const LOOKUP_META: Record<
+  LookupKind,
+  { label: string; singular: string; auditModule: AuditModule; hasEmail: boolean; tabLabel?: string }
+> = {
+  client: { label: "Clients", singular: "Client", auditModule: "clients", hasEmail: false },
+  position: { label: "Positions", singular: "Position", auditModule: "positions", hasEmail: false },
+  level: { label: "Levels", singular: "Level", auditModule: "levels", hasEmail: false },
+  gender: { label: "Genders", singular: "Gender", auditModule: "genders", hasEmail: false },
+  team: { label: "Teams", singular: "Team", auditModule: "teams", hasEmail: false },
   sales_representative: {
     label: "Sales Representatives",
     singular: "Sales Representative",
     auditModule: "sales_representatives",
+    /** For future email notifications (e.g. contract renewal alerts). */
+    hasEmail: true,
   },
   solutions_manager: {
     label: "Solutions Managers",
     singular: "Solutions Manager",
     auditModule: "solutions_managers",
+    hasEmail: true,
   },
-  engagement_type: { label: "Engagement Types", singular: "Engagement Type", auditModule: "engagement_types" },
-  employment_type: { label: "Employment Types", singular: "Employment Type", auditModule: "employment_types" },
+  engagement_type: {
+    label: "Engagement Types",
+    singular: "Engagement Type",
+    auditModule: "engagement_types",
+    hasEmail: false,
+    /** Short form for the tab/jump-menu only — `label`/`singular` stay full elsewhere (search placeholder, counts, empty state) so the grammar there still reads right. */
+    tabLabel: "Engagement",
+  },
+  employment_type: {
+    label: "Employment Types",
+    singular: "Employment Type",
+    auditModule: "employment_types",
+    hasEmail: false,
+    tabLabel: "Employment",
+  },
 };

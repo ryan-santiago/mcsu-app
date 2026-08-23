@@ -51,13 +51,15 @@ import {
   updateLookupEntry,
 } from "@/server/maintenance/actions";
 import { lookupQueryKey } from "@/server/maintenance/query-key";
-import type { LookupKind, LookupRow } from "@/server/maintenance/types";
+import { LOOKUP_META, type LookupKind, type LookupRow } from "@/server/maintenance/types";
 import type { ActionResult } from "@/lib/action-result";
+import { emailSchema } from "@/lib/validation/auth";
 
-const nameFormSchema = z.object({
+const entryFormSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(100, "That name is too long"),
+  email: emailSchema.optional().or(z.literal("")),
 });
-type NameFormInput = z.infer<typeof nameFormSchema>;
+type EntryFormInput = z.infer<typeof entryFormSchema>;
 
 const PAGE_SIZE = 20;
 
@@ -71,6 +73,7 @@ type LookupTableProps = {
 
 export function LookupTable({ kind, label, singular, icon: Icon, canManage }: LookupTableProps) {
   const queryClient = useQueryClient();
+  const hasEmail = LOOKUP_META[kind].hasEmail;
 
   const { data, isPending, isFetching, isError, error, refetch } = useQuery<LookupRow[]>({
     queryKey: lookupQueryKey(kind),
@@ -148,6 +151,7 @@ export function LookupTable({ kind, label, singular, icon: Icon, canManage }: Lo
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead>Name</TableHead>
+                {hasEmail ? <TableHead>Email</TableHead> : null}
                 <TableHead className="w-32">Status</TableHead>
                 <TableHead className="w-36">Added</TableHead>
                 {canManage ? <TableHead className="w-12" aria-label="Actions" /> : null}
@@ -161,6 +165,11 @@ export function LookupTable({ kind, label, singular, icon: Icon, canManage }: Lo
                     <TableCell>
                       <Skeleton className="h-4 w-40" />
                     </TableCell>
+                    {hasEmail ? (
+                      <TableCell>
+                        <Skeleton className="h-4 w-40" />
+                      </TableCell>
+                    ) : null}
                     <TableCell>
                       <Skeleton className="h-5 w-16 rounded-full" />
                     </TableCell>
@@ -172,7 +181,7 @@ export function LookupTable({ kind, label, singular, icon: Icon, canManage }: Lo
                 ))
               ) : filteredRows.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={canManage ? 4 : 3} className="p-0">
+                  <TableCell colSpan={3 + (hasEmail ? 1 : 0) + (canManage ? 1 : 0)} className="p-0">
                     <EmptyState
                       icon={Icon}
                       title={search ? `No matching ${label.toLowerCase()}` : `No ${label.toLowerCase()} yet`}
@@ -191,6 +200,9 @@ export function LookupTable({ kind, label, singular, icon: Icon, canManage }: Lo
                 pagedRows.map((row) => (
                   <TableRow key={row.id} className={isFetching ? "opacity-70" : undefined}>
                     <TableCell className="font-medium">{row.name}</TableCell>
+                    {hasEmail ? (
+                      <TableCell className="text-muted-foreground">{row.email || "—"}</TableCell>
+                    ) : null}
                     <TableCell>
                       {canManage ? (
                         <div className="flex items-center gap-2">
@@ -273,14 +285,15 @@ export function LookupTable({ kind, label, singular, icon: Icon, canManage }: Lo
       <LookupEntryDialog
         kind={kind}
         singular={singular}
+        hasEmail={hasEmail}
         target={editing}
         pending={mutation.isPending}
         onOpenChange={(open) => !open && setEditing(null)}
-        onSubmit={(name) => {
+        onSubmit={(values) => {
           if (editing === "new") {
-            mutation.mutate(() => createLookupEntry({ kind, name }));
+            mutation.mutate(() => createLookupEntry({ kind, ...values }));
           } else if (editing) {
-            mutation.mutate(() => updateLookupEntry({ kind, id: editing.id, name }));
+            mutation.mutate(() => updateLookupEntry({ kind, id: editing.id, ...values }));
           }
         }}
       />
@@ -321,13 +334,14 @@ export function LookupTable({ kind, label, singular, icon: Icon, canManage }: Lo
 type LookupEntryDialogProps = {
   kind: LookupKind;
   singular: string;
+  hasEmail: boolean;
   target: LookupRow | "new" | null;
   pending: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (name: string) => void;
+  onSubmit: (values: { name: string; email?: string }) => void;
 };
 
-function LookupEntryDialog({ kind, singular, target, pending, onOpenChange, onSubmit }: LookupEntryDialogProps) {
+function LookupEntryDialog({ kind, singular, hasEmail, target, pending, onOpenChange, onSubmit }: LookupEntryDialogProps) {
   const isEdit = target !== null && target !== "new";
 
   return (
@@ -337,8 +351,10 @@ function LookupEntryDialog({ kind, singular, target, pending, onOpenChange, onSu
           <LookupEntryForm
             key={isEdit ? target.id : `new-${kind}`}
             singular={singular}
+            hasEmail={hasEmail}
             isEdit={isEdit}
             defaultName={isEdit ? target.name : ""}
+            defaultEmail={isEdit ? (target.email ?? "") : ""}
             pending={pending}
             onOpenChange={onOpenChange}
             onSubmit={onSubmit}
@@ -351,22 +367,26 @@ function LookupEntryDialog({ kind, singular, target, pending, onOpenChange, onSu
 
 function LookupEntryForm({
   singular,
+  hasEmail,
   isEdit,
   defaultName,
+  defaultEmail,
   pending,
   onOpenChange,
   onSubmit,
 }: {
   singular: string;
+  hasEmail: boolean;
   isEdit: boolean;
   defaultName: string;
+  defaultEmail: string;
   pending: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (name: string) => void;
+  onSubmit: (values: { name: string; email?: string }) => void;
 }) {
-  const form = useForm<NameFormInput>({
-    resolver: zodResolver(nameFormSchema),
-    defaultValues: { name: defaultName },
+  const form = useForm<EntryFormInput>({
+    resolver: zodResolver(entryFormSchema),
+    defaultValues: { name: defaultName, email: defaultEmail },
   });
 
   return (
@@ -382,7 +402,9 @@ function LookupEntryForm({
 
       <Form {...form}>
         <form
-          onSubmit={form.handleSubmit((values) => onSubmit(values.name.trim()))}
+          onSubmit={form.handleSubmit((values) =>
+            onSubmit({ name: values.name.trim(), email: values.email?.trim() }),
+          )}
           className="space-y-4"
           noValidate
         >
@@ -399,6 +421,27 @@ function LookupEntryForm({
               </FormItem>
             )}
           />
+
+          {hasEmail ? (
+            <FormField
+              control={form.control}
+              name="email"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Email</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      type="email"
+                      disabled={pending}
+                      placeholder="name@questronix.com.ph"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          ) : null}
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>

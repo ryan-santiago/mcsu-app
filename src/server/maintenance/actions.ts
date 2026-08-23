@@ -24,6 +24,7 @@ import {
 import type { ActionResult } from "@/lib/action-result";
 import { diffFields, recordAudit } from "@/lib/audit";
 import { AuthorizationError, authorize } from "@/lib/session";
+import { emailSchema } from "@/lib/validation/auth";
 
 import { listLookup } from "./queries";
 import { LOOKUP_META, type LookupKind, type LookupRow } from "./types";
@@ -40,7 +41,20 @@ const kindSchema = z.enum([
   "employment_type",
 ]);
 const nameSchema = z.string().trim().min(1, "Name is required").max(100, "That name is too long");
+const optionalEmailSchema = emailSchema.optional().or(z.literal(""));
 const idSchema = z.string().min(1, "A record must be selected");
+
+/** The two lookup kinds carrying an email column — see `db/schema.ts`. Narrowly typed, unlike `tableFor()`'s union. */
+function emailTableFor(kind: LookupKind) {
+  switch (kind) {
+    case "sales_representative":
+      return salesRepresentative;
+    case "solutions_manager":
+      return solutionsManager;
+    default:
+      return null;
+  }
+}
 
 function tableFor(kind: LookupKind) {
   switch (kind) {
@@ -155,19 +169,29 @@ export async function fetchLookup(kind: LookupKind): Promise<LookupRow[]> {
   return listLookup(kind);
 }
 
-export async function createLookupEntry(input: { kind: LookupKind; name: string }): Promise<ActionResult<{ id: string }>> {
+export async function createLookupEntry(input: {
+  kind: LookupKind;
+  name: string;
+  email?: string;
+}): Promise<ActionResult<{ id: string }>> {
   return run(async () => {
     const actor = await authorize("maintenance:write");
     const kind = kindSchema.parse(input.kind);
     const name = nameSchema.parse(input.name);
     const meta = LOOKUP_META[kind];
     const table = tableFor(kind);
+    const email = meta.hasEmail ? optionalEmailSchema.parse(input.email) || null : null;
 
     const [existing] = await db.select({ id: table.id }).from(table).where(eq(table.name, name)).limit(1);
     if (existing) return { ok: false, error: `${meta.singular} "${name}" already exists.` };
 
     const id = crypto.randomUUID();
-    await db.insert(table).values({ id, name });
+    const emailTable = emailTableFor(kind);
+    if (emailTable) {
+      await db.insert(emailTable).values({ id, name, email });
+    } else {
+      await db.insert(table).values({ id, name });
+    }
 
     await recordAudit({
       module: meta.auditModule,
@@ -176,7 +200,9 @@ export async function createLookupEntry(input: { kind: LookupKind; name: string 
       entityLabel: name,
       actorId: actor.id,
       actorEmail: actor.email,
-      changes: diffFields(null, { name }, { name: "Name" }),
+      changes: meta.hasEmail
+        ? diffFields(null, { name, email }, { name: "Name", email: "Email" })
+        : diffFields(null, { name }, { name: "Name" }),
     });
 
     refreshMaintenanceViews();
@@ -184,7 +210,12 @@ export async function createLookupEntry(input: { kind: LookupKind; name: string 
   });
 }
 
-export async function updateLookupEntry(input: { kind: LookupKind; id: string; name: string }): Promise<ActionResult> {
+export async function updateLookupEntry(input: {
+  kind: LookupKind;
+  id: string;
+  name: string;
+  email?: string;
+}): Promise<ActionResult> {
   return run(async () => {
     const actor = await authorize("maintenance:edit");
     const kind = kindSchema.parse(input.kind);
@@ -192,6 +223,7 @@ export async function updateLookupEntry(input: { kind: LookupKind; id: string; n
     const name = nameSchema.parse(input.name);
     const meta = LOOKUP_META[kind];
     const table = tableFor(kind);
+    const email = meta.hasEmail ? optionalEmailSchema.parse(input.email) || null : null;
 
     const [target] = await db.select().from(table).where(eq(table.id, id)).limit(1);
     if (!target) return { ok: false, error: `That ${meta.singular.toLowerCase()} no longer exists.` };
@@ -203,7 +235,12 @@ export async function updateLookupEntry(input: { kind: LookupKind; id: string; n
       .limit(1);
     if (duplicate) return { ok: false, error: `${meta.singular} "${name}" already exists.` };
 
-    await db.update(table).set({ name }).where(eq(table.id, id));
+    const emailTable = emailTableFor(kind);
+    if (emailTable) {
+      await db.update(emailTable).set({ name, email }).where(eq(emailTable.id, id));
+    } else {
+      await db.update(table).set({ name }).where(eq(table.id, id));
+    }
 
     await recordAudit({
       module: meta.auditModule,
@@ -212,7 +249,13 @@ export async function updateLookupEntry(input: { kind: LookupKind; id: string; n
       entityLabel: name,
       actorId: actor.id,
       actorEmail: actor.email,
-      changes: diffFields({ name: target.name }, { name }, { name: "Name" }),
+      changes: meta.hasEmail
+        ? diffFields(
+            { name: target.name, email: (target as LookupRow).email ?? null },
+            { name, email },
+            { name: "Name", email: "Email" },
+          )
+        : diffFields({ name: target.name }, { name }, { name: "Name" }),
     });
 
     refreshMaintenanceViews();

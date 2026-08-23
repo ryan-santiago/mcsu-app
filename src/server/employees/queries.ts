@@ -68,7 +68,7 @@ function buildWhere(
 }
 
 /** Latest = the row with `endDate IS NULL` (current), else the newest `startDate`. */
-function latestEmploymentSubquery() {
+export function latestEmploymentSubquery() {
   return db
     .selectDistinctOn([employeeEmployment.employeeId], {
       employeeId: employeeEmployment.employeeId,
@@ -119,13 +119,16 @@ export function employeeIdentitySubquery() {
     .as("employee_identity");
 }
 
-function latestDeploymentSubquery() {
+/** Latest = the row with `endDate IS NULL` (current), else the newest `startDate`. */
+export function latestDeploymentSubquery() {
   return db
     .selectDistinctOn([employeeDeployment.employeeId], {
       employeeId: employeeDeployment.employeeId,
       clientId: employeeDeployment.clientId,
       clientName: sql<string>`${client.name}`.as("client_name"),
       projectName: sql<string>`${project.name}`.as("project_name"),
+      startDate: employeeDeployment.startDate,
+      endDate: employeeDeployment.endDate,
     })
     .from(employeeDeployment)
     .innerJoin(client, eq(client.id, employeeDeployment.clientId))

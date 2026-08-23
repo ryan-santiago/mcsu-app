@@ -1,11 +1,11 @@
-import { UserRoundCog } from "lucide-react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
-import { EmptyState } from "@/components/layout/empty-state";
 import { PageHeader } from "@/components/layout/page-header";
+import { StaffAugmentationAssignmentsTable } from "@/components/staff-augmentation/staff-augmentation-assignments-table";
+import { can } from "@/lib/rbac";
 import { requirePermission } from "@/lib/session";
-import { getStaffAugmentationEngagementById } from "@/server/staff-augmentation/queries";
+import { getStaffAugmentationEngagementById, listStaffAugmentationAssignments } from "@/server/staff-augmentation/queries";
 
 type StaffAugmentationDetailPageProps = {
   params: Promise<{ id: string }>;
@@ -18,20 +18,24 @@ export async function generateMetadata({ params }: StaffAugmentationDetailPagePr
 }
 
 export default async function StaffAugmentationDetailPage({ params }: StaffAugmentationDetailPageProps) {
-  await requirePermission("staff_augmentation:read");
+  const actor = await requirePermission("staff_augmentation:read");
   const { id } = await params;
 
   const engagement = await getStaffAugmentationEngagementById(id);
   if (!engagement) notFound();
 
+  const assignments = await listStaffAugmentationAssignments(id);
+
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-6">
+    <div className="mx-auto w-full max-w-5xl space-y-6">
       <PageHeader title={engagement.name} />
 
-      <EmptyState
-        icon={UserRoundCog}
-        title="Coming soon"
-        description="Employee staffing and contract tracking for this engagement isn't built yet."
+      <StaffAugmentationAssignmentsTable
+        engagementId={id}
+        assignments={assignments}
+        canEdit={can(actor, "staff_augmentation:edit")}
+        canDelete={can(actor, "staff_augmentation:delete")}
+        canEditDeployment={can(actor, "employees:edit")}
       />
     </div>
   );
