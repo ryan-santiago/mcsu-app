@@ -118,7 +118,7 @@ export const NAVIGATION: readonly NavGroup[] = [
 		title: 'Engagement',
 		items: [
 			{
-				title: 'Staff Augmentation Module',
+				title: 'Staff Augmentation',
 				href: '/staff-augmentation',
 				icon: 'staff-augmentation',
 				permissions: ['staff_augmentation:read'],
@@ -130,7 +130,7 @@ export const NAVIGATION: readonly NavGroup[] = [
 				],
 			},
 			{
-				title: 'One-Lot Project Module',
+				title: 'One-Lot Project',
 				href: '/one-lot-projects',
 				icon: 'one-lot-projects',
 				permissions: ['one_lot_projects:read'],

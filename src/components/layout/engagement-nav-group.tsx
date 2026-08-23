@@ -15,43 +15,36 @@ type EngagementNavGroupProps = {
 };
 
 /**
- * The dynamic, DB-driven sub-tree rendered under "Staff Augmentation Module"
- * and "One-Lot Project Module" — the one place in the sidebar where items
- * aren't static `NavItem`s from `lib/navigation.ts`, so this stays a
- * separate component rather than folding into `SidebarNav`'s main loop.
+ * The dynamic, DB-driven sub-tree rendered under "Staff Augmentation" and
+ * "One-Lot Project" — the one place in the sidebar where items aren't static
+ * `NavItem`s from `lib/navigation.ts`, so this stays a separate component
+ * rather than folding into `SidebarNav`'s main loop. The expand/collapse
+ * control lives on the parent menu row itself (see `SidebarNav`); this just
+ * renders the content shown when that row is open.
  */
 export function EngagementNavGroup({ data, pathname, onNavigate }: EngagementNavGroupProps) {
   const hasContent = data.items.length > 0 || data.canCreate;
   if (!hasContent) return null;
 
   return (
-    <Collapsible defaultOpen className="mt-0.5 ml-5 space-y-0.5 border-l pl-2">
-      <CollapsibleTrigger className="text-muted-foreground hover:text-sidebar-accent-foreground flex w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors [&[data-state=open]>svg]:rotate-90">
-        <ChevronRight className="size-3.5 shrink-0 transition-transform" aria-hidden />
-        <span>
-          {data.items.length} {data.items.length === 1 ? "item" : "items"}
-        </span>
-      </CollapsibleTrigger>
+    <div className="mt-0.5 ml-5 space-y-0.5 border-l pl-2">
+      {data.canCreate ? (
+        <Link
+          href={data.addHref}
+          onClick={onNavigate}
+          className="text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors"
+        >
+          <Plus className="size-3.5 shrink-0" aria-hidden />
+          <span className="truncate">{data.addLabel}</span>
+        </Link>
+      ) : null}
 
-      <CollapsibleContent className="space-y-0.5 pt-1">
-        <ul className="space-y-0.5">
-          {data.items.map((item) => (
-            <EngagementNavRow key={item.id} item={item} pathname={pathname} onNavigate={onNavigate} />
-          ))}
-        </ul>
-
-        {data.canCreate ? (
-          <Link
-            href={data.addHref}
-            onClick={onNavigate}
-            className="text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors"
-          >
-            <Plus className="size-3.5 shrink-0" aria-hidden />
-            <span className="truncate">{data.addLabel}</span>
-          </Link>
-        ) : null}
-      </CollapsibleContent>
-    </Collapsible>
+      <ul className="space-y-0.5">
+        {data.items.map((item) => (
+          <EngagementNavRow key={item.id} item={item} pathname={pathname} onNavigate={onNavigate} />
+        ))}
+      </ul>
+    </div>
   );
 }
 
