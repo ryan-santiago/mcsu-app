@@ -176,7 +176,9 @@ export function StaffAugmentationAssignmentsTable({
 	return (
 		<Card>
 			<CardHeader>
-				<CardTitle>Deployed as Staff Augmentation</CardTitle>
+				<CardTitle>
+					({assignments.length}) Deployed as Staff Augmentation
+				</CardTitle>
 				<CardDescription>
 					Level, project and dates are pulled live from each employee&apos;s
 					current record in the Employee module.
