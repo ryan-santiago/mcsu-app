@@ -16,6 +16,7 @@ import {
 } from "@/db/schema";
 import type { ActionResult } from "@/lib/action-result";
 import { diffFields, recordAudit } from "@/lib/audit";
+import { sanitizeDescriptionHtml } from "@/lib/sanitize-html";
 import { AuthorizationError, authorizeActiveUser } from "@/lib/session";
 import {
   boardColumnFormSchema,
@@ -437,7 +438,7 @@ export async function createOneLotProjectWorkItem(
       code,
       type: input.type,
       title,
-      description: input.description || null,
+      description: input.description ? sanitizeDescriptionHtml(input.description) || null : null,
       priority: input.priority ?? "medium",
       assigneeId: input.assigneeId || null,
       dueDate: input.dueDate || null,
@@ -536,7 +537,9 @@ export async function updateOneLotProjectWorkItem(input: {
 
     const values: Record<string, unknown> = {};
     if (patch.title !== undefined) values.title = patch.title;
-    if (patch.description !== undefined) values.description = patch.description || null;
+    if (patch.description !== undefined) {
+      values.description = patch.description ? sanitizeDescriptionHtml(patch.description) || null : null;
+    }
     if (patch.columnId !== undefined) values.columnId = patch.columnId;
     if (patch.priority !== undefined) values.priority = patch.priority;
     if (patch.assigneeId !== undefined) values.assigneeId = patch.assigneeId || null;
@@ -587,6 +590,13 @@ export async function updateOneLotProjectWorkItem(input: {
     if ("assigneeId" in values) {
       beforeDisplay.assigneeId = assigneeName(before.assigneeId);
       afterDisplay.assigneeId = assigneeName(values.assigneeId as string | null);
+    }
+    if ("description" in values) {
+      // The field holds rich text HTML now — spelling out the raw markup in
+      // the audit trail would be unreadable, so this just marks that it
+      // changed rather than diffing the actual before/after content.
+      beforeDisplay.description = before.description ? "(set)" : null;
+      afterDisplay.description = values.description ? "(set)" : null;
     }
 
     const touchedKeys = Object.keys(values);

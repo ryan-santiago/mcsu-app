@@ -10,9 +10,9 @@ import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Input } from "@/components/ui/input";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Textarea } from "@/components/ui/textarea";
 import { formatDateTime, initialsOf } from "@/lib/format";
 import { columnColor, WORK_ITEM_PRIORITY_LABELS } from "@/lib/one-lot-project-backlog-format";
 import { workItemPriorityValues } from "@/lib/validation/one-lot-project-backlog";
@@ -177,12 +177,10 @@ function WorkItemDetailBody({
 
         <div className="space-y-1.5">
           <p className="text-muted-foreground text-xs font-medium">Description</p>
-          <Textarea
+          <RichTextEditor
             value={description}
-            onChange={(event) => setDescription(event.target.value)}
+            onChange={setDescription}
             onBlur={() => description !== (item.description ?? "") && onPatch({ description })}
-            rows={4}
-            placeholder="Add a description..."
           />
         </div>
 

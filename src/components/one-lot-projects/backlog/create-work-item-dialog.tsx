@@ -16,8 +16,8 @@ import {
 } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { WORK_ITEM_PRIORITY_LABELS } from "@/lib/one-lot-project-backlog-format";
 import { workItemFormSchema, workItemPriorityValues, type WorkItemFormInput } from "@/lib/validation/one-lot-project-backlog";
 import type { OneLotProjectMemberRow } from "@/server/one-lot-projects/types";
@@ -145,7 +145,7 @@ function WorkItemForm({
               <FormItem>
                 <FormLabel>Description</FormLabel>
                 <FormControl>
-                  <Textarea {...field} disabled={pending} rows={3} />
+                  <RichTextEditor value={field.value ?? ""} onChange={field.onChange} disabled={pending} />
                 </FormControl>
                 <FormMessage />
               </FormItem>

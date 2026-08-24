@@ -65,7 +65,10 @@ export type SubtaskDraftInput = z.infer<typeof subtaskDraftSchema>;
 export const workItemFormSchema = z.object({
   type: z.enum(topLevelWorkItemTypeValues),
   title: z.string().trim().min(1, "Required").max(200, "That's too long"),
-  description: z.string().trim().max(5000, "That's too long").optional().or(z.literal("")),
+  // Stores the rich text editor's HTML output — the cap is higher than a
+  // plain-text field's would be to leave room for markup overhead, not
+  // because more visible text is allowed.
+  description: z.string().max(20000, "That's too long").optional().or(z.literal("")),
   assigneeId: z.string().optional().or(z.literal("")),
   priority: z.enum(workItemPriorityValues),
   dueDate: z.string().optional().or(z.literal("")),
@@ -78,7 +81,7 @@ export type WorkItemFormInput = z.infer<typeof workItemFormSchema>;
 export const workItemPatchSchema = z
   .object({
     title: z.string().trim().min(1, "Required").max(200, "That's too long"),
-    description: z.string().trim().max(5000, "That's too long").or(z.literal("")),
+    description: z.string().max(20000, "That's too long").or(z.literal("")),
     columnId: z.string().min(1, "Required"),
     priority: z.enum(workItemPriorityValues),
     assigneeId: z.string().or(z.literal("")),
