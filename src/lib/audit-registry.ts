@@ -78,6 +78,10 @@ export const AUDIT_ACTIONS = [
   { value: "board_column_renamed", label: "Board column renamed" },
   { value: "board_column_deleted", label: "Board column deleted" },
   { value: "comment_added", label: "Comment added" },
+  { value: "document_folder_created", label: "Document folder created" },
+  { value: "document_uploaded", label: "Document uploaded" },
+  { value: "document_renamed", label: "Document renamed" },
+  { value: "document_deleted", label: "Document deleted" },
   { value: "deleted", label: "Deleted" },
   { value: "login", label: "Signed in" },
 ] as const;

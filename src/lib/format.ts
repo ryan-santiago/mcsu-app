@@ -58,3 +58,17 @@ export function formatRelative(value: Date | string | null): string {
 
   return formatDate(date);
 }
+
+/** `formatBytes(1536)` → "1.5 KB". Base 1024, one decimal past bytes themselves. */
+export function formatBytes(bytes: number | null): string {
+  if (bytes === null || Number.isNaN(bytes)) return "—";
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB"];
+  let value = bytes / 1024;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(1)} ${units[unitIndex]}`;
+}

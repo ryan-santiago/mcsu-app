@@ -21,6 +21,7 @@ Internal console for the Managed Cloud Services Unit at Questronix Corporation.
 | `docs/DESIGN.md` | Tokens, brand rules, accessibility |
 | `docs/SETUP.md` | Environment and deployment |
 | `docs/ROADMAP.md` | What's next and what's deliberately missing |
+| `docs/DOCUMENTS.md` | One-Lot Project Docs — local-disk storage now, SharePoint plan, IT asks |
 
 ## Rules that are easy to get wrong
 
@@ -44,6 +45,10 @@ Internal console for the Managed Cloud Services Unit at Questronix Corporation.
   Client components (badges, filters) import the module/action lists from
   `audit-registry.ts`, never from `audit.ts` — importing a `"server-only"`
   module from a client component throws at runtime, not at build time.
+- **One-Lot Project Docs stores files on local disk, and only works there.**
+  Vercel serverless functions don't persist writes between requests — never
+  remove `isDocumentStorageAvailable()`'s guard in `src/lib/document-storage.ts`
+  without replacing the storage backend first. See `docs/DOCUMENTS.md`.
 
 ## Before committing
 

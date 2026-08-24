@@ -11,7 +11,7 @@ export type EngagementNavItem = {
   id: string;
   label: string;
   href: string;
-  /** Only set for One-Lot projects — the fixed Dashboard/List/Kanban/Calendar pages. */
+  /** Only set for One-Lot projects — the fixed Dashboard/List/Kanban/Calendar/Documents pages. */
   children?: EngagementNavChild[];
 };
 
@@ -69,6 +69,7 @@ export async function getEngagementNavData(user: CurrentUser): Promise<Engagemen
           { label: "Backlog", href: `/one-lot-projects/${row.id}/list` },
           { label: "Kanban Board", href: `/one-lot-projects/${row.id}/kanban` },
           { label: "Calendar", href: `/one-lot-projects/${row.id}/calendar` },
+          { label: "Documents", href: `/one-lot-projects/${row.id}/documents` },
         ],
       })),
       canCreate: can(user, "one_lot_projects:write"),

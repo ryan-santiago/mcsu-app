@@ -288,6 +288,20 @@
       "when": 1787586807682,
       "tag": "0040_allow_optional_sprint_dates",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1787590669936,
+      "tag": "0041_add_one_lot_project_documents",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1787591747801,
+      "tag": "0042_rename_document_storage_key",
+      "breakpoints": true
     }
   ]
 }

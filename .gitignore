@@ -49,6 +49,10 @@ next-env.d.ts
 # (mobile numbers, personal emails, home addresses), never commit it
 /scripts/seed-data
 
+# One-Lot Project Docs — uploaded files, local-disk stand-in until
+# SharePoint integration (see docs/DOCUMENTS.md). Never commit real uploads.
+/storage
+
 # playwright
 /test-results/
 /playwright-report/

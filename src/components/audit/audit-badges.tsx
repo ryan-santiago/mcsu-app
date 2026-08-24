@@ -4,6 +4,7 @@ import {
   CircleCheck,
   CircleSlash,
   Columns3,
+  FileUp,
   FolderMinus,
   FolderPlus,
   Kanban,
@@ -103,6 +104,22 @@ const ACTION_META: Record<string, ActionMeta> = {
     label: "Comment added",
     icon: MessageSquarePlus,
     className: "border-border bg-muted text-muted-foreground",
+  },
+  document_folder_created: {
+    label: "Document folder created",
+    icon: FolderPlus,
+    className: "border-success/30 bg-success/10 text-success",
+  },
+  document_uploaded: {
+    label: "Document uploaded",
+    icon: FileUp,
+    className: "border-success/30 bg-success/10 text-success",
+  },
+  document_renamed: { label: "Document renamed", icon: Pencil, className: "border-brand/30 bg-brand/10 text-brand" },
+  document_deleted: {
+    label: "Document deleted",
+    icon: Trash2,
+    className: "border-destructive/30 bg-destructive/10 text-destructive",
   },
 };
 

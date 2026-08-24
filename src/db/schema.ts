@@ -1057,6 +1057,63 @@ export const oneLotProjectWorkItemComment = pgTable(
   (table) => [index("one_lot_project_work_item_comment_work_item_idx").on(table.workItemId)],
 );
 
+export const oneLotProjectDocumentType = pgEnum("one_lot_project_document_type", ["folder", "file"]);
+
+/**
+ * A file-explorer-style document tree per project — folders and files in one
+ * self-referencing table, the same `parentId` convention
+ * `oneLotProjectWorkItem` uses for subtasks. Files are metadata only: bytes
+ * live on local disk under a storage root outside `public/` (see
+ * `src/lib/document-storage.ts` — deliberately not Next.js's statically
+ * served `public/` directory, so a document is never reachable without
+ * going through the authenticated download route handler first), keyed by
+ * `storageKey` — a relative path shaped like
+ * `Documents/One-Lot Project/{projectId}/documents/…` to match where this
+ * is planned to migrate under SharePoint later, see `docs/DOCUMENTS.md`.
+ *
+ * Local disk only works against a persistent filesystem (self-hosted, EC2)
+ * — never against this app's current Vercel deployment, whose serverless
+ * functions don't persist local writes between requests. See
+ * `isDocumentStorageAvailable()`, which every read/write path checks first.
+ *
+ * Name-uniqueness within a folder is enforced at the application layer
+ * (query-then-insert, same convention as sprint item codes in
+ * `backlog-actions.ts`'s `assertItemCodeAvailable`) rather than a DB unique
+ * index — Postgres treats every `parentId IS NULL` row as distinct from every
+ * other, so a plain `(projectId, parentId, name)` index wouldn't catch
+ * duplicate names at the document root anyway.
+ */
+export const oneLotProjectDocument = pgTable(
+  "one_lot_project_document",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => oneLotProject.id, { onDelete: "cascade" }),
+    /** Null = lives at the project's document root. */
+    parentId: text("parent_id").references((): AnyPgColumn => oneLotProjectDocument.id, { onDelete: "cascade" }),
+    type: oneLotProjectDocumentType("type").notNull(),
+    name: text("name").notNull(),
+    /** Null for folders. Relative path under the document storage root — never returned to the client directly; see the authenticated download route handler. */
+    storageKey: text("storage_key"),
+    mimeType: text("mime_type"),
+    /** Bytes. Null for folders. */
+    size: integer("size"),
+    uploadedBy: text("uploaded_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("one_lot_project_document_project_idx").on(table.projectId),
+    index("one_lot_project_document_parent_idx").on(table.parentId),
+  ],
+);
+
 /* -------------------------------------------------------------------------- */
 /*  Relations                                                                 */
 /* -------------------------------------------------------------------------- */
@@ -1308,3 +1365,6 @@ export type OneLotProjectWorkItemComment = typeof oneLotProjectWorkItemComment.$
 export type NewOneLotProjectWorkItemComment = typeof oneLotProjectWorkItemComment.$inferInsert;
 export type OneLotProjectBoardColumn = typeof oneLotProjectBoardColumn.$inferSelect;
 export type NewOneLotProjectBoardColumn = typeof oneLotProjectBoardColumn.$inferInsert;
+export type OneLotProjectDocument = typeof oneLotProjectDocument.$inferSelect;
+export type NewOneLotProjectDocument = typeof oneLotProjectDocument.$inferInsert;
+export type OneLotProjectDocumentType = (typeof oneLotProjectDocumentType.enumValues)[number];
