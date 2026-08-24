@@ -11,8 +11,8 @@ import {
   project,
   user,
 } from "@/db/schema";
-import { hasUnrestrictedAccess } from "@/lib/rbac";
-import { authorize, AuthorizationError, type CurrentUser } from "@/lib/session";
+import { can, hasUnrestrictedAccess } from "@/lib/rbac";
+import { authorizeActiveUser, AuthorizationError, type CurrentUser } from "@/lib/session";
 import type { ProjectSearchOption } from "@/server/projects/types";
 import type { AuditEntry } from "@/server/audit/types";
 
@@ -24,14 +24,15 @@ export type OneLotProjectRow = {
 };
 
 /**
- * A project's *content* (the Summary/Backlog/Kanban/Calendar pages) is
- * gated separately from the module permission: visible to the project's
- * creator, to anyone added as a member, or to anyone with unrestricted
- * access — same bypass rule Employees' team-scoping uses. This is what
- * stands in for the per-project access-user module until that's built.
+ * A project's *content* (the Summary/Backlog/Kanban/Calendar pages, and the
+ * project list itself) is visible to: anyone holding `one_lot_projects:read`
+ * (they can monitor every project, membership or not — the point of the
+ * permission), the project's creator, anyone added as a member, or anyone
+ * with unrestricted access. Only a user with *none* of those — no module
+ * permission and no membership anywhere — is scoped down to nothing.
  */
 function contentVisibilityWhere(actor: CurrentUser) {
-  if (hasUnrestrictedAccess(actor)) return undefined;
+  if (hasUnrestrictedAccess(actor) || can(actor, "one_lot_projects:read")) return undefined;
 
   const memberOf = db
     .select({ projectId: oneLotProjectMember.projectId })
@@ -42,22 +43,23 @@ function contentVisibilityWhere(actor: CurrentUser) {
 }
 
 /**
- * `one_lot_projects:read` alone is enough to see every project — the list
- * is not membership-scoped. Only a project's content (see
- * `contentVisibilityWhere`) is restricted to members.
+ * Visible to anyone with `one_lot_projects:read` (every project) or anyone
+ * who is a member/creator of at least one project (just those) — see
+ * `contentVisibilityWhere`. Returns an empty list for a user with neither,
+ * which callers use to decide whether the module is reachable at all (nav
+ * visibility, the module list page's own guard).
  */
-export async function listVisibleOneLotProjects(): Promise<OneLotProjectRow[]> {
-  await authorize("one_lot_projects:read");
+export async function listVisibleOneLotProjects(actor: CurrentUser): Promise<OneLotProjectRow[]> {
+  const where = contentVisibilityWhere(actor);
 
   return db
     .select({ id: oneLotProject.id, name: oneLotProject.name })
     .from(oneLotProject)
+    .where(where)
     .orderBy(asc(oneLotProject.name));
 }
 
 export async function getOneLotProjectById(id: string, actor: CurrentUser): Promise<OneLotProjectRow | null> {
-  await authorize("one_lot_projects:read");
-
   const where = contentVisibilityWhere(actor);
   const [row] = await db
     .select({ id: oneLotProject.id, name: oneLotProject.name })
@@ -75,8 +77,6 @@ export async function getOneLotProjectById(id: string, actor: CurrentUser): Prom
  * whether the actor can otherwise see this specific project's content.
  */
 export async function getOneLotProjectByIdUnrestricted(id: string): Promise<OneLotProjectRow | null> {
-  await authorize("one_lot_projects:read");
-
   const [row] = await db
     .select({ id: oneLotProject.id, name: oneLotProject.name })
     .from(oneLotProject)
@@ -102,8 +102,15 @@ export async function assertOneLotProjectContentAccess(
   return project;
 }
 
+/**
+ * Only reachable after the caller has already verified project-level content
+ * access (`getOneLotProjectById`/`assertOneLotProjectContentAccess`) — this
+ * itself just requires an active session, not the module permission, so a
+ * project member without `one_lot_projects:read` can still see their own
+ * project's roster.
+ */
 export async function listOneLotProjectMembers(projectId: string): Promise<OneLotProjectMemberRow[]> {
-  await authorize("one_lot_projects:read");
+  await authorizeActiveUser();
 
   return db
     .select({
@@ -151,8 +158,9 @@ export async function listOneLotProjectMemberOptions(projectId: string, search?:
     .limit(20);
 }
 
+/** Only reachable after project-level content access is already verified — see `listOneLotProjectMembers`. */
 export async function listOneLotProjectS3pLinks(oneLotProjectId: string): Promise<OneLotProjectS3pLinkRow[]> {
-  await authorize("one_lot_projects:read");
+  await authorizeActiveUser();
 
   return db
     .select({
@@ -204,10 +212,11 @@ export async function searchOneLotProjectS3pOptions(
 /**
  * Recent Activity card — real audit-trail-shaped data scoped to this
  * project, so a Summary viewer without Audit Trail access still sees it.
- * Gated on `one_lot_projects:read`, deliberately not `audit:read`.
+ * Only reachable after project-level content access is already verified —
+ * see `listOneLotProjectMembers` — deliberately not gated on `audit:read`.
  */
 export async function listOneLotProjectActivity(projectId: string, limit = 10): Promise<AuditEntry[]> {
-  await authorize("one_lot_projects:read");
+  await authorizeActiveUser();
 
   const rows = await db
     .select({

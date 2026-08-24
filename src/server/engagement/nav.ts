@@ -27,11 +27,22 @@ export type EngagementNavKind = "staff-augmentation" | "one-lot-projects";
 export type EngagementNavData = Partial<Record<EngagementNavKind, EngagementNavGroupData>>;
 
 /**
- * Composes the sidebar's dynamic Engagement data. Checking `can()` before
- * querying (rather than letting `authorize()` throw) avoids a DB round trip
- * and a try/catch on every request for the majority of users who hold
- * neither permission — the query functions still call `authorize()`
+ * Composes the sidebar's dynamic Engagement data.
+ *
+ * Staff Augmentation: checking `can()` before querying (rather than letting
+ * `authorize()` throw) avoids a DB round trip for the majority of users who
+ * hold neither permission — the query functions still call `authorize()`
  * internally too, same defense-in-depth as every other module.
+ *
+ * One-Lot Projects: unlike Staff Augmentation, this module grants access two
+ * ways — the `one_lot_projects:read` permission (monitor every project) or
+ * project membership (see just your own) — so the query always runs;
+ * `listVisibleOneLotProjects()` itself returns every project for a
+ * permission-holder, just the member's own for everyone else, and an empty
+ * list for a user with neither. The nav item and the `/one-lot-projects`
+ * list page (see its own guard) both key off "is this list non-empty, or
+ * does the user hold the permission anyway" to decide whether the module is
+ * reachable at all.
  */
 export async function getEngagementNavData(user: CurrentUser): Promise<EngagementNavData> {
   const data: EngagementNavData = {};
@@ -46,10 +57,10 @@ export async function getEngagementNavData(user: CurrentUser): Promise<Engagemen
     };
   }
 
-  if (can(user, "one_lot_projects:read")) {
-    const rows = await listVisibleOneLotProjects();
+  const oneLotProjects = await listVisibleOneLotProjects(user);
+  if (can(user, "one_lot_projects:read") || oneLotProjects.length > 0) {
     data["one-lot-projects"] = {
-      items: rows.map((row) => ({
+      items: oneLotProjects.map((row) => ({
         id: row.id,
         label: row.name,
         href: `/one-lot-projects/${row.id}/dashboard`,

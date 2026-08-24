@@ -13,8 +13,18 @@ import { getEngagementNavData } from "@/server/engagement/nav";
  */
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const user = await requireUser();
-  const groups = visibleNavigation(user);
   const dynamicNav = await getEngagementNavData(user);
+
+  // Static permission-based filtering (`visibleNavigation()`) can't see
+  // One-Lot Project's membership-based access — no DB access there — so a
+  // `dynamicKind` item with nothing in `dynamicNav` (module permission
+  // absent *and* not a member of anything) is dropped here instead.
+  const groups = visibleNavigation(user)
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => !item.dynamicKind || dynamicNav[item.dynamicKind] !== undefined),
+    }))
+    .filter((group) => group.items.length > 0);
 
   return (
     <div className="flex min-h-svh">

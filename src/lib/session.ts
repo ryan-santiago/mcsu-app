@@ -135,3 +135,19 @@ export async function authorizeAny(permissions: readonly Permission[]): Promise<
 
   return user;
 }
+
+/**
+ * Like `authorize()`, but with no specific permission requirement — just an
+ * active, signed-in session. For modules like One-Lot Projects where access
+ * to a given record is granted either by a blanket module permission or by
+ * narrower per-record membership, and the permission check alone would be
+ * too strict. The caller is responsible for checking membership itself.
+ */
+export async function authorizeActiveUser(): Promise<CurrentUser> {
+  const user = await getCurrentUser();
+
+  if (!user) throw new AuthorizationError("Your session has expired. Please sign in again.");
+  if (user.status !== "active") throw new AuthorizationError("Your account is not active.");
+
+  return user;
+}

@@ -133,7 +133,11 @@ export const NAVIGATION: readonly NavGroup[] = [
 				title: 'One-Lot Project',
 				href: '/one-lot-projects',
 				icon: 'one-lot-projects',
-				permissions: ['one_lot_projects:read'],
+				// No static `permissions` — unlike every other gated item, this one is
+				// reachable via project membership as well as `one_lot_projects:read`,
+				// which `visibleNavigation()` can't see (no DB access). Actual
+				// visibility is decided in the app layout by whether
+				// `getEngagementNavData()` populated a `one-lot-projects` entry.
 				matchNested: true,
 				dynamicKind: 'one-lot-projects',
 				children: [{ title: 'Add project', path: '/one-lot-projects/new' }],

@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 
 import { PageHeader } from "@/components/layout/page-header";
 import { OneLotProjectSummary } from "@/components/one-lot-projects/one-lot-project-summary";
-import { requirePermission } from "@/lib/session";
+import { requireUser } from "@/lib/session";
 import { getOneLotProjectById } from "@/server/one-lot-projects/queries";
 
 export const metadata: Metadata = { title: "Summary" };
@@ -14,7 +14,7 @@ type OneLotProjectDashboardPageProps = {
 
 export default async function OneLotProjectDashboardPage({ params }: OneLotProjectDashboardPageProps) {
   const { id } = await params;
-  const actor = await requirePermission("one_lot_projects:read");
+  const actor = await requireUser();
   const project = await getOneLotProjectById(id, actor);
   if (!project) notFound();
 

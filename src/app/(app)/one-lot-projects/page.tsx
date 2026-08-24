@@ -1,12 +1,13 @@
 import { Kanban } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { forbidden } from "next/navigation";
 
 import { EmptyState } from "@/components/layout/empty-state";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { can } from "@/lib/rbac";
-import { requirePermission } from "@/lib/session";
+import { requireUser } from "@/lib/session";
 import { listVisibleOneLotProjects } from "@/server/one-lot-projects/queries";
 
 export const metadata: Metadata = {
@@ -14,8 +15,12 @@ export const metadata: Metadata = {
 };
 
 export default async function OneLotProjectsPage() {
-  const actor = await requirePermission("one_lot_projects:read");
-  const projects = await listVisibleOneLotProjects();
+  const actor = await requireUser();
+  const projects = await listVisibleOneLotProjects(actor);
+  const hasModulePermission = can(actor, "one_lot_projects:read");
+  // No blanket permission and not a member/creator of anything — same bar
+  // as the nav item (`getEngagementNavData`) uses to hide this module.
+  if (!hasModulePermission && projects.length === 0) forbidden();
   const canCreate = can(actor, "one_lot_projects:write");
 
   return (

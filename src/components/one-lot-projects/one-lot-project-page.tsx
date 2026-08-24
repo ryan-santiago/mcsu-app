@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 
 import { EmptyState } from "@/components/layout/empty-state";
 import { PageHeader } from "@/components/layout/page-header";
-import { requirePermission } from "@/lib/session";
+import { requireUser } from "@/lib/session";
 import { getOneLotProjectById } from "@/server/one-lot-projects/queries";
 
 type OneLotProjectPageShellProps = {
@@ -23,7 +23,7 @@ type OneLotProjectPageShellProps = {
  * `getEmployeeById`'s team scoping — either way this is a 404, not a 403.
  */
 export async function OneLotProjectPageShell({ projectId, pageTitle, icon, description }: OneLotProjectPageShellProps) {
-  const actor = await requirePermission("one_lot_projects:read");
+  const actor = await requireUser();
   const project = await getOneLotProjectById(projectId, actor);
   if (!project) notFound();
 

@@ -13,7 +13,7 @@ import {
   oneLotProjectWorkItemComment,
 } from "@/db/schema";
 import type { ActionResult } from "@/lib/action-result";
-import { AuthorizationError, authorize } from "@/lib/session";
+import { AuthorizationError, authorizeActiveUser } from "@/lib/session";
 import {
   boardColumnFormSchema,
   commentFormSchema,
@@ -60,7 +60,7 @@ function revalidateBoard(projectId: string) {
 // ---------------------------------------------------------------------------
 
 export async function fetchOneLotProjectBacklogBoard(projectId: string): Promise<BacklogBoardData> {
-  const actor = await authorize("one_lot_projects:read");
+  const actor = await authorizeActiveUser();
   return getOneLotProjectBacklogBoard(projectId, actor);
 }
 
@@ -68,12 +68,12 @@ export async function fetchOneLotProjectWorkItemDetail(
   id: string,
   projectId: string,
 ): Promise<WorkItemDetailRow | null> {
-  const actor = await authorize("one_lot_projects:read");
+  const actor = await authorizeActiveUser();
   return getOneLotProjectWorkItemDetail(id, projectId, actor);
 }
 
 export async function fetchOneLotProjectKanbanBoard(projectId: string): Promise<KanbanBoardData> {
-  const actor = await authorize("one_lot_projects:read");
+  const actor = await authorizeActiveUser();
   return getOneLotProjectKanbanBoard(projectId, actor);
 }
 
@@ -100,7 +100,7 @@ export async function createOneLotProjectSprint(
   input: SprintFormInput & { projectId: string },
 ): Promise<ActionResult<{ id: string }>> {
   return run(async () => {
-    const actor = await authorize("one_lot_projects:read");
+    const actor = await authorizeActiveUser();
     const project = await assertOneLotProjectContentAccess(input.projectId, actor);
     const data = sprintFormSchema.parse(input);
 
@@ -131,7 +131,7 @@ export async function updateOneLotProjectSprint(
   input: SprintFormInput & { id: string; projectId: string },
 ): Promise<ActionResult> {
   return run(async () => {
-    const actor = await authorize("one_lot_projects:read");
+    const actor = await authorizeActiveUser();
     await assertOneLotProjectContentAccess(input.projectId, actor);
     const data = sprintFormSchema.parse(input);
 
@@ -162,7 +162,7 @@ export async function updateOneLotProjectSprint(
 
 export async function startOneLotProjectSprint(input: { id: string; projectId: string }): Promise<ActionResult> {
   return run(async () => {
-    const actor = await authorize("one_lot_projects:read");
+    const actor = await authorizeActiveUser();
     await assertOneLotProjectContentAccess(input.projectId, actor);
 
     const [sprint] = await db
@@ -198,7 +198,7 @@ export async function startOneLotProjectSprint(input: { id: string; projectId: s
 
 export async function completeOneLotProjectSprint(input: { id: string; projectId: string }): Promise<ActionResult> {
   return run(async () => {
-    const actor = await authorize("one_lot_projects:read");
+    const actor = await authorizeActiveUser();
     await assertOneLotProjectContentAccess(input.projectId, actor);
 
     const [sprint] = await db
@@ -281,7 +281,7 @@ export async function createOneLotProjectWorkItem(
   input: CreateWorkItemInput,
 ): Promise<ActionResult<{ id: string; code: string }>> {
   return run(async () => {
-    const actor = await authorize("one_lot_projects:read");
+    const actor = await authorizeActiveUser();
     await assertOneLotProjectContentAccess(input.projectId, actor);
 
     const title = input.title.trim();
@@ -411,7 +411,7 @@ export async function updateOneLotProjectWorkItem(input: {
   patch: WorkItemPatchInput;
 }): Promise<ActionResult> {
   return run(async () => {
-    const actor = await authorize("one_lot_projects:read");
+    const actor = await authorizeActiveUser();
     await assertOneLotProjectContentAccess(input.projectId, actor);
     const patch = workItemPatchSchema.parse(input.patch);
 
@@ -444,7 +444,7 @@ export async function reorderOneLotProjectWorkItems(input: {
   moves: { id: string; sprintId: string | null; sortOrder: number }[];
 }): Promise<ActionResult> {
   return run(async () => {
-    const actor = await authorize("one_lot_projects:read");
+    const actor = await authorizeActiveUser();
     await assertOneLotProjectContentAccess(input.projectId, actor);
 
     if (input.moves.length === 0) return { ok: true, data: undefined, message: "" };
@@ -470,7 +470,7 @@ export async function reorderOneLotProjectWorkItemsOnBoard(input: {
   moves: { id: string; columnId: string; boardSortOrder: number }[];
 }): Promise<ActionResult> {
   return run(async () => {
-    const actor = await authorize("one_lot_projects:read");
+    const actor = await authorizeActiveUser();
     await assertOneLotProjectContentAccess(input.projectId, actor);
 
     if (input.moves.length === 0) return { ok: true, data: undefined, message: "" };
@@ -499,7 +499,7 @@ export async function createOneLotProjectBoardColumn(
   input: BoardColumnFormInput & { projectId: string },
 ): Promise<ActionResult<{ id: string }>> {
   return run(async () => {
-    const actor = await authorize("one_lot_projects:read");
+    const actor = await authorizeActiveUser();
     await assertOneLotProjectContentAccess(input.projectId, actor);
     const data = boardColumnFormSchema.parse(input);
 
@@ -525,7 +525,7 @@ export async function renameOneLotProjectBoardColumn(
   input: BoardColumnFormInput & { id: string; projectId: string },
 ): Promise<ActionResult> {
   return run(async () => {
-    const actor = await authorize("one_lot_projects:read");
+    const actor = await authorizeActiveUser();
     await assertOneLotProjectContentAccess(input.projectId, actor);
     const data = boardColumnFormSchema.parse(input);
 
@@ -544,7 +544,7 @@ export async function renameOneLotProjectBoardColumn(
 
 export async function deleteOneLotProjectBoardColumn(input: { id: string; projectId: string }): Promise<ActionResult> {
   return run(async () => {
-    const actor = await authorize("one_lot_projects:read");
+    const actor = await authorizeActiveUser();
     await assertOneLotProjectContentAccess(input.projectId, actor);
 
     const [column] = await db
@@ -577,7 +577,7 @@ export async function addOneLotProjectWorkItemComment(
   input: CommentFormInput & { workItemId: string; projectId: string },
 ): Promise<ActionResult<{ id: string }>> {
   return run(async () => {
-    const actor = await authorize("one_lot_projects:read");
+    const actor = await authorizeActiveUser();
     await assertOneLotProjectContentAccess(input.projectId, actor);
     const data = commentFormSchema.parse(input);
 

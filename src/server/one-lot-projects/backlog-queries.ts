@@ -11,7 +11,7 @@ import {
   oneLotProjectWorkItemComment,
   user,
 } from "@/db/schema";
-import { authorize, type CurrentUser } from "@/lib/session";
+import { authorizeActiveUser, type CurrentUser } from "@/lib/session";
 
 import { assertOneLotProjectContentAccess, listOneLotProjectMembers } from "./queries";
 import type {
@@ -51,8 +51,9 @@ function sortSprints(sprints: (typeof oneLotProjectSprint.$inferSelect)[]) {
   });
 }
 
+/** Only reachable after project-level content access is already verified by the caller — see `queries.ts`'s `listOneLotProjectMembers`. */
 export async function getOneLotProjectBoardColumns(projectId: string): Promise<BoardColumnRow[]> {
-  await authorize("one_lot_projects:read");
+  await authorizeActiveUser();
 
   return db
     .select({
@@ -382,7 +383,7 @@ async function breakdownBy(
   column: typeof oneLotProjectWorkItem.priority | typeof oneLotProjectWorkItem.type,
   order: readonly { value: string; label: string }[],
 ): Promise<BreakdownRow[]> {
-  await authorize("one_lot_projects:read");
+  await authorizeActiveUser();
 
   const rows = await db
     .select({ value: column, count: sql<number>`count(*)::int` })
@@ -396,7 +397,7 @@ async function breakdownBy(
 
 /** Unlike Priority/Types of Work, this reflects the project's *actual* columns (including custom ones), ordered by `sortOrder`, 0-filled for columns with no items. */
 export async function getOneLotProjectStatusOverview(projectId: string): Promise<BreakdownRow[]> {
-  await authorize("one_lot_projects:read");
+  await authorizeActiveUser();
 
   const [columns, rows] = await Promise.all([
     getOneLotProjectBoardColumns(projectId),
@@ -420,7 +421,7 @@ export async function getOneLotProjectTypesOfWork(projectId: string): Promise<Br
 }
 
 export async function getOneLotProjectStatCards(projectId: string): Promise<StatCardsData> {
-  await authorize("one_lot_projects:read");
+  await authorizeActiveUser();
 
   const now = new Date();
   const todayStart = startOfDay(now);
@@ -465,7 +466,7 @@ export async function getOneLotProjectStatCards(projectId: string): Promise<Stat
 }
 
 export async function getOneLotProjectWorkload(projectId: string): Promise<WorkloadRow[]> {
-  await authorize("one_lot_projects:read");
+  await authorizeActiveUser();
 
   const rows = await db
     .select({

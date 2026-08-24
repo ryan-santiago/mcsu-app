@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 
 import { PageHeader } from "@/components/layout/page-header";
 import { OneLotProjectBacklogBoard } from "@/components/one-lot-projects/backlog/one-lot-project-backlog-board";
-import { requirePermission } from "@/lib/session";
+import { requireUser } from "@/lib/session";
 import { getOneLotProjectBacklogBoard } from "@/server/one-lot-projects/backlog-queries";
 import { getOneLotProjectById } from "@/server/one-lot-projects/queries";
 
@@ -15,7 +15,7 @@ type OneLotProjectListPageProps = {
 
 export default async function OneLotProjectListPage({ params }: OneLotProjectListPageProps) {
   const { id } = await params;
-  const actor = await requirePermission("one_lot_projects:read");
+  const actor = await requireUser();
   const project = await getOneLotProjectById(id, actor);
   if (!project) notFound();
 

@@ -829,12 +829,13 @@ export const staffAugmentationAssignment = pgTable(
 );
 
 /**
- * Parent record for a JIRA-style project (Summary/Backlog/Kanban/Calendar —
- * none of that content is built yet). Anyone with `one_lot_projects:read`
- * sees every project; only the project's *content* is restricted, to the
- * creator plus whoever is added via `oneLotProjectMember` (see
- * `hasUnrestrictedAccess` for the admin bypass) — see
- * `src/server/one-lot-projects/queries.ts`.
+ * Parent record for a JIRA-style project (Summary/Backlog/Kanban/Calendar).
+ * Visibility — of both the project and its content — comes from either of
+ * two independent paths: holding `one_lot_projects:read` (sees and monitors
+ * every project), or being the creator or a member via `oneLotProjectMember`
+ * (sees just that project, even with no module permission at all) — see
+ * `hasUnrestrictedAccess` for the admin bypass and
+ * `src/server/one-lot-projects/queries.ts`'s `contentVisibilityWhere`.
  */
 export const oneLotProject = pgTable(
   "one_lot_project",
