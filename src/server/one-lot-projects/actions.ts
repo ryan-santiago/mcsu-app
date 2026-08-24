@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { db } from "@/db";
-import { oneLotProject, oneLotProjectMember, oneLotProjectS3pProject, project, user } from "@/db/schema";
+import { oneLotProject, oneLotProjectBoardColumn, oneLotProjectMember, oneLotProjectS3pProject, project, user } from "@/db/schema";
 import type { ActionResult } from "@/lib/action-result";
 import { diffFields, recordAudit } from "@/lib/audit";
 import { AuthorizationError, authorize } from "@/lib/session";
@@ -58,6 +58,16 @@ export async function createOneLotProject(input: OneLotProjectFormInput): Promis
       projectId: id,
       userId: actor.id,
     });
+
+    // Every project ships with the four default Kanban columns — "To Do" is
+    // where new work items land (`isDefault`), "Done" is what completing a
+    // sprint treats as finished (`isDone`). More can be added later via "+".
+    await db.insert(oneLotProjectBoardColumn).values([
+      { id: crypto.randomUUID(), projectId: id, name: "To Do", sortOrder: 0, isDefault: true, isDone: false },
+      { id: crypto.randomUUID(), projectId: id, name: "In Progress", sortOrder: 1, isDefault: false, isDone: false },
+      { id: crypto.randomUUID(), projectId: id, name: "In Review", sortOrder: 2, isDefault: false, isDone: false },
+      { id: crypto.randomUUID(), projectId: id, name: "Done", sortOrder: 3, isDefault: false, isDone: true },
+    ]);
 
     await recordAudit({
       module: "one_lot_projects",

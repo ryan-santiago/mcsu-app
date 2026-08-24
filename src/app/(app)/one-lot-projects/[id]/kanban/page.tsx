@@ -1,7 +1,11 @@
-import { Kanban } from "lucide-react";
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 
-import { OneLotProjectPageShell } from "@/components/one-lot-projects/one-lot-project-page";
+import { PageHeader } from "@/components/layout/page-header";
+import { OneLotProjectKanbanBoard } from "@/components/one-lot-projects/kanban/one-lot-project-kanban-board";
+import { requirePermission } from "@/lib/session";
+import { getOneLotProjectKanbanBoard } from "@/server/one-lot-projects/backlog-queries";
+import { getOneLotProjectById } from "@/server/one-lot-projects/queries";
 
 export const metadata: Metadata = { title: "Kanban Board" };
 
@@ -11,13 +15,19 @@ type OneLotProjectKanbanPageProps = {
 
 export default async function OneLotProjectKanbanPage({ params }: OneLotProjectKanbanPageProps) {
   const { id } = await params;
+  const actor = await requirePermission("one_lot_projects:read");
+  const project = await getOneLotProjectById(id, actor);
+  if (!project) notFound();
+
+  const board = await getOneLotProjectKanbanBoard(id, actor);
 
   return (
-    <OneLotProjectPageShell
-      projectId={id}
-      pageTitle="Kanban Board"
-      icon={Kanban}
-      description="The kanban board isn't built yet."
-    />
+    <div className="mx-auto w-full max-w-7xl space-y-6">
+      <PageHeader title={project.name} description="Kanban Board" />
+      {/* Reaching this page already required content access to the project (see the `getOneLotProjectById`
+          guard above), and per this module's RBAC design that's the same bar as being allowed to edit its
+          board content — there's no separate read-only-member tier today. */}
+      <OneLotProjectKanbanBoard projectId={id} initialBoard={board} canEdit />
+    </div>
   );
 }

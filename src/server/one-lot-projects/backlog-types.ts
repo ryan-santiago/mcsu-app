@@ -1,9 +1,4 @@
-import type {
-  SprintStatusValue,
-  WorkItemPriorityValue,
-  WorkItemStatusValue,
-  WorkItemTypeValue,
-} from "@/lib/validation/one-lot-project-backlog";
+import type { SprintStatusValue, WorkItemPriorityValue, WorkItemTypeValue } from "@/lib/validation/one-lot-project-backlog";
 
 import type { OneLotProjectMemberRow } from "./types";
 
@@ -14,12 +9,13 @@ export type WorkItemRow = {
   code: string;
   type: WorkItemTypeValue;
   title: string;
-  status: WorkItemStatusValue;
+  columnId: string;
   priority: WorkItemPriorityValue;
   assignee: WorkItemAssignee;
   dueDate: string | null;
   storyPoints: string | null;
   sortOrder: number;
+  boardSortOrder: number;
   subtaskCount: number;
   doneSubtaskCount: number;
   commentCount: number;
@@ -38,9 +34,25 @@ export type SprintRow = {
   items: WorkItemRow[];
 };
 
+export type BoardColumnRow = {
+  id: string;
+  name: string;
+  sortOrder: number;
+  isDefault: boolean;
+  isDone: boolean;
+};
+
 export type BacklogBoardData = {
   backlogItems: WorkItemRow[];
   sprints: SprintRow[];
+  members: OneLotProjectMemberRow[];
+  columns: BoardColumnRow[];
+};
+
+export type KanbanBoardData = {
+  columns: BoardColumnRow[];
+  activeSprint: { id: string; name: string } | null;
+  itemsByColumn: Record<string, WorkItemRow[]>;
   members: OneLotProjectMemberRow[];
 };
 
@@ -48,7 +60,7 @@ export type WorkItemSubtaskRow = {
   id: string;
   code: string;
   title: string;
-  status: WorkItemStatusValue;
+  columnId: string;
   assignee: WorkItemAssignee;
 };
 

@@ -14,10 +14,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDateTime, initialsOf } from "@/lib/format";
-import { WORK_ITEM_PRIORITY_LABELS, WORK_ITEM_STATUS_LABELS } from "@/lib/one-lot-project-backlog-format";
-import { workItemPriorityValues, workItemStatusValues } from "@/lib/validation/one-lot-project-backlog";
+import { columnColor, WORK_ITEM_PRIORITY_LABELS } from "@/lib/one-lot-project-backlog-format";
+import { workItemPriorityValues } from "@/lib/validation/one-lot-project-backlog";
 import { createOneLotProjectWorkItem, fetchOneLotProjectWorkItemDetail, updateOneLotProjectWorkItem } from "@/server/one-lot-projects/backlog-actions";
-import type { WorkItemDetailRow } from "@/server/one-lot-projects/backlog-types";
+import type { BoardColumnRow, WorkItemDetailRow } from "@/server/one-lot-projects/backlog-types";
 import type { OneLotProjectMemberRow } from "@/server/one-lot-projects/types";
 
 import { AssigneePicker } from "./assignee-picker";
@@ -28,10 +28,11 @@ type WorkItemDetailSheetProps = {
   workItemId: string | null;
   projectId: string;
   members: OneLotProjectMemberRow[];
+  columns: BoardColumnRow[];
   onOpenChange: (open: boolean) => void;
 };
 
-export function WorkItemDetailSheet({ workItemId, projectId, members, onOpenChange }: WorkItemDetailSheetProps) {
+export function WorkItemDetailSheet({ workItemId, projectId, members, columns, onOpenChange }: WorkItemDetailSheetProps) {
   const queryClient = useQueryClient();
 
   const { data: item, isLoading } = useQuery({
@@ -67,6 +68,7 @@ export function WorkItemDetailSheet({ workItemId, projectId, members, onOpenChan
             item={item}
             projectId={projectId}
             members={members}
+            columns={columns}
             onPatch={(patch) => patchMutation.mutate(patch)}
           />
         )}
@@ -79,11 +81,13 @@ function WorkItemDetailBody({
   item,
   projectId,
   members,
+  columns,
   onPatch,
 }: {
   item: WorkItemDetailRow;
   projectId: string;
   members: OneLotProjectMemberRow[];
+  columns: BoardColumnRow[];
   onPatch: (patch: Parameters<typeof updateOneLotProjectWorkItem>[0]["patch"]) => void;
 }) {
   const [title, setTitle] = React.useState(item.title);
@@ -105,16 +109,20 @@ function WorkItemDetailBody({
       </SheetHeader>
 
       <div className="space-y-6 p-4">
-        <Select value={item.status} onValueChange={(value) => onPatch({ status: value as WorkItemDetailRow["status"] })}>
+        <Select value={item.columnId} onValueChange={(value) => onPatch({ columnId: value })}>
           <SelectTrigger className="w-40">
             <SelectValue>
-              <WorkItemStatusBadge status={item.status} />
+              {(() => {
+                const index = columns.findIndex((c) => c.id === item.columnId);
+                const current = columns[index];
+                return current ? <WorkItemStatusBadge name={current.name} color={columnColor(index)} /> : null;
+              })()}
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
-            {workItemStatusValues.map((status) => (
-              <SelectItem key={status} value={status}>
-                {WORK_ITEM_STATUS_LABELS[status]}
+            {columns.map((column) => (
+              <SelectItem key={column.id} value={column.id}>
+                {column.name}
               </SelectItem>
             ))}
           </SelectContent>

@@ -199,6 +199,7 @@ export function OneLotProjectBacklogBoard({ projectId, initialBoard, canEdit }: 
         workItemId={openWorkItemId}
         projectId={projectId}
         members={board.members}
+        columns={board.columns}
         onOpenChange={(open) => !open && setOpenWorkItemId(null)}
       />
 

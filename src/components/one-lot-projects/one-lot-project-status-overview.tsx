@@ -2,10 +2,8 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { WORK_ITEM_STATUS_COLORS } from "@/lib/one-lot-project-backlog-format";
+import { columnColor } from "@/lib/one-lot-project-backlog-format";
 import type { BreakdownRow } from "@/server/one-lot-projects/backlog-types";
-
-const CATEGORY_COLORS = Object.values(WORK_ITEM_STATUS_COLORS);
 
 const SIZE = 160;
 const CENTER = SIZE / 2;
@@ -28,7 +26,7 @@ function computeArcs(rows: { label: string; value: number }[], total: number): A
     const rotate = cursorDeg - 90;
     cursorDeg += segDeg;
 
-    return { label: row.label, value: row.value, color: CATEGORY_COLORS[index] ?? "var(--chart-4)", rotate, segLen };
+    return { label: row.label, value: row.value, color: columnColor(index), rotate, segLen };
   });
 }
 
@@ -80,7 +78,7 @@ export function OneLotProjectStatusOverview({ data }: { data: BreakdownRow[] }) 
               <span className="flex min-w-0 items-center gap-2">
                 <span
                   className="size-2.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: CATEGORY_COLORS[index] ?? "var(--chart-4)" }}
+                  style={{ backgroundColor: columnColor(index) }}
                   aria-hidden
                 />
                 <span className="truncate">{row.label}</span>

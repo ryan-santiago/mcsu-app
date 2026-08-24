@@ -3,9 +3,6 @@ import { z } from "zod";
 export const workItemTypeValues = ["task", "bug"] as const;
 export type WorkItemTypeValue = (typeof workItemTypeValues)[number];
 
-export const workItemStatusValues = ["todo", "in_progress", "done"] as const;
-export type WorkItemStatusValue = (typeof workItemStatusValues)[number];
-
 export const workItemPriorityValues = ["highest", "high", "medium", "low", "lowest"] as const;
 export type WorkItemPriorityValue = (typeof workItemPriorityValues)[number];
 
@@ -63,7 +60,7 @@ export const workItemPatchSchema = z
   .object({
     title: z.string().trim().min(1, "Required").max(200, "That's too long"),
     description: z.string().trim().max(5000, "That's too long").or(z.literal("")),
-    status: z.enum(workItemStatusValues),
+    columnId: z.string().min(1, "Required"),
     priority: z.enum(workItemPriorityValues),
     assigneeId: z.string().or(z.literal("")),
     dueDate: z.string().or(z.literal("")),
@@ -78,3 +75,9 @@ export const commentFormSchema = z.object({
 });
 
 export type CommentFormInput = z.infer<typeof commentFormSchema>;
+
+export const boardColumnFormSchema = z.object({
+  name: z.string().trim().min(1, "Required").max(60, "That's too long"),
+});
+
+export type BoardColumnFormInput = z.infer<typeof boardColumnFormSchema>;

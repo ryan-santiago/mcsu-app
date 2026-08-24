@@ -1,22 +1,21 @@
-import type { SprintStatus, WorkItemPriority, WorkItemStatus, WorkItemType } from "@/db/schema";
+import type { SprintStatus, WorkItemPriority, WorkItemType } from "@/db/schema";
 
 export const WORK_ITEM_TYPE_LABELS: Record<WorkItemType, string> = {
   task: "Task",
   bug: "Bug",
 };
 
-export const WORK_ITEM_STATUS_LABELS: Record<WorkItemStatus, string> = {
-  todo: "To Do",
-  in_progress: "In Progress",
-  done: "Done",
-};
+/**
+ * Board columns are per-project, user-configurable data now (not a fixed
+ * enum) — this cycles through the app's categorical chart tokens by column
+ * position, shared by the Summary page's Status Overview donut and the
+ * Kanban column headers so the two never drift.
+ */
+const COLUMN_COLOR_CYCLE = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"];
 
-/** Shared with the Summary page's Status Overview donut so the two never drift. */
-export const WORK_ITEM_STATUS_COLORS: Record<WorkItemStatus, string> = {
-  todo: "var(--chart-1)",
-  in_progress: "var(--chart-2)",
-  done: "var(--chart-3)",
-};
+export function columnColor(index: number): string {
+  return COLUMN_COLOR_CYCLE[index % COLUMN_COLOR_CYCLE.length];
+}
 
 export const WORK_ITEM_PRIORITY_LABELS: Record<WorkItemPriority, string> = {
   highest: "Highest",

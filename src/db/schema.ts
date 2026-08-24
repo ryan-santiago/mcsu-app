@@ -902,7 +902,6 @@ export const oneLotProjectS3pProject = pgTable(
 );
 
 export const workItemType = pgEnum("work_item_type", ["task", "bug"]);
-export const workItemStatus = pgEnum("work_item_status", ["todo", "in_progress", "done"]);
 export const workItemPriority = pgEnum("work_item_priority", ["highest", "high", "medium", "low", "lowest"]);
 export const sprintStatus = pgEnum("sprint_status", ["planned", "active", "completed"]);
 
@@ -951,6 +950,41 @@ export const oneLotProjectSprint = pgTable(
 );
 
 /**
+ * A per-project, user-configurable Kanban column — replaces a fixed status
+ * enum so "+ Add column" (Kanban Board) can create arbitrary ones. Every
+ * project is seeded with four (To Do/In Progress/In Review/Done) at
+ * creation. `isDefault` is where a new work item lands; `isDone` is what
+ * `completeOneLotProjectSprint` treats as finished when migrating
+ * unfinished items back to the Backlog — both enforced as at-most-one-per-
+ * project by the partial unique indexes below.
+ */
+export const oneLotProjectBoardColumn = pgTable(
+  "one_lot_project_board_column",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => oneLotProject.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    isDefault: boolean("is_default").notNull().default(false),
+    isDone: boolean("is_done").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("one_lot_project_board_column_project_idx").on(table.projectId),
+    uniqueIndex("one_lot_project_board_column_one_default_idx")
+      .on(table.projectId)
+      .where(sql`${table.isDefault} = true`),
+    uniqueIndex("one_lot_project_board_column_one_done_idx")
+      .on(table.projectId)
+      .where(sql`${table.isDone} = true`),
+  ],
+);
+
+/**
  * A task/bug (`parentId` null) or a subtask (`parentId` set) — subtasks are
  * the same row shape, never their own type distinction beyond that. `code`
  * is generated once (see `createOneLotProjectWorkItem`'s counter step) and
@@ -972,13 +1006,17 @@ export const oneLotProjectWorkItem = pgTable(
     type: workItemType("type").notNull(),
     title: text("title").notNull(),
     description: text("description"),
-    status: workItemStatus("status").notNull().default("todo"),
+    columnId: text("column_id")
+      .notNull()
+      .references(() => oneLotProjectBoardColumn.id, { onDelete: "restrict" }),
     priority: workItemPriority("priority").notNull().default("medium"),
     assigneeId: text("assignee_id").references(() => user.id, { onDelete: "set null" }),
     dueDate: date("due_date"),
     /** 1 story point ≈ 2 hours (a team convention, not enforced here). */
     storyPoints: numeric("story_points", { precision: 5, scale: 1 }),
     sortOrder: integer("sort_order").notNull().default(0),
+    /** Position within its Kanban column — independent of `sortOrder`, which positions it within its Backlog/Sprint bucket (an orthogonal grouping). */
+    boardSortOrder: integer("board_sort_order").notNull().default(0),
     createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .$defaultFn(() => new Date())
@@ -1125,6 +1163,7 @@ export const oneLotProjectRelations = relations(oneLotProject, ({ many }) => ({
   s3pProjects: many(oneLotProjectS3pProject),
   sprints: many(oneLotProjectSprint),
   workItems: many(oneLotProjectWorkItem),
+  boardColumns: many(oneLotProjectBoardColumn),
 }));
 
 export const oneLotProjectMemberRelations = relations(oneLotProjectMember, ({ one }) => ({
@@ -1145,9 +1184,18 @@ export const oneLotProjectSprintRelations = relations(oneLotProjectSprint, ({ on
   items: many(oneLotProjectWorkItem),
 }));
 
+export const oneLotProjectBoardColumnRelations = relations(oneLotProjectBoardColumn, ({ one, many }) => ({
+  project: one(oneLotProject, { fields: [oneLotProjectBoardColumn.projectId], references: [oneLotProject.id] }),
+  items: many(oneLotProjectWorkItem),
+}));
+
 export const oneLotProjectWorkItemRelations = relations(oneLotProjectWorkItem, ({ one, many }) => ({
   project: one(oneLotProject, { fields: [oneLotProjectWorkItem.projectId], references: [oneLotProject.id] }),
   sprint: one(oneLotProjectSprint, { fields: [oneLotProjectWorkItem.sprintId], references: [oneLotProjectSprint.id] }),
+  column: one(oneLotProjectBoardColumn, {
+    fields: [oneLotProjectWorkItem.columnId],
+    references: [oneLotProjectBoardColumn.id],
+  }),
   parent: one(oneLotProjectWorkItem, {
     fields: [oneLotProjectWorkItem.parentId],
     references: [oneLotProjectWorkItem.id],
@@ -1250,7 +1298,8 @@ export type SprintStatus = (typeof sprintStatus.enumValues)[number];
 export type OneLotProjectWorkItem = typeof oneLotProjectWorkItem.$inferSelect;
 export type NewOneLotProjectWorkItem = typeof oneLotProjectWorkItem.$inferInsert;
 export type WorkItemType = (typeof workItemType.enumValues)[number];
-export type WorkItemStatus = (typeof workItemStatus.enumValues)[number];
 export type WorkItemPriority = (typeof workItemPriority.enumValues)[number];
 export type OneLotProjectWorkItemComment = typeof oneLotProjectWorkItemComment.$inferSelect;
 export type NewOneLotProjectWorkItemComment = typeof oneLotProjectWorkItemComment.$inferInsert;
+export type OneLotProjectBoardColumn = typeof oneLotProjectBoardColumn.$inferSelect;
+export type NewOneLotProjectBoardColumn = typeof oneLotProjectBoardColumn.$inferInsert;

@@ -1,13 +1,8 @@
 import { ArrowDown, ArrowUp, Bug, ChevronsDown, ChevronsUp, Equal, ListChecks, type LucideIcon } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import type { WorkItemPriority, WorkItemStatus, WorkItemType } from "@/db/schema";
-import {
-  WORK_ITEM_PRIORITY_LABELS,
-  WORK_ITEM_STATUS_COLORS,
-  WORK_ITEM_STATUS_LABELS,
-  WORK_ITEM_TYPE_LABELS,
-} from "@/lib/one-lot-project-backlog-format";
+import type { WorkItemPriority, WorkItemType } from "@/db/schema";
+import { WORK_ITEM_PRIORITY_LABELS, WORK_ITEM_TYPE_LABELS } from "@/lib/one-lot-project-backlog-format";
 import { cn } from "@/lib/utils";
 
 const TYPE_ICONS: Record<WorkItemType, LucideIcon> = {
@@ -47,21 +42,16 @@ export function WorkItemPriorityBadge({ priority, className }: { priority: WorkI
   );
 }
 
-const STATUS_STYLES: Record<WorkItemStatus, string> = {
-  todo: "border-border text-foreground",
-  in_progress: "border-brand/30 bg-brand/10 text-brand",
-  done: "border-success/30 bg-success/10 text-success",
-};
-
-export function WorkItemStatusBadge({ status, className }: { status: WorkItemStatus; className?: string }) {
+/** Columns are per-project data now, not a fixed enum — pass the column's own name/color (see `columnColor` in `one-lot-project-backlog-format.ts`). */
+export function WorkItemStatusBadge({ name, color, className }: { name: string; color: string; className?: string }) {
   return (
     <Badge
       variant="outline"
-      className={cn("gap-1.5 font-normal", STATUS_STYLES[status], className)}
-      style={{ borderColor: `color-mix(in oklab, ${WORK_ITEM_STATUS_COLORS[status]} 30%, transparent)` }}
+      className={cn("gap-1.5 font-normal", className)}
+      style={{ borderColor: `color-mix(in oklab, ${color} 30%, transparent)` }}
     >
-      <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: WORK_ITEM_STATUS_COLORS[status] }} aria-hidden />
-      {WORK_ITEM_STATUS_LABELS[status]}
+      <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: color }} aria-hidden />
+      {name}
     </Badge>
   );
 }

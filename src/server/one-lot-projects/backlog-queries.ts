@@ -4,14 +4,22 @@ import { addDays, format, startOfDay, subDays, subMonths } from "date-fns";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 
 import { db } from "@/db";
-import { oneLotProjectSprint, oneLotProjectWorkItem, oneLotProjectWorkItemComment, user } from "@/db/schema";
+import {
+  oneLotProjectBoardColumn,
+  oneLotProjectSprint,
+  oneLotProjectWorkItem,
+  oneLotProjectWorkItemComment,
+  user,
+} from "@/db/schema";
 import { authorize, type CurrentUser } from "@/lib/session";
 
 import { assertOneLotProjectContentAccess, listOneLotProjectMembers } from "./queries";
 import type {
   BacklogBoardData,
+  BoardColumnRow,
   BreakdownRow,
   CommentRow,
+  KanbanBoardData,
   PeriodValue,
   SprintRow,
   StatCardsData,
@@ -43,19 +51,37 @@ function sortSprints(sprints: (typeof oneLotProjectSprint.$inferSelect)[]) {
   });
 }
 
+export async function getOneLotProjectBoardColumns(projectId: string): Promise<BoardColumnRow[]> {
+  await authorize("one_lot_projects:read");
+
+  return db
+    .select({
+      id: oneLotProjectBoardColumn.id,
+      name: oneLotProjectBoardColumn.name,
+      sortOrder: oneLotProjectBoardColumn.sortOrder,
+      isDefault: oneLotProjectBoardColumn.isDefault,
+      isDone: oneLotProjectBoardColumn.isDone,
+    })
+    .from(oneLotProjectBoardColumn)
+    .where(eq(oneLotProjectBoardColumn.projectId, projectId))
+    .orderBy(asc(oneLotProjectBoardColumn.sortOrder));
+}
+
 export async function getOneLotProjectBacklogBoard(projectId: string, actor: CurrentUser): Promise<BacklogBoardData> {
   await assertOneLotProjectContentAccess(projectId, actor);
 
-  const [members, sprints, subtaskCounts, commentCounts, topLevelItems] = await Promise.all([
+  const [members, columns, sprints, subtaskCounts, commentCounts, topLevelItems] = await Promise.all([
     listOneLotProjectMembers(projectId),
+    getOneLotProjectBoardColumns(projectId),
     db.select().from(oneLotProjectSprint).where(eq(oneLotProjectSprint.projectId, projectId)),
     db
       .select({
         parentId: oneLotProjectWorkItem.parentId,
         count: sql<number>`count(*)::int`,
-        doneCount: sql<number>`count(*) filter (where ${oneLotProjectWorkItem.status} = 'done')::int`,
+        doneCount: sql<number>`count(*) filter (where ${oneLotProjectBoardColumn.isDone} = true)::int`,
       })
       .from(oneLotProjectWorkItem)
+      .innerJoin(oneLotProjectBoardColumn, eq(oneLotProjectBoardColumn.id, oneLotProjectWorkItem.columnId))
       .where(and(eq(oneLotProjectWorkItem.projectId, projectId), sql`${oneLotProjectWorkItem.parentId} is not null`))
       .groupBy(oneLotProjectWorkItem.parentId),
     db
@@ -71,11 +97,12 @@ export async function getOneLotProjectBacklogBoard(projectId: string, actor: Cur
         code: oneLotProjectWorkItem.code,
         type: oneLotProjectWorkItem.type,
         title: oneLotProjectWorkItem.title,
-        status: oneLotProjectWorkItem.status,
+        columnId: oneLotProjectWorkItem.columnId,
         priority: oneLotProjectWorkItem.priority,
         dueDate: oneLotProjectWorkItem.dueDate,
         storyPoints: oneLotProjectWorkItem.storyPoints,
         sortOrder: oneLotProjectWorkItem.sortOrder,
+        boardSortOrder: oneLotProjectWorkItem.boardSortOrder,
         assignee: ASSIGNEE_SELECTION,
       })
       .from(oneLotProjectWorkItem)
@@ -94,12 +121,13 @@ export async function getOneLotProjectBacklogBoard(projectId: string, actor: Cur
       code: row.code,
       type: row.type,
       title: row.title,
-      status: row.status,
+      columnId: row.columnId,
       priority: row.priority,
       assignee: toAssignee(row.assignee),
       dueDate: row.dueDate,
       storyPoints: row.storyPoints,
       sortOrder: row.sortOrder,
+      boardSortOrder: row.boardSortOrder,
       subtaskCount: subtasks?.count ?? 0,
       doneSubtaskCount: subtasks?.doneCount ?? 0,
       commentCount: commentCountByItem.get(row.id) ?? 0,
@@ -129,7 +157,90 @@ export async function getOneLotProjectBacklogBoard(projectId: string, actor: Cur
     items: itemsBySprint.get(sprint.id) ?? [],
   }));
 
-  return { backlogItems, sprints: sprintRows, members };
+  return { backlogItems, sprints: sprintRows, members, columns };
+}
+
+export async function getOneLotProjectKanbanBoard(projectId: string, actor: CurrentUser): Promise<KanbanBoardData> {
+  await assertOneLotProjectContentAccess(projectId, actor);
+
+  const [members, columns, activeSprintRows] = await Promise.all([
+    listOneLotProjectMembers(projectId),
+    getOneLotProjectBoardColumns(projectId),
+    db
+      .select({ id: oneLotProjectSprint.id, name: oneLotProjectSprint.name })
+      .from(oneLotProjectSprint)
+      .where(and(eq(oneLotProjectSprint.projectId, projectId), eq(oneLotProjectSprint.status, "active")))
+      .limit(1),
+  ]);
+
+  const activeSprint = activeSprintRows[0] ?? null;
+  const itemsByColumn: Record<string, WorkItemRow[]> = {};
+  for (const column of columns) itemsByColumn[column.id] = [];
+
+  if (activeSprint) {
+    const [subtaskCounts, commentCounts, items] = await Promise.all([
+      db
+        .select({
+          parentId: oneLotProjectWorkItem.parentId,
+          count: sql<number>`count(*)::int`,
+          doneCount: sql<number>`count(*) filter (where ${oneLotProjectBoardColumn.isDone} = true)::int`,
+        })
+        .from(oneLotProjectWorkItem)
+        .innerJoin(oneLotProjectBoardColumn, eq(oneLotProjectBoardColumn.id, oneLotProjectWorkItem.columnId))
+        .where(and(eq(oneLotProjectWorkItem.sprintId, activeSprint.id), sql`${oneLotProjectWorkItem.parentId} is not null`))
+        .groupBy(oneLotProjectWorkItem.parentId),
+      db
+        .select({ workItemId: oneLotProjectWorkItemComment.workItemId, count: sql<number>`count(*)::int` })
+        .from(oneLotProjectWorkItemComment)
+        .innerJoin(oneLotProjectWorkItem, eq(oneLotProjectWorkItem.id, oneLotProjectWorkItemComment.workItemId))
+        .where(eq(oneLotProjectWorkItem.sprintId, activeSprint.id))
+        .groupBy(oneLotProjectWorkItemComment.workItemId),
+      db
+        .select({
+          id: oneLotProjectWorkItem.id,
+          code: oneLotProjectWorkItem.code,
+          type: oneLotProjectWorkItem.type,
+          title: oneLotProjectWorkItem.title,
+          columnId: oneLotProjectWorkItem.columnId,
+          priority: oneLotProjectWorkItem.priority,
+          dueDate: oneLotProjectWorkItem.dueDate,
+          storyPoints: oneLotProjectWorkItem.storyPoints,
+          sortOrder: oneLotProjectWorkItem.sortOrder,
+          boardSortOrder: oneLotProjectWorkItem.boardSortOrder,
+          assignee: ASSIGNEE_SELECTION,
+        })
+        .from(oneLotProjectWorkItem)
+        .leftJoin(user, eq(user.id, oneLotProjectWorkItem.assigneeId))
+        .where(and(eq(oneLotProjectWorkItem.sprintId, activeSprint.id), isNull(oneLotProjectWorkItem.parentId)))
+        .orderBy(asc(oneLotProjectWorkItem.boardSortOrder)),
+    ]);
+
+    const subtaskCountByParent = new Map(subtaskCounts.map((r) => [r.parentId, r]));
+    const commentCountByItem = new Map(commentCounts.map((r) => [r.workItemId, r.count]));
+
+    for (const row of items) {
+      const subtasks = subtaskCountByParent.get(row.id);
+      const item: WorkItemRow = {
+        id: row.id,
+        code: row.code,
+        type: row.type,
+        title: row.title,
+        columnId: row.columnId,
+        priority: row.priority,
+        assignee: toAssignee(row.assignee),
+        dueDate: row.dueDate,
+        storyPoints: row.storyPoints,
+        sortOrder: row.sortOrder,
+        boardSortOrder: row.boardSortOrder,
+        subtaskCount: subtasks?.count ?? 0,
+        doneSubtaskCount: subtasks?.doneCount ?? 0,
+        commentCount: commentCountByItem.get(row.id) ?? 0,
+      };
+      (itemsByColumn[row.columnId] ??= []).push(item);
+    }
+  }
+
+  return { columns, activeSprint, itemsByColumn, members };
 }
 
 export async function getOneLotProjectWorkItemDetail(
@@ -146,11 +257,12 @@ export async function getOneLotProjectWorkItemDetail(
       type: oneLotProjectWorkItem.type,
       title: oneLotProjectWorkItem.title,
       description: oneLotProjectWorkItem.description,
-      status: oneLotProjectWorkItem.status,
+      columnId: oneLotProjectWorkItem.columnId,
       priority: oneLotProjectWorkItem.priority,
       dueDate: oneLotProjectWorkItem.dueDate,
       storyPoints: oneLotProjectWorkItem.storyPoints,
       sortOrder: oneLotProjectWorkItem.sortOrder,
+      boardSortOrder: oneLotProjectWorkItem.boardSortOrder,
       parentId: oneLotProjectWorkItem.parentId,
       sprintId: oneLotProjectWorkItem.sprintId,
       createdAt: oneLotProjectWorkItem.createdAt,
@@ -182,7 +294,7 @@ export async function getOneLotProjectWorkItemDetail(
         id: oneLotProjectWorkItem.id,
         code: oneLotProjectWorkItem.code,
         title: oneLotProjectWorkItem.title,
-        status: oneLotProjectWorkItem.status,
+        columnId: oneLotProjectWorkItem.columnId,
         assignee: ASSIGNEE_SELECTION,
       })
       .from(oneLotProjectWorkItem)
@@ -203,9 +315,10 @@ export async function getOneLotProjectWorkItemDetail(
     db
       .select({
         count: sql<number>`count(*)::int`,
-        doneCount: sql<number>`count(*) filter (where ${oneLotProjectWorkItem.status} = 'done')::int`,
+        doneCount: sql<number>`count(*) filter (where ${oneLotProjectBoardColumn.isDone} = true)::int`,
       })
       .from(oneLotProjectWorkItem)
+      .innerJoin(oneLotProjectBoardColumn, eq(oneLotProjectBoardColumn.id, oneLotProjectWorkItem.columnId))
       .where(eq(oneLotProjectWorkItem.parentId, id)),
   ]);
 
@@ -213,7 +326,7 @@ export async function getOneLotProjectWorkItemDetail(
     id: s.id,
     code: s.code,
     title: s.title,
-    status: s.status,
+    columnId: s.columnId,
     assignee: toAssignee(s.assignee),
   }));
 
@@ -230,12 +343,13 @@ export async function getOneLotProjectWorkItemDetail(
     type: row.type,
     title: row.title,
     description: row.description,
-    status: row.status,
+    columnId: row.columnId,
     priority: row.priority,
     assignee: toAssignee(row.assignee),
     dueDate: row.dueDate,
     storyPoints: row.storyPoints,
     sortOrder: row.sortOrder,
+    boardSortOrder: row.boardSortOrder,
     parentId: row.parentId,
     parentCode,
     sprintId: row.sprintId,
@@ -249,12 +363,6 @@ export async function getOneLotProjectWorkItemDetail(
     comments,
   };
 }
-
-const STATUS_ORDER = [
-  { value: "todo", label: "To Do" },
-  { value: "in_progress", label: "In Progress" },
-  { value: "done", label: "Done" },
-] as const;
 
 const PRIORITY_ORDER = [
   { value: "highest", label: "Highest" },
@@ -271,7 +379,7 @@ const TYPE_ORDER = [
 
 async function breakdownBy(
   projectId: string,
-  column: typeof oneLotProjectWorkItem.status | typeof oneLotProjectWorkItem.priority | typeof oneLotProjectWorkItem.type,
+  column: typeof oneLotProjectWorkItem.priority | typeof oneLotProjectWorkItem.type,
   order: readonly { value: string; label: string }[],
 ): Promise<BreakdownRow[]> {
   await authorize("one_lot_projects:read");
@@ -286,8 +394,21 @@ async function breakdownBy(
   return order.map((o) => ({ label: o.label, value: counts.get(o.value) ?? 0 }));
 }
 
+/** Unlike Priority/Types of Work, this reflects the project's *actual* columns (including custom ones), ordered by `sortOrder`, 0-filled for columns with no items. */
 export async function getOneLotProjectStatusOverview(projectId: string): Promise<BreakdownRow[]> {
-  return breakdownBy(projectId, oneLotProjectWorkItem.status, STATUS_ORDER);
+  await authorize("one_lot_projects:read");
+
+  const [columns, rows] = await Promise.all([
+    getOneLotProjectBoardColumns(projectId),
+    db
+      .select({ columnId: oneLotProjectWorkItem.columnId, count: sql<number>`count(*)::int` })
+      .from(oneLotProjectWorkItem)
+      .where(and(eq(oneLotProjectWorkItem.projectId, projectId), isNull(oneLotProjectWorkItem.parentId)))
+      .groupBy(oneLotProjectWorkItem.columnId),
+  ]);
+
+  const counts = new Map(rows.map((r) => [r.columnId, r.count]));
+  return columns.map((c) => ({ label: c.name, value: counts.get(c.id) ?? 0 }));
 }
 
 export async function getOneLotProjectPriorityBreakdown(projectId: string): Promise<BreakdownRow[]> {
@@ -310,8 +431,8 @@ export async function getOneLotProjectStatCards(projectId: string): Promise<Stat
 
   const [row] = await db
     .select({
-      completed: sql<number>`count(*) filter (where ${oneLotProjectWorkItem.status} = 'done')::int`,
-      dueSoon: sql<number>`count(*) filter (where ${oneLotProjectWorkItem.dueDate} is not null and ${oneLotProjectWorkItem.dueDate} >= ${todayDate} and ${oneLotProjectWorkItem.dueDate} <= ${sevenDaysFromNowDate} and ${oneLotProjectWorkItem.status} <> 'done')::int`,
+      completed: sql<number>`count(*) filter (where ${oneLotProjectBoardColumn.isDone} = true)::int`,
+      dueSoon: sql<number>`count(*) filter (where ${oneLotProjectWorkItem.dueDate} is not null and ${oneLotProjectWorkItem.dueDate} >= ${todayDate} and ${oneLotProjectWorkItem.dueDate} <= ${sevenDaysFromNowDate} and ${oneLotProjectBoardColumn.isDone} = false)::int`,
       updatedToday: sql<number>`count(*) filter (where ${oneLotProjectWorkItem.updatedAt} >= ${todayStart})::int`,
       updated7d: sql<number>`count(*) filter (where ${oneLotProjectWorkItem.updatedAt} >= ${sevenDaysAgo})::int`,
       updated1m: sql<number>`count(*) filter (where ${oneLotProjectWorkItem.updatedAt} >= ${oneMonthAgo})::int`,
@@ -322,6 +443,7 @@ export async function getOneLotProjectStatCards(projectId: string): Promise<Stat
       createdAll: sql<number>`count(*)::int`,
     })
     .from(oneLotProjectWorkItem)
+    .innerJoin(oneLotProjectBoardColumn, eq(oneLotProjectBoardColumn.id, oneLotProjectWorkItem.columnId))
     .where(and(eq(oneLotProjectWorkItem.projectId, projectId), isNull(oneLotProjectWorkItem.parentId)));
 
   return {
@@ -366,4 +488,3 @@ export async function getOneLotProjectWorkload(projectId: string): Promise<Workl
     }))
     .sort((a, b) => b.count - a.count);
 }
-
