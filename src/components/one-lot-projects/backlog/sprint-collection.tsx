@@ -20,7 +20,7 @@ import {
   startOneLotProjectSprint,
   updateOneLotProjectSprint,
 } from "@/server/one-lot-projects/backlog-actions";
-import type { SprintRow } from "@/server/one-lot-projects/backlog-types";
+import type { BoardColumnRow, SprintRow } from "@/server/one-lot-projects/backlog-types";
 import type { OneLotProjectMemberRow } from "@/server/one-lot-projects/types";
 
 import { CreateSprintDialog } from "./create-sprint-dialog";
@@ -37,11 +37,12 @@ type SprintCollectionProps = {
   projectId: string;
   sprint: SprintRow;
   members: OneLotProjectMemberRow[];
+  columns: BoardColumnRow[];
   canEdit: boolean;
   onItemClick: (id: string) => void;
 };
 
-export function SprintCollection({ projectId, sprint, members, canEdit, onItemClick }: SprintCollectionProps) {
+export function SprintCollection({ projectId, sprint, members, columns, canEdit, onItemClick }: SprintCollectionProps) {
   const [creating, setCreating] = React.useState(false);
   const [editing, setEditing] = React.useState(false);
   const { setNodeRef } = useDroppable({ id: `sprint:${sprint.id}` });
@@ -149,7 +150,7 @@ export function SprintCollection({ projectId, sprint, members, canEdit, onItemCl
             {sprint.items.length === 0 ? (
               <p className="text-muted-foreground rounded-lg border border-dashed py-6 text-center text-sm">No work items yet.</p>
             ) : (
-              sprint.items.map((item) => <WorkItemRow key={item.id} item={item} onClick={() => onItemClick(item.id)} />)
+              sprint.items.map((item) => <WorkItemRow key={item.id} item={item} columns={columns} onOpenItem={onItemClick} />)
             )}
           </div>
         </SortableContext>

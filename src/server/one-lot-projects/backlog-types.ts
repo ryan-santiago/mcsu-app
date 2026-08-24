@@ -1,4 +1,9 @@
-import type { SprintStatusValue, WorkItemPriorityValue, WorkItemTypeValue } from "@/lib/validation/one-lot-project-backlog";
+import type {
+  SprintStatusValue,
+  WorkItemCoverColorValue,
+  WorkItemPriorityValue,
+  WorkItemTypeValue,
+} from "@/lib/validation/one-lot-project-backlog";
 
 import type { OneLotProjectMemberRow } from "./types";
 
@@ -14,11 +19,14 @@ export type WorkItemRow = {
   assignee: WorkItemAssignee;
   dueDate: string | null;
   storyPoints: string | null;
+  coverColor: WorkItemCoverColorValue | null;
   sortOrder: number;
   boardSortOrder: number;
   subtaskCount: number;
   doneSubtaskCount: number;
   commentCount: number;
+  /** Preloaded so the Backlog row / Kanban card can expand inline with no extra fetch — empty for a subtask itself (subtasks don't nest). */
+  subtasks: WorkItemSubtaskRow[];
 };
 
 export type SprintRow = {
@@ -61,6 +69,7 @@ export type WorkItemSubtaskRow = {
   code: string;
   title: string;
   columnId: string;
+  priority: WorkItemPriorityValue;
   assignee: WorkItemAssignee;
 };
 
@@ -79,7 +88,6 @@ export type WorkItemDetailRow = WorkItemRow & {
   sprintName: string | null;
   createdAt: Date;
   updatedAt: Date;
-  subtasks: WorkItemSubtaskRow[];
   comments: CommentRow[];
 };
 

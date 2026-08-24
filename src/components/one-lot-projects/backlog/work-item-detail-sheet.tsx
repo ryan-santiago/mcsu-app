@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, Loader2, Plus } from "lucide-react";
+import { ChevronDown, ChevronLeft, Loader2, Plus } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 
@@ -17,12 +17,13 @@ import { formatDateTime, initialsOf } from "@/lib/format";
 import { columnColor, WORK_ITEM_PRIORITY_LABELS } from "@/lib/one-lot-project-backlog-format";
 import { workItemPriorityValues } from "@/lib/validation/one-lot-project-backlog";
 import { createOneLotProjectWorkItem, fetchOneLotProjectWorkItemDetail, updateOneLotProjectWorkItem } from "@/server/one-lot-projects/backlog-actions";
-import type { BoardColumnRow, WorkItemDetailRow } from "@/server/one-lot-projects/backlog-types";
+import type { BoardColumnRow, WorkItemDetailRow, WorkItemSubtaskRow } from "@/server/one-lot-projects/backlog-types";
 import type { OneLotProjectMemberRow } from "@/server/one-lot-projects/types";
 
 import { AssigneePicker } from "./assignee-picker";
 import { CommentList } from "./comment-list";
-import { WorkItemStatusBadge } from "./work-item-badges";
+import { CoverColorPicker } from "./cover-color-picker";
+import { WorkItemCoverBar, WorkItemPriorityBadge, WorkItemStatusBadge } from "./work-item-badges";
 
 type WorkItemDetailSheetProps = {
   workItemId: string | null;
@@ -33,21 +34,47 @@ type WorkItemDetailSheetProps = {
 };
 
 export function WorkItemDetailSheet({ workItemId, projectId, members, columns, onOpenChange }: WorkItemDetailSheetProps) {
+  return (
+    <Sheet open={Boolean(workItemId)} onOpenChange={(open) => !open && onOpenChange(false)}>
+      <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-xl">
+        {workItemId ? (
+          // Keyed by the externally-opened id so drilling into a subtask (internal
+          // navigation state below) resets automatically whenever a *different*
+          // item is opened from the board, without an effect syncing state to props.
+          <WorkItemDetailNavigator key={workItemId} rootId={workItemId} projectId={projectId} members={members} columns={columns} />
+        ) : null}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function WorkItemDetailNavigator({
+  rootId,
+  projectId,
+  members,
+  columns,
+}: {
+  rootId: string;
+  projectId: string;
+  members: OneLotProjectMemberRow[];
+  columns: BoardColumnRow[];
+}) {
+  const [displayedId, setDisplayedId] = React.useState(rootId);
   const queryClient = useQueryClient();
 
   const { data: item, isLoading } = useQuery({
-    queryKey: ["one-lot-project-work-item", workItemId],
-    queryFn: () => fetchOneLotProjectWorkItemDetail(workItemId as string, projectId),
-    enabled: Boolean(workItemId),
+    queryKey: ["one-lot-project-work-item", displayedId],
+    queryFn: () => fetchOneLotProjectWorkItemDetail(displayedId, projectId),
   });
 
   const patchMutation = useMutation({
     mutationFn: (patch: Parameters<typeof updateOneLotProjectWorkItem>[0]["patch"]) =>
-      updateOneLotProjectWorkItem({ id: workItemId as string, projectId, patch }),
+      updateOneLotProjectWorkItem({ id: displayedId, projectId, patch }),
     onSuccess: (result) => {
       if (result.ok) {
-        queryClient.invalidateQueries({ queryKey: ["one-lot-project-work-item", workItemId] });
+        queryClient.invalidateQueries({ queryKey: ["one-lot-project-work-item", displayedId] });
         queryClient.invalidateQueries({ queryKey: ["one-lot-project-backlog", projectId] });
+        queryClient.invalidateQueries({ queryKey: ["one-lot-project-kanban", projectId] });
       } else {
         toast.error(result.error);
       }
@@ -55,25 +82,24 @@ export function WorkItemDetailSheet({ workItemId, projectId, members, columns, o
     onError: () => toast.error("Something went wrong. Please try again."),
   });
 
+  if (isLoading || !item) {
+    return (
+      <div className="flex h-32 items-center justify-center">
+        <Loader2 className="text-muted-foreground size-5 animate-spin" aria-hidden />
+      </div>
+    );
+  }
+
   return (
-    <Sheet open={Boolean(workItemId)} onOpenChange={(open) => !open && onOpenChange(false)}>
-      <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-xl">
-        {isLoading || !item ? (
-          <div className="flex h-32 items-center justify-center">
-            <Loader2 className="text-muted-foreground size-5 animate-spin" aria-hidden />
-          </div>
-        ) : (
-          <WorkItemDetailBody
-            key={item.id}
-            item={item}
-            projectId={projectId}
-            members={members}
-            columns={columns}
-            onPatch={(patch) => patchMutation.mutate(patch)}
-          />
-        )}
-      </SheetContent>
-    </Sheet>
+    <WorkItemDetailBody
+      key={item.id}
+      item={item}
+      projectId={projectId}
+      members={members}
+      columns={columns}
+      onPatch={(patch) => patchMutation.mutate(patch)}
+      onNavigate={setDisplayedId}
+    />
   );
 }
 
@@ -83,21 +109,36 @@ function WorkItemDetailBody({
   members,
   columns,
   onPatch,
+  onNavigate,
 }: {
   item: WorkItemDetailRow;
   projectId: string;
   members: OneLotProjectMemberRow[];
   columns: BoardColumnRow[];
   onPatch: (patch: Parameters<typeof updateOneLotProjectWorkItem>[0]["patch"]) => void;
+  onNavigate: (id: string) => void;
 }) {
   const [title, setTitle] = React.useState(item.title);
   const [description, setDescription] = React.useState(item.description ?? "");
   const [storyPoints, setStoryPoints] = React.useState(item.storyPoints ?? "");
   const [detailsOpen, setDetailsOpen] = React.useState(true);
+  const canHaveCover = item.type !== "subtask";
 
   return (
     <div className="flex flex-col">
+      <WorkItemCoverBar color={item.coverColor} />
+
       <SheetHeader className="border-b">
+        {item.parentId ? (
+          <button
+            type="button"
+            onClick={() => onNavigate(item.parentId!)}
+            className="text-muted-foreground hover:text-foreground -ml-1 flex w-fit items-center gap-1 text-xs font-medium"
+          >
+            <ChevronLeft className="size-3.5" aria-hidden />
+            Back to {item.parentCode}
+          </button>
+        ) : null}
         <span className="text-muted-foreground font-mono text-xs">{item.code}</span>
         <SheetTitle className="sr-only">{item.title}</SheetTitle>
         <Input
@@ -109,24 +150,30 @@ function WorkItemDetailBody({
       </SheetHeader>
 
       <div className="space-y-6 p-4">
-        <Select value={item.columnId} onValueChange={(value) => onPatch({ columnId: value })}>
-          <SelectTrigger className="w-40">
-            <SelectValue>
-              {(() => {
-                const index = columns.findIndex((c) => c.id === item.columnId);
-                const current = columns[index];
-                return current ? <WorkItemStatusBadge name={current.name} color={columnColor(index)} /> : null;
-              })()}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {columns.map((column) => (
-              <SelectItem key={column.id} value={column.id}>
-                {column.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={item.columnId} onValueChange={(value) => onPatch({ columnId: value })}>
+            <SelectTrigger className="w-40">
+              <SelectValue>
+                {(() => {
+                  const index = columns.findIndex((c) => c.id === item.columnId);
+                  const current = columns[index];
+                  return current ? <WorkItemStatusBadge name={current.name} color={columnColor(index)} /> : null;
+                })()}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {columns.map((column) => (
+                <SelectItem key={column.id} value={column.id}>
+                  {column.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {canHaveCover ? (
+            <CoverColorPicker value={item.coverColor} onChange={(color) => onPatch({ coverColor: color })} />
+          ) : null}
+        </div>
 
         <div className="space-y-1.5">
           <p className="text-muted-foreground text-xs font-medium">Description</p>
@@ -139,7 +186,9 @@ function WorkItemDetailBody({
           />
         </div>
 
-        <SubtasksSection item={item} projectId={projectId} />
+        {item.type === "task" ? (
+          <SubtasksSection item={item} projectId={projectId} columns={columns} onNavigate={onNavigate} />
+        ) : null}
 
         <Collapsible open={detailsOpen} onOpenChange={setDetailsOpen}>
           <CollapsibleTrigger asChild>
@@ -207,32 +256,51 @@ function WorkItemDetailBody({
 function SubtasksSection({
   item,
   projectId,
+  columns,
+  onNavigate,
 }: {
   item: WorkItemDetailRow;
   projectId: string;
+  columns: BoardColumnRow[];
+  onNavigate: (id: string) => void;
 }) {
   const [adding, setAdding] = React.useState(false);
   const [title, setTitle] = React.useState("");
   const queryClient = useQueryClient();
 
-  const mutation = useMutation({
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ["one-lot-project-work-item", item.id] });
+    queryClient.invalidateQueries({ queryKey: ["one-lot-project-backlog", projectId] });
+    queryClient.invalidateQueries({ queryKey: ["one-lot-project-kanban", projectId] });
+  };
+
+  const createMutation = useMutation({
     mutationFn: () =>
       createOneLotProjectWorkItem({
         projectId,
         sprintId: item.sprintId,
         parentId: item.id,
-        type: item.type,
+        type: "subtask",
         title,
       }),
     onSuccess: (result) => {
       if (result.ok) {
         setTitle("");
         setAdding(false);
-        queryClient.invalidateQueries({ queryKey: ["one-lot-project-work-item", item.id] });
-        queryClient.invalidateQueries({ queryKey: ["one-lot-project-backlog", projectId] });
+        invalidate();
       } else {
         toast.error(result.error);
       }
+    },
+    onError: () => toast.error("Something went wrong. Please try again."),
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: (input: { id: string; columnId: string }) =>
+      updateOneLotProjectWorkItem({ id: input.id, projectId, patch: { columnId: input.columnId } }),
+    onSuccess: (result) => {
+      if (result.ok) invalidate();
+      else toast.error(result.error);
     },
     onError: () => toast.error("Something went wrong. Please try again."),
   });
@@ -250,17 +318,23 @@ function SubtasksSection({
       </div>
 
       {item.subtasks.length > 0 ? (
-        <ul className="space-y-1">
+        <div className="overflow-hidden rounded-md border">
+          <div className="bg-muted/40 text-muted-foreground grid grid-cols-[1fr_auto_auto_8.5rem] items-center gap-2 border-b px-2.5 py-1.5 text-xs font-medium">
+            <span>Work</span>
+            <span>Priority</span>
+            <span>Assignee</span>
+            <span>Status</span>
+          </div>
           {item.subtasks.map((subtask) => (
-            <li key={subtask.id} className="flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm">
-              <span className="text-muted-foreground shrink-0 font-mono text-xs">{subtask.code}</span>
-              <span className="min-w-0 flex-1 truncate">{subtask.title}</span>
-              <Avatar size="sm">
-                <AvatarFallback>{subtask.assignee ? initialsOf(subtask.assignee.name) : "—"}</AvatarFallback>
-              </Avatar>
-            </li>
+            <SubtaskRow
+              key={subtask.id}
+              subtask={subtask}
+              columns={columns}
+              onOpen={() => onNavigate(subtask.id)}
+              onStatusChange={(columnId) => statusMutation.mutate({ id: subtask.id, columnId })}
+            />
           ))}
-        </ul>
+        </div>
       ) : null}
 
       {adding ? (
@@ -270,17 +344,57 @@ function SubtasksSection({
             value={title}
             onChange={(event) => setTitle(event.target.value)}
             placeholder="Subtask title"
-            disabled={mutation.isPending}
+            disabled={createMutation.isPending}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && title.trim()) mutation.mutate();
+              if (event.key === "Enter" && title.trim()) createMutation.mutate();
               if (event.key === "Escape") setAdding(false);
             }}
           />
-          <Button size="sm" disabled={!title.trim() || mutation.isPending} onClick={() => mutation.mutate()}>
-            {mutation.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : "Add"}
+          <Button size="sm" disabled={!title.trim() || createMutation.isPending} onClick={() => createMutation.mutate()}>
+            {createMutation.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : "Add"}
           </Button>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function SubtaskRow({
+  subtask,
+  columns,
+  onOpen,
+  onStatusChange,
+}: {
+  subtask: WorkItemSubtaskRow;
+  columns: BoardColumnRow[];
+  onOpen: () => void;
+  onStatusChange: (columnId: string) => void;
+}) {
+  const columnIndex = columns.findIndex((c) => c.id === subtask.columnId);
+  const column = columns[columnIndex];
+
+  return (
+    <div className="grid grid-cols-[1fr_auto_auto_8.5rem] items-center gap-2 border-b px-2.5 py-1.5 text-sm last:border-b-0">
+      <button type="button" onClick={onOpen} className="flex min-w-0 items-center gap-2 text-left">
+        <span className="text-brand shrink-0 font-mono text-xs hover:underline">{subtask.code}</span>
+        <span className="truncate">{subtask.title}</span>
+      </button>
+      <WorkItemPriorityBadge priority={subtask.priority} />
+      <Avatar size="sm" title={subtask.assignee?.name ?? "Unassigned"}>
+        <AvatarFallback>{subtask.assignee ? initialsOf(subtask.assignee.name) : "—"}</AvatarFallback>
+      </Avatar>
+      <Select value={subtask.columnId} onValueChange={onStatusChange}>
+        <SelectTrigger className="h-7 w-full text-xs">
+          <SelectValue>{column ? <WorkItemStatusBadge name={column.name} color={columnColor(columnIndex)} /> : null}</SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          {columns.map((c) => (
+            <SelectItem key={c.id} value={c.id}>
+              {c.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }

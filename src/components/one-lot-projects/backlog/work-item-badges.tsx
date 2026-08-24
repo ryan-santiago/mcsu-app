@@ -1,13 +1,27 @@
-import { ArrowDown, ArrowUp, Bug, ChevronsDown, ChevronsUp, Equal, ListChecks, type LucideIcon } from "lucide-react";
+import { ArrowDown, ArrowUp, Bug, ChevronsDown, ChevronsUp, Equal, ListChecks, SquareStack, type LucideIcon } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import type { WorkItemPriority, WorkItemType } from "@/db/schema";
-import { WORK_ITEM_PRIORITY_LABELS, WORK_ITEM_TYPE_LABELS } from "@/lib/one-lot-project-backlog-format";
+import { WORK_ITEM_COVER_COLORS, WORK_ITEM_PRIORITY_LABELS, WORK_ITEM_TYPE_LABELS } from "@/lib/one-lot-project-backlog-format";
+import type { WorkItemCoverColorValue } from "@/lib/validation/one-lot-project-backlog";
 import { cn } from "@/lib/utils";
+
+/** The cover strip shown atop a Task/Bug card or ticket — renders nothing when no cover is set. */
+export function WorkItemCoverBar({ color, className }: { color: WorkItemCoverColorValue | null; className?: string }) {
+  if (!color) return null;
+  return (
+    <span
+      aria-hidden
+      className={cn("block h-2.5 w-full shrink-0", className)}
+      style={{ backgroundColor: WORK_ITEM_COVER_COLORS[color].value }}
+    />
+  );
+}
 
 const TYPE_ICONS: Record<WorkItemType, LucideIcon> = {
   task: ListChecks,
   bug: Bug,
+  subtask: SquareStack,
 };
 
 /** Type is distinguished by icon and label, not colour — colour is reserved for Status, same convention as `DeviceTypeBadge`. */

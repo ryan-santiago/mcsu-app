@@ -902,7 +902,7 @@ export const oneLotProjectS3pProject = pgTable(
   ],
 );
 
-export const workItemType = pgEnum("work_item_type", ["task", "bug"]);
+export const workItemType = pgEnum("work_item_type", ["task", "bug", "subtask"]);
 export const workItemPriority = pgEnum("work_item_priority", ["highest", "high", "medium", "low", "lowest"]);
 export const sprintStatus = pgEnum("sprint_status", ["planned", "active", "completed"]);
 
@@ -986,11 +986,12 @@ export const oneLotProjectBoardColumn = pgTable(
 );
 
 /**
- * A task/bug (`parentId` null) or a subtask (`parentId` set) — subtasks are
- * the same row shape, never their own type distinction beyond that. `code`
- * is generated once (see `createOneLotProjectWorkItem`'s counter step) and
- * never changes — permanent even if the item later moves between Backlog
- * and a Sprint (`sprintId` is the only thing that changes then).
+ * A top-level Task/Bug (`parentId` null) or a Subtask (`parentId` set,
+ * `type` always `"subtask"`, and always parented to a Task — never a Bug).
+ * Same row shape either way; `code` is generated once (see
+ * `createOneLotProjectWorkItem`'s counter step) and never changes —
+ * permanent even if the item later moves between Backlog and a Sprint
+ * (`sprintId` is the only thing that changes then).
  */
 export const oneLotProjectWorkItem = pgTable(
   "one_lot_project_work_item",
@@ -1012,6 +1013,8 @@ export const oneLotProjectWorkItem = pgTable(
       .references(() => oneLotProjectBoardColumn.id, { onDelete: "restrict" }),
     priority: workItemPriority("priority").notNull().default("medium"),
     assigneeId: text("assignee_id").references(() => user.id, { onDelete: "set null" }),
+    /** Solid color token for the card's header strip — Task/Bug only, picked from a fixed palette, see `WORK_ITEM_COVER_COLORS`. */
+    coverColor: text("cover_color"),
     dueDate: date("due_date"),
     /** 1 story point ≈ 2 hours (a team convention, not enforced here). */
     storyPoints: numeric("story_points", { precision: 5, scale: 1 }),

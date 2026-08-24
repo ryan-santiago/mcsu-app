@@ -22,13 +22,14 @@ type KanbanColumnProps = {
   projectId: string;
   activeSprintId: string;
   column: BoardColumnRow;
+  columns: BoardColumnRow[];
   items: WorkItemRow[];
   members: OneLotProjectMemberRow[];
   canEdit: boolean;
   onItemClick: (id: string) => void;
 };
 
-export function KanbanColumn({ projectId, activeSprintId, column, items, members, canEdit, onItemClick }: KanbanColumnProps) {
+export function KanbanColumn({ projectId, activeSprintId, column, columns, items, members, canEdit, onItemClick }: KanbanColumnProps) {
   const [creating, setCreating] = React.useState(false);
   const [renaming, setRenaming] = React.useState(false);
   const [name, setName] = React.useState(column.name);
@@ -131,7 +132,7 @@ export function KanbanColumn({ projectId, activeSprintId, column, items, members
       <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
         <div ref={setNodeRef} className="bg-muted/30 min-h-16 flex-1 space-y-2 rounded-lg p-2">
           {items.map((item) => (
-            <KanbanCard key={item.id} item={item} onClick={() => onItemClick(item.id)} />
+            <KanbanCard key={item.id} item={item} columns={columns} onClick={() => onItemClick(item.id)} onOpenItem={onItemClick} />
           ))}
         </div>
       </SortableContext>

@@ -167,6 +167,7 @@ export function OneLotProjectBacklogBoard({ projectId, initialBoard, canEdit }: 
                 projectId={projectId}
                 sprint={sprint}
                 members={board.members}
+                columns={board.columns}
                 canEdit={canEdit}
                 onItemClick={setOpenWorkItemId}
               />
@@ -176,6 +177,7 @@ export function OneLotProjectBacklogBoard({ projectId, initialBoard, canEdit }: 
             projectId={projectId}
             items={board.backlogItems}
             members={board.members}
+            columns={board.columns}
             canEdit={canEdit}
             onItemClick={setOpenWorkItemId}
           />
@@ -188,6 +190,7 @@ export function OneLotProjectBacklogBoard({ projectId, initialBoard, canEdit }: 
                 projectId={projectId}
                 sprint={sprint}
                 members={board.members}
+                columns={board.columns}
                 canEdit={canEdit}
                 onItemClick={setOpenWorkItemId}
               />

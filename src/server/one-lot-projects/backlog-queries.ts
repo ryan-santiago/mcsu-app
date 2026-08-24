@@ -39,6 +39,24 @@ function toAssignee(row: { id: string; name: string; image: string | null } | nu
   return row ? { id: row.id, name: row.name, image: row.image } : null;
 }
 
+function toSubtaskRow(row: {
+  id: string;
+  code: string;
+  title: string;
+  columnId: string;
+  priority: WorkItemSubtaskRow["priority"];
+  assignee: { id: string; name: string; image: string | null } | null;
+}): WorkItemSubtaskRow {
+  return {
+    id: row.id,
+    code: row.code,
+    title: row.title,
+    columnId: row.columnId,
+    priority: row.priority,
+    assignee: toAssignee(row.assignee),
+  };
+}
+
 /** Ordering shown on the board: active first, then planned by start date, then completed most-recent-first. */
 function sortSprints(sprints: (typeof oneLotProjectSprint.$inferSelect)[]) {
   const rank = { active: 0, planned: 1, completed: 2 } as const;
@@ -71,20 +89,26 @@ export async function getOneLotProjectBoardColumns(projectId: string): Promise<B
 export async function getOneLotProjectBacklogBoard(projectId: string, actor: CurrentUser): Promise<BacklogBoardData> {
   await assertOneLotProjectContentAccess(projectId, actor);
 
-  const [members, columns, sprints, subtaskCounts, commentCounts, topLevelItems] = await Promise.all([
+  const [members, columns, sprints, subtaskRows, commentCounts, topLevelItems] = await Promise.all([
     listOneLotProjectMembers(projectId),
     getOneLotProjectBoardColumns(projectId),
     db.select().from(oneLotProjectSprint).where(eq(oneLotProjectSprint.projectId, projectId)),
     db
       .select({
+        id: oneLotProjectWorkItem.id,
         parentId: oneLotProjectWorkItem.parentId,
-        count: sql<number>`count(*)::int`,
-        doneCount: sql<number>`count(*) filter (where ${oneLotProjectBoardColumn.isDone} = true)::int`,
+        code: oneLotProjectWorkItem.code,
+        title: oneLotProjectWorkItem.title,
+        columnId: oneLotProjectWorkItem.columnId,
+        priority: oneLotProjectWorkItem.priority,
+        isDone: oneLotProjectBoardColumn.isDone,
+        assignee: ASSIGNEE_SELECTION,
       })
       .from(oneLotProjectWorkItem)
       .innerJoin(oneLotProjectBoardColumn, eq(oneLotProjectBoardColumn.id, oneLotProjectWorkItem.columnId))
+      .leftJoin(user, eq(user.id, oneLotProjectWorkItem.assigneeId))
       .where(and(eq(oneLotProjectWorkItem.projectId, projectId), sql`${oneLotProjectWorkItem.parentId} is not null`))
-      .groupBy(oneLotProjectWorkItem.parentId),
+      .orderBy(asc(oneLotProjectWorkItem.createdAt)),
     db
       .select({ workItemId: oneLotProjectWorkItemComment.workItemId, count: sql<number>`count(*)::int` })
       .from(oneLotProjectWorkItemComment)
@@ -102,6 +126,7 @@ export async function getOneLotProjectBacklogBoard(projectId: string, actor: Cur
         priority: oneLotProjectWorkItem.priority,
         dueDate: oneLotProjectWorkItem.dueDate,
         storyPoints: oneLotProjectWorkItem.storyPoints,
+        coverColor: oneLotProjectWorkItem.coverColor,
         sortOrder: oneLotProjectWorkItem.sortOrder,
         boardSortOrder: oneLotProjectWorkItem.boardSortOrder,
         assignee: ASSIGNEE_SELECTION,
@@ -112,11 +137,19 @@ export async function getOneLotProjectBacklogBoard(projectId: string, actor: Cur
       .orderBy(asc(oneLotProjectWorkItem.sortOrder)),
   ]);
 
-  const subtaskCountByParent = new Map(subtaskCounts.map((r) => [r.parentId, r]));
+  const subtasksByParent = new Map<string, WorkItemSubtaskRow[]>();
+  const doneSubtaskCountByParent = new Map<string, number>();
+  for (const row of subtaskRows) {
+    if (!row.parentId) continue;
+    const bucket = subtasksByParent.get(row.parentId) ?? [];
+    bucket.push(toSubtaskRow(row));
+    subtasksByParent.set(row.parentId, bucket);
+    if (row.isDone) doneSubtaskCountByParent.set(row.parentId, (doneSubtaskCountByParent.get(row.parentId) ?? 0) + 1);
+  }
   const commentCountByItem = new Map(commentCounts.map((r) => [r.workItemId, r.count]));
 
   const items: WorkItemRow[] = topLevelItems.map((row) => {
-    const subtasks = subtaskCountByParent.get(row.id);
+    const subtasks = subtasksByParent.get(row.id) ?? [];
     return {
       id: row.id,
       code: row.code,
@@ -127,11 +160,13 @@ export async function getOneLotProjectBacklogBoard(projectId: string, actor: Cur
       assignee: toAssignee(row.assignee),
       dueDate: row.dueDate,
       storyPoints: row.storyPoints,
+      coverColor: row.coverColor as WorkItemRow["coverColor"],
       sortOrder: row.sortOrder,
       boardSortOrder: row.boardSortOrder,
-      subtaskCount: subtasks?.count ?? 0,
-      doneSubtaskCount: subtasks?.doneCount ?? 0,
+      subtaskCount: subtasks.length,
+      doneSubtaskCount: doneSubtaskCountByParent.get(row.id) ?? 0,
       commentCount: commentCountByItem.get(row.id) ?? 0,
+      subtasks,
     };
   });
 
@@ -179,17 +214,23 @@ export async function getOneLotProjectKanbanBoard(projectId: string, actor: Curr
   for (const column of columns) itemsByColumn[column.id] = [];
 
   if (activeSprint) {
-    const [subtaskCounts, commentCounts, items] = await Promise.all([
+    const [subtaskRows, commentCounts, items] = await Promise.all([
       db
         .select({
+          id: oneLotProjectWorkItem.id,
           parentId: oneLotProjectWorkItem.parentId,
-          count: sql<number>`count(*)::int`,
-          doneCount: sql<number>`count(*) filter (where ${oneLotProjectBoardColumn.isDone} = true)::int`,
+          code: oneLotProjectWorkItem.code,
+          title: oneLotProjectWorkItem.title,
+          columnId: oneLotProjectWorkItem.columnId,
+          priority: oneLotProjectWorkItem.priority,
+          isDone: oneLotProjectBoardColumn.isDone,
+          assignee: ASSIGNEE_SELECTION,
         })
         .from(oneLotProjectWorkItem)
         .innerJoin(oneLotProjectBoardColumn, eq(oneLotProjectBoardColumn.id, oneLotProjectWorkItem.columnId))
+        .leftJoin(user, eq(user.id, oneLotProjectWorkItem.assigneeId))
         .where(and(eq(oneLotProjectWorkItem.sprintId, activeSprint.id), sql`${oneLotProjectWorkItem.parentId} is not null`))
-        .groupBy(oneLotProjectWorkItem.parentId),
+        .orderBy(asc(oneLotProjectWorkItem.createdAt)),
       db
         .select({ workItemId: oneLotProjectWorkItemComment.workItemId, count: sql<number>`count(*)::int` })
         .from(oneLotProjectWorkItemComment)
@@ -206,6 +247,7 @@ export async function getOneLotProjectKanbanBoard(projectId: string, actor: Curr
           priority: oneLotProjectWorkItem.priority,
           dueDate: oneLotProjectWorkItem.dueDate,
           storyPoints: oneLotProjectWorkItem.storyPoints,
+          coverColor: oneLotProjectWorkItem.coverColor,
           sortOrder: oneLotProjectWorkItem.sortOrder,
           boardSortOrder: oneLotProjectWorkItem.boardSortOrder,
           assignee: ASSIGNEE_SELECTION,
@@ -216,11 +258,19 @@ export async function getOneLotProjectKanbanBoard(projectId: string, actor: Curr
         .orderBy(asc(oneLotProjectWorkItem.boardSortOrder)),
     ]);
 
-    const subtaskCountByParent = new Map(subtaskCounts.map((r) => [r.parentId, r]));
+    const subtasksByParent = new Map<string, WorkItemSubtaskRow[]>();
+    const doneSubtaskCountByParent = new Map<string, number>();
+    for (const row of subtaskRows) {
+      if (!row.parentId) continue;
+      const bucket = subtasksByParent.get(row.parentId) ?? [];
+      bucket.push(toSubtaskRow(row));
+      subtasksByParent.set(row.parentId, bucket);
+      if (row.isDone) doneSubtaskCountByParent.set(row.parentId, (doneSubtaskCountByParent.get(row.parentId) ?? 0) + 1);
+    }
     const commentCountByItem = new Map(commentCounts.map((r) => [r.workItemId, r.count]));
 
     for (const row of items) {
-      const subtasks = subtaskCountByParent.get(row.id);
+      const subtasks = subtasksByParent.get(row.id) ?? [];
       const item: WorkItemRow = {
         id: row.id,
         code: row.code,
@@ -231,11 +281,13 @@ export async function getOneLotProjectKanbanBoard(projectId: string, actor: Curr
         assignee: toAssignee(row.assignee),
         dueDate: row.dueDate,
         storyPoints: row.storyPoints,
+        coverColor: row.coverColor as WorkItemRow["coverColor"],
         sortOrder: row.sortOrder,
         boardSortOrder: row.boardSortOrder,
-        subtaskCount: subtasks?.count ?? 0,
-        doneSubtaskCount: subtasks?.doneCount ?? 0,
+        subtaskCount: subtasks.length,
+        doneSubtaskCount: doneSubtaskCountByParent.get(row.id) ?? 0,
         commentCount: commentCountByItem.get(row.id) ?? 0,
+        subtasks,
       };
       (itemsByColumn[row.columnId] ??= []).push(item);
     }
@@ -262,6 +314,7 @@ export async function getOneLotProjectWorkItemDetail(
       priority: oneLotProjectWorkItem.priority,
       dueDate: oneLotProjectWorkItem.dueDate,
       storyPoints: oneLotProjectWorkItem.storyPoints,
+      coverColor: oneLotProjectWorkItem.coverColor,
       sortOrder: oneLotProjectWorkItem.sortOrder,
       boardSortOrder: oneLotProjectWorkItem.boardSortOrder,
       parentId: oneLotProjectWorkItem.parentId,
@@ -296,6 +349,7 @@ export async function getOneLotProjectWorkItemDetail(
         code: oneLotProjectWorkItem.code,
         title: oneLotProjectWorkItem.title,
         columnId: oneLotProjectWorkItem.columnId,
+        priority: oneLotProjectWorkItem.priority,
         assignee: ASSIGNEE_SELECTION,
       })
       .from(oneLotProjectWorkItem)
@@ -323,13 +377,7 @@ export async function getOneLotProjectWorkItemDetail(
       .where(eq(oneLotProjectWorkItem.parentId, id)),
   ]);
 
-  const subtasks: WorkItemSubtaskRow[] = subtaskRows.map((s) => ({
-    id: s.id,
-    code: s.code,
-    title: s.title,
-    columnId: s.columnId,
-    assignee: toAssignee(s.assignee),
-  }));
+  const subtasks: WorkItemSubtaskRow[] = subtaskRows.map(toSubtaskRow);
 
   const comments: CommentRow[] = commentRows.map((c) => ({
     id: c.id,
@@ -349,6 +397,7 @@ export async function getOneLotProjectWorkItemDetail(
     assignee: toAssignee(row.assignee),
     dueDate: row.dueDate,
     storyPoints: row.storyPoints,
+    coverColor: row.coverColor as WorkItemRow["coverColor"],
     sortOrder: row.sortOrder,
     boardSortOrder: row.boardSortOrder,
     parentId: row.parentId,

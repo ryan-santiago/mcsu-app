@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createOneLotProjectWorkItemWithSubtasks } from "@/server/one-lot-projects/backlog-actions";
-import type { WorkItemRow as WorkItemRowData } from "@/server/one-lot-projects/backlog-types";
+import type { BoardColumnRow, WorkItemRow as WorkItemRowData } from "@/server/one-lot-projects/backlog-types";
 import type { OneLotProjectMemberRow } from "@/server/one-lot-projects/types";
 
 import { CreateWorkItemDialog } from "./create-work-item-dialog";
@@ -20,11 +20,12 @@ type BacklogCollectionProps = {
   projectId: string;
   items: WorkItemRowData[];
   members: OneLotProjectMemberRow[];
+  columns: BoardColumnRow[];
   canEdit: boolean;
   onItemClick: (id: string) => void;
 };
 
-export function BacklogCollection({ projectId, items, members, canEdit, onItemClick }: BacklogCollectionProps) {
+export function BacklogCollection({ projectId, items, members, columns, canEdit, onItemClick }: BacklogCollectionProps) {
   const [creating, setCreating] = React.useState(false);
   const { setNodeRef } = useDroppable({ id: "backlog" });
   const queryClient = useQueryClient();
@@ -56,7 +57,7 @@ export function BacklogCollection({ projectId, items, members, canEdit, onItemCl
             {items.length === 0 ? (
               <p className="text-muted-foreground rounded-lg border border-dashed py-6 text-center text-sm">Your backlog is empty.</p>
             ) : (
-              items.map((item) => <WorkItemRow key={item.id} item={item} onClick={() => onItemClick(item.id)} />)
+              items.map((item) => <WorkItemRow key={item.id} item={item} columns={columns} onOpenItem={onItemClick} />)
             )}
           </div>
         </SortableContext>

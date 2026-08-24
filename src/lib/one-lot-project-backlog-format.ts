@@ -1,8 +1,24 @@
 import type { SprintStatus, WorkItemPriority, WorkItemType } from "@/db/schema";
+import type { WorkItemCoverColorValue } from "@/lib/validation/one-lot-project-backlog";
 
 export const WORK_ITEM_TYPE_LABELS: Record<WorkItemType, string> = {
   task: "Task",
   bug: "Bug",
+  subtask: "Subtask",
+};
+
+/** Fixed palette for the card cover strip — content color swatches, not brand chrome, so raw hex is deliberate here (same convention as `columnColor` below). */
+export const WORK_ITEM_COVER_COLORS: Record<WorkItemCoverColorValue, { label: string; value: string }> = {
+  gray: { label: "Gray", value: "#6B7280" },
+  blue: { label: "Blue", value: "#2563EB" },
+  teal: { label: "Teal", value: "#0D9488" },
+  green: { label: "Green", value: "#16A34A" },
+  olive: { label: "Olive", value: "#65A30D" },
+  brown: { label: "Brown", value: "#92400E" },
+  orange: { label: "Orange", value: "#EA580C" },
+  red: { label: "Red", value: "#DC2626" },
+  magenta: { label: "Magenta", value: "#DB2777" },
+  purple: { label: "Purple", value: "#7C3AED" },
 };
 
 /**

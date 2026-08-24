@@ -1,7 +1,23 @@
 import { z } from "zod";
 
-export const workItemTypeValues = ["task", "bug"] as const;
+/** The two types choosable when creating a top-level work item — "subtask" is never picked directly, only assigned by `createOneLotProjectWorkItem` when adding a subtask under a Task. */
+export const topLevelWorkItemTypeValues = ["task", "bug"] as const;
+export const workItemTypeValues = ["task", "bug", "subtask"] as const;
 export type WorkItemTypeValue = (typeof workItemTypeValues)[number];
+
+export const workItemCoverColorValues = [
+  "gray",
+  "blue",
+  "teal",
+  "green",
+  "olive",
+  "brown",
+  "orange",
+  "red",
+  "magenta",
+  "purple",
+] as const;
+export type WorkItemCoverColorValue = (typeof workItemCoverColorValues)[number];
 
 export const workItemPriorityValues = ["highest", "high", "medium", "low", "lowest"] as const;
 export type WorkItemPriorityValue = (typeof workItemPriorityValues)[number];
@@ -44,7 +60,7 @@ const subtaskDraftSchema = z.object({
 export type SubtaskDraftInput = z.infer<typeof subtaskDraftSchema>;
 
 export const workItemFormSchema = z.object({
-  type: z.enum(workItemTypeValues),
+  type: z.enum(topLevelWorkItemTypeValues),
   title: z.string().trim().min(1, "Required").max(200, "That's too long"),
   description: z.string().trim().max(5000, "That's too long").optional().or(z.literal("")),
   assigneeId: z.string().optional().or(z.literal("")),
@@ -65,6 +81,8 @@ export const workItemPatchSchema = z
     assigneeId: z.string().or(z.literal("")),
     dueDate: z.string().or(z.literal("")),
     storyPoints: storyPointsFieldSchema,
+    /** `null` clears the cover — Task/Bug only, enforced by `updateOneLotProjectWorkItem`. */
+    coverColor: z.enum(workItemCoverColorValues).nullable(),
   })
   .partial();
 

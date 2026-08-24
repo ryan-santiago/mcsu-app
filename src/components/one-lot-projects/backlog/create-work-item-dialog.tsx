@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2, Plus, Trash2 } from "lucide-react";
-import { useFieldArray, useForm } from "react-hook-form";
+import { useFieldArray, useForm, useWatch } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -89,6 +89,9 @@ function WorkItemForm({
   });
 
   const { fields, append, remove } = useFieldArray({ control: form.control, name: "subtasks" });
+  // Subtasks are only ever created under a Task, never a Bug.
+  const type = useWatch({ control: form.control, name: "type" });
+  const canHaveSubtasks = type === "task";
 
   return (
     <>
@@ -149,6 +152,7 @@ function WorkItemForm({
             )}
           />
 
+          {canHaveSubtasks ? (
           <FormItem>
             <div className="flex items-center justify-between">
               <FormLabel>Subtasks</FormLabel>
@@ -208,6 +212,7 @@ function WorkItemForm({
               </div>
             ) : null}
           </FormItem>
+          ) : null}
 
           <div className="grid grid-cols-2 gap-4">
             <FormField

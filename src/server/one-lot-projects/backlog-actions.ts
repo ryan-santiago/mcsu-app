@@ -389,16 +389,21 @@ export async function createOneLotProjectWorkItemWithSubtasks(
     });
     if (!parentResult.ok) return parentResult;
 
-    for (const subtask of data.subtasks ?? []) {
-      if (!subtask.title.trim()) continue;
-      await createOneLotProjectWorkItem({
-        projectId: input.projectId,
-        sprintId: input.sprintId,
-        parentId: parentResult.data.id,
-        type: data.type,
-        title: subtask.title,
-        assigneeId: subtask.assigneeId || null,
-      });
+    // Subtasks are only ever created under a Task — the form hides the field
+    // for a Bug, this is the defense-in-depth backstop. Always stored as
+    // their own "subtask" type, never inheriting the parent's.
+    if (data.type === "task") {
+      for (const subtask of data.subtasks ?? []) {
+        if (!subtask.title.trim()) continue;
+        await createOneLotProjectWorkItem({
+          projectId: input.projectId,
+          sprintId: input.sprintId,
+          parentId: parentResult.data.id,
+          type: "subtask",
+          title: subtask.title,
+          assigneeId: subtask.assigneeId || null,
+        });
+      }
     }
 
     return parentResult;
@@ -423,6 +428,7 @@ export async function updateOneLotProjectWorkItem(input: {
     if (patch.assigneeId !== undefined) values.assigneeId = patch.assigneeId || null;
     if (patch.dueDate !== undefined) values.dueDate = patch.dueDate || null;
     if (patch.storyPoints !== undefined) values.storyPoints = patch.storyPoints || null;
+    if (patch.coverColor !== undefined) values.coverColor = patch.coverColor;
 
     if (Object.keys(values).length === 0) return { ok: true, data: undefined, message: "" };
 

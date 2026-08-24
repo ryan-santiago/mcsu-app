@@ -129,6 +129,7 @@ export function OneLotProjectKanbanBoard({ projectId, initialBoard, canEdit }: O
               projectId={projectId}
               activeSprintId={board.activeSprint!.id}
               column={column}
+              columns={board.columns}
               items={board.itemsByColumn[column.id] ?? []}
               members={board.members}
               canEdit={canEdit}
