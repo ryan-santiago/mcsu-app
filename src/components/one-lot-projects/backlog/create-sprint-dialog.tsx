@@ -69,7 +69,7 @@ function SprintForm({
     },
   });
 
-  function applyDuration(next: DurationValue, startDate: string) {
+  function applyDuration(next: DurationValue, startDate: string | undefined) {
     setDuration(next);
     if (next === "custom" || !startDate) return;
     const weeks = Number(next);

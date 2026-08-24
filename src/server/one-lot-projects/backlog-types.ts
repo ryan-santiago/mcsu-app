@@ -33,8 +33,9 @@ export type SprintRow = {
   id: string;
   name: string;
   itemCode: string;
-  startDate: string;
-  endDate: string;
+  /** Null until set — a sprint can exist before its dates are pinned down; both are required before it can start. */
+  startDate: string | null;
+  endDate: string | null;
   goal: string | null;
   status: SprintStatusValue;
   startedAt: Date | null;
@@ -103,3 +104,31 @@ export type StatCardsData = {
 export type BreakdownRow = { label: string; value: number };
 
 export type WorkloadRow = { assigneeId: string | null; name: string; image: string | null; count: number };
+
+export type CompletedSprintRow = {
+  id: string;
+  name: string;
+  itemCode: string;
+  startDate: string | null;
+  endDate: string | null;
+  completedAt: Date | null;
+  itemCount: number;
+  doneItemCount: number;
+  /** Sum of top-level items' story points — the sprint's delivered velocity. */
+  storyPoints: number;
+};
+
+export type BurndownPoint = {
+  date: string;
+  /** Actual remaining points as of this day (approximated from `updatedAt` on Done items — see `getOneLotProjectActiveSprintBurndown`). */
+  remaining: number;
+  /** Where remaining points "should" be on this day under a straight-line burn from the sprint's total. */
+  ideal: number;
+};
+
+export type BurndownData = {
+  sprint: { id: string; name: string } | null;
+  totalPoints: number;
+  /** Empty when there's no active sprint, or it has no start/end date yet. */
+  points: BurndownPoint[];
+};

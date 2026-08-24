@@ -281,6 +281,13 @@
       "when": 1787581743863,
       "tag": "0039_add_one_lot_project_subtask_cover",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1787586807682,
+      "tag": "0040_allow_optional_sprint_dates",
+      "breakpoints": true
     }
   ]
 }

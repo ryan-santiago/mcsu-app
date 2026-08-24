@@ -925,8 +925,9 @@ export const oneLotProjectSprint = pgTable(
       .references(() => oneLotProject.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     itemCode: text("item_code").notNull(),
-    startDate: date("start_date").notNull(),
-    endDate: date("end_date").notNull(),
+    /** Nullable — a sprint can be created before its dates are known, but `startOneLotProjectSprint` requires both before the "planned → active" transition. */
+    startDate: date("start_date"),
+    endDate: date("end_date"),
     goal: text("goal"),
     status: sprintStatus("status").notNull().default("planned"),
     /** Counter for this sprint's own item codes ("{itemCode}-1", "{itemCode}-2", ...). */

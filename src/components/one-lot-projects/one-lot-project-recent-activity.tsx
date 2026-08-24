@@ -17,11 +17,12 @@ function formatChangeValue(value: unknown): string {
 
 function summarize(changes: AuditChange[] | null): string | null {
   if (!changes || changes.length === 0) return null;
-  if (changes.length === 1) {
-    const c = changes[0];
-    return `${c.label}: ${formatChangeValue(c.oldValue)} → ${formatChangeValue(c.newValue)}`;
-  }
-  return `${changes.length} fields changed`;
+  // Most one-lot-project edits touch one field at a time (each control patches
+  // independently), plus an identifying field for work items/sprints — so a
+  // handful of entries is still legible spelled out; only a genuinely broad
+  // edit (e.g. User Management's multi-field forms) collapses to a count.
+  if (changes.length > 3) return `${changes.length} fields changed`;
+  return changes.map((c) => `${c.label}: ${formatChangeValue(c.oldValue)} → ${formatChangeValue(c.newValue)}`).join(" · ");
 }
 
 type OneLotProjectRecentActivityProps = {
@@ -39,7 +40,10 @@ export function OneLotProjectRecentActivity({ activity }: OneLotProjectRecentAct
         {activity.length === 0 ? (
           <EmptyState icon={History} title="No activity yet" description="Changes to this project will show up here." />
         ) : (
-          <ul className="space-y-4">
+          // Caps the visible height to roughly 5 rows — the list can hold up to
+          // 10 (see `listOneLotProjectActivity`'s limit) without stretching this
+          // card past Status Overview's height, then scrolls for the rest.
+          <ul className="max-h-96 space-y-4 overflow-y-auto pr-1">
             {activity.map((entry) => (
               <li key={entry.id} className="flex items-start gap-3">
                 <Avatar size="sm" className="mt-0.5">

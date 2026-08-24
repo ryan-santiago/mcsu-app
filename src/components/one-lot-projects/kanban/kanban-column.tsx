@@ -81,7 +81,7 @@ export function KanbanColumn({ projectId, activeSprintId, column, columns, items
   const validName = boardColumnFormSchema.safeParse({ name }).success;
 
   return (
-    <div className="flex w-72 shrink-0 flex-col gap-3">
+    <div className="ring-foreground/10 bg-muted flex w-72 shrink-0 flex-col gap-3 rounded-xl p-3 ring-1">
       <div className="flex items-center justify-between gap-2">
         {renaming ? (
           <div className="flex flex-1 items-center gap-1">
@@ -106,9 +106,11 @@ export function KanbanColumn({ projectId, activeSprintId, column, columns, items
             {renameMutation.isPending ? <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden /> : null}
           </div>
         ) : (
-          <h3 className="flex min-w-0 items-center gap-2 text-sm font-medium">
+          <h3 className="flex min-w-0 items-center gap-2 text-sm font-semibold">
             <span className="truncate">{column.name}</span>
-            <span className="text-muted-foreground shrink-0 text-xs">{items.length}</span>
+            <span className="text-muted-foreground bg-background shrink-0 rounded-full px-1.5 py-0.5 text-xs tabular-nums">
+              {items.length}
+            </span>
           </h3>
         )}
 
@@ -130,7 +132,7 @@ export function KanbanColumn({ projectId, activeSprintId, column, columns, items
       </div>
 
       <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
-        <div ref={setNodeRef} className="bg-muted/30 min-h-16 flex-1 space-y-2 rounded-lg p-2">
+        <div ref={setNodeRef} className="min-h-16 flex-1 space-y-2">
           {items.map((item) => (
             <KanbanCard key={item.id} item={item} columns={columns} onClick={() => onItemClick(item.id)} onOpenItem={onItemClick} />
           ))}

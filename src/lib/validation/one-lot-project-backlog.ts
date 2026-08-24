@@ -34,11 +34,14 @@ export const sprintFormSchema = z
       .min(1, "Required")
       .max(20, "That's too long")
       .regex(/^[A-Za-z0-9]+$/, "Letters and numbers only"),
-    startDate: z.string().min(1, "Select a start date"),
-    endDate: z.string().min(1, "Select an end date"),
+    // Optional at create/edit time — a sprint can exist before its dates are
+    // pinned down. `startOneLotProjectSprint` requires both before the
+    // "planned → active" transition.
+    startDate: z.string().optional().or(z.literal("")),
+    endDate: z.string().optional().or(z.literal("")),
     goal: z.string().trim().max(2000, "That's too long").optional().or(z.literal("")),
   })
-  .refine((data) => data.endDate >= data.startDate, {
+  .refine((data) => !data.startDate || !data.endDate || data.endDate >= data.startDate, {
     message: "End date must be on or after the start date",
     path: ["endDate"],
   });

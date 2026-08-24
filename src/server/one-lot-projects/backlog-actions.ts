@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, ilike, ne, sql } from "drizzle-orm";
+import { and, eq, ilike, inArray, ne, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
@@ -11,8 +11,11 @@ import {
   oneLotProjectSprint,
   oneLotProjectWorkItem,
   oneLotProjectWorkItemComment,
+  user,
+  type AuditChange,
 } from "@/db/schema";
 import type { ActionResult } from "@/lib/action-result";
+import { diffFields, recordAudit } from "@/lib/audit";
 import { AuthorizationError, authorizeActiveUser } from "@/lib/session";
 import {
   boardColumnFormSchema,
@@ -52,6 +55,17 @@ async function run<T>(fn: () => Promise<ActionResult<T>>): Promise<ActionResult<
 function revalidateBoard(projectId: string) {
   revalidatePath(`/one-lot-projects/${projectId}/list`);
   revalidatePath(`/one-lot-projects/${projectId}/kanban`);
+}
+
+/**
+ * Prepends a synthetic "which record" field ahead of a real field-level diff.
+ * `entityId`/`entityLabel` on every one-lot-projects audit entry point at the
+ * *project* (see `RBAC.md`'s note on `entityLabel` — it labels the entity
+ * `entityId` refers to), so without this an edit like "Priority: Medium →
+ * High" would carry no indication of which sprint/work item it happened to.
+ */
+function withIdentity(label: string, value: string, fieldChanges: AuditChange[]): AuditChange[] {
+  return [{ field: "identity", label, oldValue: null, newValue: value }, ...fieldChanges];
 }
 
 // ---------------------------------------------------------------------------
@@ -116,10 +130,20 @@ export async function createOneLotProjectSprint(
       projectId: input.projectId,
       name: data.name,
       itemCode: data.itemCode,
-      startDate: data.startDate,
-      endDate: data.endDate,
+      startDate: data.startDate || null,
+      endDate: data.endDate || null,
       goal: data.goal || null,
       createdBy: actor.id,
+    });
+
+    await recordAudit({
+      module: "one_lot_projects",
+      action: "sprint_created",
+      entityId: input.projectId,
+      entityLabel: project.name,
+      actorId: actor.id,
+      actorEmail: actor.email,
+      changes: diffFields(null, { sprint: `${data.itemCode} — ${data.name}` }, { sprint: "Sprint" }),
     });
 
     revalidateBoard(input.projectId);
@@ -132,8 +156,21 @@ export async function updateOneLotProjectSprint(
 ): Promise<ActionResult> {
   return run(async () => {
     const actor = await authorizeActiveUser();
-    await assertOneLotProjectContentAccess(input.projectId, actor);
+    const project = await assertOneLotProjectContentAccess(input.projectId, actor);
     const data = sprintFormSchema.parse(input);
+
+    const [before] = await db
+      .select({
+        name: oneLotProjectSprint.name,
+        itemCode: oneLotProjectSprint.itemCode,
+        startDate: oneLotProjectSprint.startDate,
+        endDate: oneLotProjectSprint.endDate,
+        goal: oneLotProjectSprint.goal,
+      })
+      .from(oneLotProjectSprint)
+      .where(and(eq(oneLotProjectSprint.id, input.id), eq(oneLotProjectSprint.projectId, input.projectId)))
+      .limit(1);
+    if (!before) return { ok: false, error: "That sprint no longer exists." };
 
     try {
       await assertItemCodeAvailable(input.projectId, data.itemCode, input.id);
@@ -146,14 +183,31 @@ export async function updateOneLotProjectSprint(
       .set({
         name: data.name,
         itemCode: data.itemCode,
-        startDate: data.startDate,
-        endDate: data.endDate,
+        startDate: data.startDate || null,
+        endDate: data.endDate || null,
         goal: data.goal || null,
       })
       .where(and(eq(oneLotProjectSprint.id, input.id), eq(oneLotProjectSprint.projectId, input.projectId)))
       .returning({ id: oneLotProjectSprint.id });
 
     if (result.length === 0) return { ok: false, error: "That sprint no longer exists." };
+
+    const fieldChanges = diffFields(
+      before,
+      { name: data.name, itemCode: data.itemCode, startDate: data.startDate || null, endDate: data.endDate || null, goal: data.goal || null },
+      { name: "Sprint name", itemCode: "Item code", startDate: "Start date", endDate: "End date", goal: "Goal" },
+    );
+    if (fieldChanges.length > 0) {
+      await recordAudit({
+        module: "one_lot_projects",
+        action: "sprint_updated",
+        entityId: input.projectId,
+        entityLabel: project.name,
+        actorId: actor.id,
+        actorEmail: actor.email,
+        changes: withIdentity("Sprint", before.name, fieldChanges),
+      });
+    }
 
     revalidateBoard(input.projectId);
     return { ok: true, data: undefined, message: `"${data.name}" updated.` };
@@ -163,15 +217,24 @@ export async function updateOneLotProjectSprint(
 export async function startOneLotProjectSprint(input: { id: string; projectId: string }): Promise<ActionResult> {
   return run(async () => {
     const actor = await authorizeActiveUser();
-    await assertOneLotProjectContentAccess(input.projectId, actor);
+    const project = await assertOneLotProjectContentAccess(input.projectId, actor);
 
     const [sprint] = await db
-      .select({ id: oneLotProjectSprint.id, status: oneLotProjectSprint.status, name: oneLotProjectSprint.name })
+      .select({
+        id: oneLotProjectSprint.id,
+        status: oneLotProjectSprint.status,
+        name: oneLotProjectSprint.name,
+        startDate: oneLotProjectSprint.startDate,
+        endDate: oneLotProjectSprint.endDate,
+      })
       .from(oneLotProjectSprint)
       .where(and(eq(oneLotProjectSprint.id, input.id), eq(oneLotProjectSprint.projectId, input.projectId)))
       .limit(1);
     if (!sprint) return { ok: false, error: "That sprint no longer exists." };
     if (sprint.status !== "planned") return { ok: false, error: "Only a planned sprint can be started." };
+    if (!sprint.startDate || !sprint.endDate) {
+      return { ok: false, error: "Set a start and end date before starting this sprint." };
+    }
 
     const [alreadyActive] = await db
       .select({ id: oneLotProjectSprint.id })
@@ -191,6 +254,16 @@ export async function startOneLotProjectSprint(input: { id: string; projectId: s
       return { ok: false, error: "Another sprint in this project is already active." };
     }
 
+    await recordAudit({
+      module: "one_lot_projects",
+      action: "sprint_started",
+      entityId: input.projectId,
+      entityLabel: project.name,
+      actorId: actor.id,
+      actorEmail: actor.email,
+      changes: diffFields(null, { sprint: sprint.name }, { sprint: "Sprint" }),
+    });
+
     revalidateBoard(input.projectId);
     return { ok: true, data: undefined, message: `"${sprint.name}" started.` };
   });
@@ -199,7 +272,7 @@ export async function startOneLotProjectSprint(input: { id: string; projectId: s
 export async function completeOneLotProjectSprint(input: { id: string; projectId: string }): Promise<ActionResult> {
   return run(async () => {
     const actor = await authorizeActiveUser();
-    await assertOneLotProjectContentAccess(input.projectId, actor);
+    const project = await assertOneLotProjectContentAccess(input.projectId, actor);
 
     const [sprint] = await db
       .select({ id: oneLotProjectSprint.id, status: oneLotProjectSprint.status, name: oneLotProjectSprint.name })
@@ -248,6 +321,16 @@ export async function completeOneLotProjectSprint(input: { id: string; projectId
         AND (column_id <> ${doneColumnIdSql} OR ${doneColumnIdSql} IS NULL)
     `);
 
+    await recordAudit({
+      module: "one_lot_projects",
+      action: "sprint_completed",
+      entityId: input.projectId,
+      entityLabel: project.name,
+      actorId: actor.id,
+      actorEmail: actor.email,
+      changes: diffFields(null, { sprint: sprint.name }, { sprint: "Sprint" }),
+    });
+
     revalidateBoard(input.projectId);
     return { ok: true, data: undefined, message: `"${sprint.name}" completed.` };
   });
@@ -282,7 +365,7 @@ export async function createOneLotProjectWorkItem(
 ): Promise<ActionResult<{ id: string; code: string }>> {
   return run(async () => {
     const actor = await authorizeActiveUser();
-    await assertOneLotProjectContentAccess(input.projectId, actor);
+    const project = await assertOneLotProjectContentAccess(input.projectId, actor);
 
     const title = input.title.trim();
     if (!title) return { ok: false, error: "Title is required." };
@@ -364,6 +447,20 @@ export async function createOneLotProjectWorkItem(
       createdBy: actor.id,
     });
 
+    await recordAudit({
+      module: "one_lot_projects",
+      action: "work_item_created",
+      entityId: input.projectId,
+      entityLabel: project.name,
+      actorId: actor.id,
+      actorEmail: actor.email,
+      changes: diffFields(
+        null,
+        { item: `${code} — ${title}` },
+        { item: input.parentId ? "Subtask" : "Work item" },
+      ),
+    });
+
     revalidateBoard(input.projectId);
     return { ok: true, data: { id, code }, message: `${code} created.` };
   });
@@ -417,8 +514,25 @@ export async function updateOneLotProjectWorkItem(input: {
 }): Promise<ActionResult> {
   return run(async () => {
     const actor = await authorizeActiveUser();
-    await assertOneLotProjectContentAccess(input.projectId, actor);
+    const project = await assertOneLotProjectContentAccess(input.projectId, actor);
     const patch = workItemPatchSchema.parse(input.patch);
+
+    const [before] = await db
+      .select({
+        code: oneLotProjectWorkItem.code,
+        title: oneLotProjectWorkItem.title,
+        description: oneLotProjectWorkItem.description,
+        columnId: oneLotProjectWorkItem.columnId,
+        priority: oneLotProjectWorkItem.priority,
+        assigneeId: oneLotProjectWorkItem.assigneeId,
+        dueDate: oneLotProjectWorkItem.dueDate,
+        storyPoints: oneLotProjectWorkItem.storyPoints,
+        coverColor: oneLotProjectWorkItem.coverColor,
+      })
+      .from(oneLotProjectWorkItem)
+      .where(and(eq(oneLotProjectWorkItem.id, input.id), eq(oneLotProjectWorkItem.projectId, input.projectId)))
+      .limit(1);
+    if (!before) return { ok: false, error: "That item no longer exists." };
 
     const values: Record<string, unknown> = {};
     if (patch.title !== undefined) values.title = patch.title;
@@ -439,6 +553,72 @@ export async function updateOneLotProjectWorkItem(input: {
       .returning({ id: oneLotProjectWorkItem.id });
 
     if (result.length === 0) return { ok: false, error: "That item no longer exists." };
+
+    // Resolve columnId/assigneeId to display names so the trail reads "Status:
+    // To Do → In Progress" rather than raw ids — only queried when touched.
+    const [columnRows, userRows] = await Promise.all([
+      "columnId" in values
+        ? db
+            .select({ id: oneLotProjectBoardColumn.id, name: oneLotProjectBoardColumn.name })
+            .from(oneLotProjectBoardColumn)
+            .where(inArray(oneLotProjectBoardColumn.id, [before.columnId, values.columnId as string]))
+        : Promise.resolve([]),
+      "assigneeId" in values
+        ? db
+            .select({ id: user.id, name: user.name })
+            .from(user)
+            .where(
+              inArray(
+                user.id,
+                [before.assigneeId, values.assigneeId as string | null].filter((v): v is string => Boolean(v)),
+              ),
+            )
+        : Promise.resolve([]),
+    ]);
+    const columnName = (id: string) => columnRows.find((c) => c.id === id)?.name ?? id;
+    const assigneeName = (id: string | null) => (id ? (userRows.find((u) => u.id === id)?.name ?? id) : "Unassigned");
+
+    const beforeDisplay: Record<string, unknown> = { ...before };
+    const afterDisplay: Record<string, unknown> = { ...values };
+    if ("columnId" in values) {
+      beforeDisplay.columnId = columnName(before.columnId);
+      afterDisplay.columnId = columnName(values.columnId as string);
+    }
+    if ("assigneeId" in values) {
+      beforeDisplay.assigneeId = assigneeName(before.assigneeId);
+      afterDisplay.assigneeId = assigneeName(values.assigneeId as string | null);
+    }
+
+    const touchedKeys = Object.keys(values);
+    const beforeSubset: Record<string, unknown> = {};
+    const afterSubset: Record<string, unknown> = {};
+    for (const key of touchedKeys) {
+      beforeSubset[key] = beforeDisplay[key];
+      afterSubset[key] = afterDisplay[key];
+    }
+
+    const fieldChanges = diffFields(beforeSubset, afterSubset, {
+      title: "Title",
+      description: "Description",
+      columnId: "Status",
+      priority: "Priority",
+      assigneeId: "Assignee",
+      dueDate: "Due date",
+      storyPoints: "Story points",
+      coverColor: "Cover",
+    });
+
+    if (fieldChanges.length > 0) {
+      await recordAudit({
+        module: "one_lot_projects",
+        action: "work_item_updated",
+        entityId: input.projectId,
+        entityLabel: project.name,
+        actorId: actor.id,
+        actorEmail: actor.email,
+        changes: withIdentity("Work item", `${before.code} — ${before.title}`, fieldChanges),
+      });
+    }
 
     revalidateBoard(input.projectId);
     return { ok: true, data: undefined, message: "Saved." };
@@ -506,7 +686,7 @@ export async function createOneLotProjectBoardColumn(
 ): Promise<ActionResult<{ id: string }>> {
   return run(async () => {
     const actor = await authorizeActiveUser();
-    await assertOneLotProjectContentAccess(input.projectId, actor);
+    const project = await assertOneLotProjectContentAccess(input.projectId, actor);
     const data = boardColumnFormSchema.parse(input);
 
     const [maxRow] = await db
@@ -522,6 +702,16 @@ export async function createOneLotProjectBoardColumn(
       sortOrder: (maxRow?.max ?? -1) + 1,
     });
 
+    await recordAudit({
+      module: "one_lot_projects",
+      action: "board_column_created",
+      entityId: input.projectId,
+      entityLabel: project.name,
+      actorId: actor.id,
+      actorEmail: actor.email,
+      changes: diffFields(null, { column: data.name }, { column: "Board column" }),
+    });
+
     revalidateBoard(input.projectId);
     return { ok: true, data: { id }, message: `"${data.name}" column added.` };
   });
@@ -532,8 +722,15 @@ export async function renameOneLotProjectBoardColumn(
 ): Promise<ActionResult> {
   return run(async () => {
     const actor = await authorizeActiveUser();
-    await assertOneLotProjectContentAccess(input.projectId, actor);
+    const project = await assertOneLotProjectContentAccess(input.projectId, actor);
     const data = boardColumnFormSchema.parse(input);
+
+    const [before] = await db
+      .select({ name: oneLotProjectBoardColumn.name })
+      .from(oneLotProjectBoardColumn)
+      .where(and(eq(oneLotProjectBoardColumn.id, input.id), eq(oneLotProjectBoardColumn.projectId, input.projectId)))
+      .limit(1);
+    if (!before) return { ok: false, error: "That column no longer exists." };
 
     const result = await db
       .update(oneLotProjectBoardColumn)
@@ -543,6 +740,19 @@ export async function renameOneLotProjectBoardColumn(
 
     if (result.length === 0) return { ok: false, error: "That column no longer exists." };
 
+    const fieldChanges = diffFields(before, { name: data.name }, { name: "Board column" });
+    if (fieldChanges.length > 0) {
+      await recordAudit({
+        module: "one_lot_projects",
+        action: "board_column_renamed",
+        entityId: input.projectId,
+        entityLabel: project.name,
+        actorId: actor.id,
+        actorEmail: actor.email,
+        changes: fieldChanges,
+      });
+    }
+
     revalidateBoard(input.projectId);
     return { ok: true, data: undefined, message: `Renamed to "${data.name}".` };
   });
@@ -551,7 +761,7 @@ export async function renameOneLotProjectBoardColumn(
 export async function deleteOneLotProjectBoardColumn(input: { id: string; projectId: string }): Promise<ActionResult> {
   return run(async () => {
     const actor = await authorizeActiveUser();
-    await assertOneLotProjectContentAccess(input.projectId, actor);
+    const project = await assertOneLotProjectContentAccess(input.projectId, actor);
 
     const [column] = await db
       .select({ id: oneLotProjectBoardColumn.id, name: oneLotProjectBoardColumn.name })
@@ -570,6 +780,16 @@ export async function deleteOneLotProjectBoardColumn(input: { id: string; projec
 
     await db.delete(oneLotProjectBoardColumn).where(eq(oneLotProjectBoardColumn.id, input.id));
 
+    await recordAudit({
+      module: "one_lot_projects",
+      action: "board_column_deleted",
+      entityId: input.projectId,
+      entityLabel: project.name,
+      actorId: actor.id,
+      actorEmail: actor.email,
+      changes: diffFields({ column: column.name }, null, { column: "Board column" }),
+    });
+
     revalidateBoard(input.projectId);
     return { ok: true, data: undefined, message: `"${column.name}" column deleted.` };
   });
@@ -584,7 +804,7 @@ export async function addOneLotProjectWorkItemComment(
 ): Promise<ActionResult<{ id: string }>> {
   return run(async () => {
     const actor = await authorizeActiveUser();
-    await assertOneLotProjectContentAccess(input.projectId, actor);
+    const project = await assertOneLotProjectContentAccess(input.projectId, actor);
     const data = commentFormSchema.parse(input);
 
     const id = crypto.randomUUID();
@@ -593,6 +813,26 @@ export async function addOneLotProjectWorkItemComment(
       workItemId: input.workItemId,
       body: data.body,
       authorId: actor.id,
+    });
+
+    const [item] = await db
+      .select({ code: oneLotProjectWorkItem.code, title: oneLotProjectWorkItem.title })
+      .from(oneLotProjectWorkItem)
+      .where(eq(oneLotProjectWorkItem.id, input.workItemId))
+      .limit(1);
+
+    await recordAudit({
+      module: "one_lot_projects",
+      action: "comment_added",
+      entityId: input.projectId,
+      entityLabel: project.name,
+      actorId: actor.id,
+      actorEmail: actor.email,
+      changes: withIdentity(
+        "Work item",
+        item ? `${item.code} — ${item.title}` : "Unknown item",
+        diffFields(null, { comment: data.body.length > 140 ? `${data.body.slice(0, 140)}…` : data.body }, { comment: "Comment" }),
+      ),
     });
 
     revalidateBoard(input.projectId);

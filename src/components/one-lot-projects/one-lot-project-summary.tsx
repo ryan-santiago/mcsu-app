@@ -1,6 +1,8 @@
 import { can } from "@/lib/rbac";
 import type { CurrentUser } from "@/lib/session";
 import {
+  getOneLotProjectActiveSprintBurndown,
+  getOneLotProjectCompletedSprints,
   getOneLotProjectPriorityBreakdown,
   getOneLotProjectStatCards,
   getOneLotProjectStatusOverview,
@@ -13,10 +15,13 @@ import {
   listOneLotProjectS3pLinks,
 } from "@/server/one-lot-projects/queries";
 
+import { OneLotProjectActiveSprintBurndown } from "./one-lot-project-active-sprint-burndown";
+import { OneLotProjectCompletedSprints } from "./one-lot-project-completed-sprints";
 import { OneLotProjectMembersTable } from "./one-lot-project-members-table";
 import { OneLotProjectPriorityBreakdown } from "./one-lot-project-priority-breakdown";
 import { OneLotProjectRecentActivity } from "./one-lot-project-recent-activity";
 import { OneLotProjectS3pLinksTable } from "./one-lot-project-s3p-links-table";
+import { OneLotProjectSprintVelocity } from "./one-lot-project-sprint-velocity";
 import { OneLotProjectStatCards } from "./one-lot-project-stat-cards";
 import { OneLotProjectStatusOverview } from "./one-lot-project-status-overview";
 import { OneLotProjectTeamWorkload } from "./one-lot-project-team-workload";
@@ -28,17 +33,29 @@ type OneLotProjectSummaryProps = {
 };
 
 export async function OneLotProjectSummary({ projectId, actor }: OneLotProjectSummaryProps) {
-  const [members, s3pLinks, activity, statusOverview, priorityBreakdown, typesOfWork, statCards, workload] =
-    await Promise.all([
-      listOneLotProjectMembers(projectId),
-      listOneLotProjectS3pLinks(projectId),
-      listOneLotProjectActivity(projectId, 10),
-      getOneLotProjectStatusOverview(projectId),
-      getOneLotProjectPriorityBreakdown(projectId),
-      getOneLotProjectTypesOfWork(projectId),
-      getOneLotProjectStatCards(projectId),
-      getOneLotProjectWorkload(projectId),
-    ]);
+  const [
+    members,
+    s3pLinks,
+    activity,
+    statusOverview,
+    priorityBreakdown,
+    typesOfWork,
+    statCards,
+    workload,
+    completedSprints,
+    burndown,
+  ] = await Promise.all([
+    listOneLotProjectMembers(projectId),
+    listOneLotProjectS3pLinks(projectId),
+    listOneLotProjectActivity(projectId, 10),
+    getOneLotProjectStatusOverview(projectId),
+    getOneLotProjectPriorityBreakdown(projectId),
+    getOneLotProjectTypesOfWork(projectId),
+    getOneLotProjectStatCards(projectId),
+    getOneLotProjectWorkload(projectId),
+    getOneLotProjectCompletedSprints(projectId),
+    getOneLotProjectActiveSprintBurndown(projectId),
+  ]);
 
   const canEdit = can(actor, "one_lot_projects:edit");
   const canDelete = can(actor, "one_lot_projects:delete");
@@ -58,11 +75,19 @@ export async function OneLotProjectSummary({ projectId, actor }: OneLotProjectSu
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <OneLotProjectActiveSprintBurndown data={burndown} />
+        <OneLotProjectSprintVelocity sprints={completedSprints} />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <OneLotProjectPriorityBreakdown data={priorityBreakdown} />
         <OneLotProjectTypesOfWork data={typesOfWork} />
       </div>
 
-      <OneLotProjectTeamWorkload workload={workload} />
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <OneLotProjectTeamWorkload workload={workload} />
+        <OneLotProjectCompletedSprints sprints={completedSprints} />
+      </div>
     </div>
   );
 }

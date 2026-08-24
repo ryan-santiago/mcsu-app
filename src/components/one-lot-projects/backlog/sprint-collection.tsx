@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatDate } from "@/lib/format";
 import { SPRINT_STATUS_LABELS } from "@/lib/one-lot-project-backlog-format";
 import type { SprintFormInput } from "@/lib/validation/one-lot-project-backlog";
@@ -115,9 +116,22 @@ export function SprintCollection({ projectId, sprint, members, columns, canEdit,
           {canEdit ? (
             <>
               {sprint.status === "planned" ? (
-                <Button size="sm" onClick={() => lifecycleMutation.mutate(() => startOneLotProjectSprint({ id: sprint.id, projectId }))}>
-                  Start sprint
-                </Button>
+                sprint.startDate && sprint.endDate ? (
+                  <Button size="sm" onClick={() => lifecycleMutation.mutate(() => startOneLotProjectSprint({ id: sprint.id, projectId }))}>
+                    Start sprint
+                  </Button>
+                ) : (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex">
+                        <Button size="sm" disabled>
+                          Start sprint
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>Set a start and end date before starting this sprint.</TooltipContent>
+                  </Tooltip>
+                )
               ) : null}
               {sprint.status === "active" ? (
                 <Button
@@ -156,10 +170,25 @@ export function SprintCollection({ projectId, sprint, members, columns, canEdit,
         </SortableContext>
 
         {canEdit ? (
-          <Button variant="ghost" size="sm" onClick={() => setCreating(true)}>
-            <Plus className="size-4" aria-hidden />
-            Create
-          </Button>
+          sprint.status === "completed" ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex">
+                  <Button variant="ghost" size="sm" disabled>
+                    <Plus className="size-4" aria-hidden />
+                    Create
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              {/* Drag-and-drop stays on regardless — this only blocks new items, so a wrongly-completed sprint can still be corrected by moving cards back in. */}
+              <TooltipContent>This sprint is completed — drag items in to correct a mistake instead.</TooltipContent>
+            </Tooltip>
+          ) : (
+            <Button variant="ghost" size="sm" onClick={() => setCreating(true)}>
+              <Plus className="size-4" aria-hidden />
+              Create
+            </Button>
+          )
         ) : null}
       </CardContent>
 

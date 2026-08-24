@@ -1,7 +1,7 @@
 import "server-only";
 
-import { addDays, format, startOfDay, subDays, subMonths } from "date-fns";
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { addDays, differenceInCalendarDays, format, parseISO, startOfDay, subDays, subMonths } from "date-fns";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import {
@@ -18,7 +18,10 @@ import type {
   BacklogBoardData,
   BoardColumnRow,
   BreakdownRow,
+  BurndownData,
+  BurndownPoint,
   CommentRow,
+  CompletedSprintRow,
   KanbanBoardData,
   PeriodValue,
   SprintRow,
@@ -57,7 +60,7 @@ function toSubtaskRow(row: {
   };
 }
 
-/** Ordering shown on the board: active first, then planned by start date, then completed most-recent-first. */
+/** Ordering shown on the board: active first, then planned by start date (undated last), then completed most-recent-first. */
 function sortSprints(sprints: (typeof oneLotProjectSprint.$inferSelect)[]) {
   const rank = { active: 0, planned: 1, completed: 2 } as const;
   return [...sprints].sort((a, b) => {
@@ -65,7 +68,7 @@ function sortSprints(sprints: (typeof oneLotProjectSprint.$inferSelect)[]) {
     if (a.status === "completed") {
       return (b.completedAt?.getTime() ?? 0) - (a.completedAt?.getTime() ?? 0);
     }
-    return a.startDate.localeCompare(b.startDate);
+    return (a.startDate ?? "￿").localeCompare(b.startDate ?? "￿");
   });
 }
 
@@ -229,7 +232,14 @@ export async function getOneLotProjectKanbanBoard(projectId: string, actor: Curr
         .from(oneLotProjectWorkItem)
         .innerJoin(oneLotProjectBoardColumn, eq(oneLotProjectBoardColumn.id, oneLotProjectWorkItem.columnId))
         .leftJoin(user, eq(user.id, oneLotProjectWorkItem.assigneeId))
-        .where(and(eq(oneLotProjectWorkItem.sprintId, activeSprint.id), sql`${oneLotProjectWorkItem.parentId} is not null`))
+        // Scoped by project, not by the subtask's own sprintId — a subtask
+        // doesn't follow its parent when the parent moves sprints, so
+        // filtering on the subtask's sprintId here undercounted subtasks
+        // whose sprintId had gone stale relative to their parent's.
+        // `subtasksByParent` below is only ever consulted for parents that
+        // are themselves in `items` (the active sprint's top-level rows),
+        // so this naturally stays scoped to the visible board.
+        .where(and(eq(oneLotProjectWorkItem.projectId, projectId), sql`${oneLotProjectWorkItem.parentId} is not null`))
         .orderBy(asc(oneLotProjectWorkItem.createdAt)),
       db
         .select({ workItemId: oneLotProjectWorkItemComment.workItemId, count: sql<number>`count(*)::int` })
@@ -425,19 +435,26 @@ const PRIORITY_ORDER = [
 const TYPE_ORDER = [
   { value: "task", label: "Task" },
   { value: "bug", label: "Bug" },
+  { value: "subtask", label: "Subtask" },
 ] as const;
 
 async function breakdownBy(
   projectId: string,
   column: typeof oneLotProjectWorkItem.priority | typeof oneLotProjectWorkItem.type,
   order: readonly { value: string; label: string }[],
+  /** Priority is a top-level-backlog-severity view; Types of Work counts subtasks too, now that "subtask" is its own type. */
+  topLevelOnly: boolean,
 ): Promise<BreakdownRow[]> {
   await authorizeActiveUser();
 
   const rows = await db
     .select({ value: column, count: sql<number>`count(*)::int` })
     .from(oneLotProjectWorkItem)
-    .where(and(eq(oneLotProjectWorkItem.projectId, projectId), isNull(oneLotProjectWorkItem.parentId)))
+    .where(
+      topLevelOnly
+        ? and(eq(oneLotProjectWorkItem.projectId, projectId), isNull(oneLotProjectWorkItem.parentId))
+        : eq(oneLotProjectWorkItem.projectId, projectId),
+    )
     .groupBy(column);
 
   const counts = new Map<string, number>(rows.map((r) => [r.value as string, r.count]));
@@ -462,11 +479,11 @@ export async function getOneLotProjectStatusOverview(projectId: string): Promise
 }
 
 export async function getOneLotProjectPriorityBreakdown(projectId: string): Promise<BreakdownRow[]> {
-  return breakdownBy(projectId, oneLotProjectWorkItem.priority, PRIORITY_ORDER);
+  return breakdownBy(projectId, oneLotProjectWorkItem.priority, PRIORITY_ORDER, true);
 }
 
 export async function getOneLotProjectTypesOfWork(projectId: string): Promise<BreakdownRow[]> {
-  return breakdownBy(projectId, oneLotProjectWorkItem.type, TYPE_ORDER);
+  return breakdownBy(projectId, oneLotProjectWorkItem.type, TYPE_ORDER, false);
 }
 
 export async function getOneLotProjectStatCards(projectId: string): Promise<StatCardsData> {
@@ -481,20 +498,30 @@ export async function getOneLotProjectStatCards(projectId: string): Promise<Stat
 
   const [row] = await db
     .select({
-      completed: sql<number>`count(*) filter (where ${oneLotProjectBoardColumn.isDone} = true)::int`,
-      dueSoon: sql<number>`count(*) filter (where ${oneLotProjectWorkItem.dueDate} is not null and ${oneLotProjectWorkItem.dueDate} >= ${todayDate} and ${oneLotProjectWorkItem.dueDate} <= ${sevenDaysFromNowDate} and ${oneLotProjectBoardColumn.isDone} = false)::int`,
-      updatedToday: sql<number>`count(*) filter (where ${oneLotProjectWorkItem.updatedAt} >= ${todayStart})::int`,
-      updated7d: sql<number>`count(*) filter (where ${oneLotProjectWorkItem.updatedAt} >= ${sevenDaysAgo})::int`,
-      updated1m: sql<number>`count(*) filter (where ${oneLotProjectWorkItem.updatedAt} >= ${oneMonthAgo})::int`,
-      updatedAll: sql<number>`count(*)::int`,
-      createdToday: sql<number>`count(*) filter (where ${oneLotProjectWorkItem.createdAt} >= ${todayStart})::int`,
-      created7d: sql<number>`count(*) filter (where ${oneLotProjectWorkItem.createdAt} >= ${sevenDaysAgo})::int`,
-      created1m: sql<number>`count(*) filter (where ${oneLotProjectWorkItem.createdAt} >= ${oneMonthAgo})::int`,
-      createdAll: sql<number>`count(*)::int`,
+      // Tracks delivery through a finished sprint, not just the Done column
+      // — and counts every work type, subtasks included (no parentId
+      // restriction, unlike the counters below). `completeOneLotProjectSprint`
+      // migrates any not-yet-done item off a sprint before marking it
+      // completed, so everything still attached to a completed sprint is,
+      // by construction, work that actually shipped in it.
+      completed: sql<number>`count(*) filter (where ${oneLotProjectSprint.status} = 'completed')::int`,
+      // Excludes items whose sprint has already completed, so a shipped item
+      // never also reads as upcoming — belt-and-suspenders alongside the
+      // `isDone = false` check, in case that migration invariant ever changes.
+      dueSoon: sql<number>`count(*) filter (where ${oneLotProjectWorkItem.parentId} is null and ${oneLotProjectWorkItem.dueDate} is not null and ${oneLotProjectWorkItem.dueDate} >= ${todayDate} and ${oneLotProjectWorkItem.dueDate} <= ${sevenDaysFromNowDate} and ${oneLotProjectBoardColumn.isDone} = false and (${oneLotProjectSprint.status} is null or ${oneLotProjectSprint.status} <> 'completed'))::int`,
+      updatedToday: sql<number>`count(*) filter (where ${oneLotProjectWorkItem.parentId} is null and ${oneLotProjectWorkItem.updatedAt} >= ${todayStart})::int`,
+      updated7d: sql<number>`count(*) filter (where ${oneLotProjectWorkItem.parentId} is null and ${oneLotProjectWorkItem.updatedAt} >= ${sevenDaysAgo})::int`,
+      updated1m: sql<number>`count(*) filter (where ${oneLotProjectWorkItem.parentId} is null and ${oneLotProjectWorkItem.updatedAt} >= ${oneMonthAgo})::int`,
+      updatedAll: sql<number>`count(*) filter (where ${oneLotProjectWorkItem.parentId} is null)::int`,
+      createdToday: sql<number>`count(*) filter (where ${oneLotProjectWorkItem.parentId} is null and ${oneLotProjectWorkItem.createdAt} >= ${todayStart})::int`,
+      created7d: sql<number>`count(*) filter (where ${oneLotProjectWorkItem.parentId} is null and ${oneLotProjectWorkItem.createdAt} >= ${sevenDaysAgo})::int`,
+      created1m: sql<number>`count(*) filter (where ${oneLotProjectWorkItem.parentId} is null and ${oneLotProjectWorkItem.createdAt} >= ${oneMonthAgo})::int`,
+      createdAll: sql<number>`count(*) filter (where ${oneLotProjectWorkItem.parentId} is null)::int`,
     })
     .from(oneLotProjectWorkItem)
     .innerJoin(oneLotProjectBoardColumn, eq(oneLotProjectBoardColumn.id, oneLotProjectWorkItem.columnId))
-    .where(and(eq(oneLotProjectWorkItem.projectId, projectId), isNull(oneLotProjectWorkItem.parentId)));
+    .leftJoin(oneLotProjectSprint, eq(oneLotProjectSprint.id, oneLotProjectWorkItem.sprintId))
+    .where(eq(oneLotProjectWorkItem.projectId, projectId));
 
   return {
     completed: row?.completed ?? 0,
@@ -537,4 +564,94 @@ export async function getOneLotProjectWorkload(projectId: string): Promise<Workl
       count: row.count,
     }))
     .sort((a, b) => b.count - a.count);
+}
+
+/** Summary page's Completed Sprints card (and the Sprint Velocity chart, which reuses this same fetch) — most recently completed first. */
+export async function getOneLotProjectCompletedSprints(projectId: string): Promise<CompletedSprintRow[]> {
+  await authorizeActiveUser();
+
+  const rows = await db
+    .select({
+      id: oneLotProjectSprint.id,
+      name: oneLotProjectSprint.name,
+      itemCode: oneLotProjectSprint.itemCode,
+      startDate: oneLotProjectSprint.startDate,
+      endDate: oneLotProjectSprint.endDate,
+      completedAt: oneLotProjectSprint.completedAt,
+      itemCount: sql<number>`count(${oneLotProjectWorkItem.id}) filter (where ${oneLotProjectWorkItem.parentId} is null)::int`,
+      doneItemCount: sql<number>`count(${oneLotProjectWorkItem.id}) filter (where ${oneLotProjectWorkItem.parentId} is null and ${oneLotProjectBoardColumn.isDone} = true)::int`,
+      // Top-level only, same convention as the Backlog sprint header's own points total.
+      storyPoints: sql<string>`coalesce(sum(${oneLotProjectWorkItem.storyPoints}) filter (where ${oneLotProjectWorkItem.parentId} is null), 0)`,
+    })
+    .from(oneLotProjectSprint)
+    .leftJoin(oneLotProjectWorkItem, eq(oneLotProjectWorkItem.sprintId, oneLotProjectSprint.id))
+    .leftJoin(oneLotProjectBoardColumn, eq(oneLotProjectBoardColumn.id, oneLotProjectWorkItem.columnId))
+    .where(and(eq(oneLotProjectSprint.projectId, projectId), eq(oneLotProjectSprint.status, "completed")))
+    .groupBy(oneLotProjectSprint.id)
+    .orderBy(desc(oneLotProjectSprint.completedAt));
+
+  return rows.map((row) => ({ ...row, storyPoints: Number(row.storyPoints) }));
+}
+
+/**
+ * Active sprint's burndown — remaining vs. ideal story points per day from
+ * the sprint's start through today (capped at its end date). There's no
+ * per-item "completed at" timestamp, so each day's "done" total is
+ * approximated from `updatedAt` on items already sitting in a Done column —
+ * accurate as long as a done item isn't edited again afterward. Returns
+ * `points: []` when there's no active sprint, or it has no start/end date
+ * yet (dates are optional at creation — see `startOneLotProjectSprint`).
+ */
+export async function getOneLotProjectActiveSprintBurndown(projectId: string): Promise<BurndownData> {
+  await authorizeActiveUser();
+
+  const [sprint] = await db
+    .select({
+      id: oneLotProjectSprint.id,
+      name: oneLotProjectSprint.name,
+      startDate: oneLotProjectSprint.startDate,
+      endDate: oneLotProjectSprint.endDate,
+    })
+    .from(oneLotProjectSprint)
+    .where(and(eq(oneLotProjectSprint.projectId, projectId), eq(oneLotProjectSprint.status, "active")))
+    .limit(1);
+
+  if (!sprint || !sprint.startDate || !sprint.endDate) {
+    return { sprint: sprint ? { id: sprint.id, name: sprint.name } : null, totalPoints: 0, points: [] };
+  }
+
+  const items = await db
+    .select({
+      storyPoints: oneLotProjectWorkItem.storyPoints,
+      isDone: oneLotProjectBoardColumn.isDone,
+      updatedAt: oneLotProjectWorkItem.updatedAt,
+    })
+    .from(oneLotProjectWorkItem)
+    .innerJoin(oneLotProjectBoardColumn, eq(oneLotProjectBoardColumn.id, oneLotProjectWorkItem.columnId))
+    .where(and(eq(oneLotProjectWorkItem.sprintId, sprint.id), isNull(oneLotProjectWorkItem.parentId)));
+
+  const totalPoints = items.reduce((sum, item) => sum + Number(item.storyPoints ?? 0), 0);
+
+  const start = startOfDay(parseISO(sprint.startDate));
+  const end = startOfDay(parseISO(sprint.endDate));
+  const today = startOfDay(new Date());
+  const lastDay = today < end ? today : end;
+  const totalSprintDays = Math.max(differenceInCalendarDays(end, start), 1);
+
+  const points: BurndownPoint[] = [];
+  for (let day = start; day <= lastDay; day = addDays(day, 1)) {
+    const dayEnd = addDays(day, 1);
+    const doneByDay = items.reduce((sum, item) => {
+      if (!item.isDone || item.updatedAt >= dayEnd) return sum;
+      return sum + Number(item.storyPoints ?? 0);
+    }, 0);
+    const elapsedDays = Math.min(differenceInCalendarDays(day, start), totalSprintDays);
+    points.push({
+      date: format(day, "yyyy-MM-dd"),
+      remaining: Math.max(totalPoints - doneByDay, 0),
+      ideal: Math.max(totalPoints - (totalPoints / totalSprintDays) * elapsedDays, 0),
+    });
+  }
+
+  return { sprint: { id: sprint.id, name: sprint.name }, totalPoints, points };
 }

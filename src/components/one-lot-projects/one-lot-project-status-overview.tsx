@@ -39,7 +39,7 @@ export function OneLotProjectStatusOverview({ data }: { data: BreakdownRow[] }) 
       <CardHeader>
         <CardTitle>Status Overview</CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col items-center gap-6 sm:flex-row sm:items-center">
+      <CardContent className="flex flex-col items-center gap-6">
         <div className="relative shrink-0" style={{ width: SIZE, height: SIZE }}>
           <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} role="img" aria-label="Status overview donut chart">
             <circle cx={CENTER} cy={CENTER} r={RADIUS} fill="none" stroke="var(--muted)" strokeWidth={STROKE} />
