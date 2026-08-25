@@ -2,6 +2,7 @@
 
 import {
   Briefcase,
+  BriefcaseBusiness,
   Building2,
   Contact,
   FileSignature,
@@ -11,14 +12,19 @@ import {
   UserCog,
   UsersRound,
   VenetianMask,
+  type LucideIcon,
 } from "lucide-react";
 import * as React from "react";
 
+import { JobProfilesTable } from "@/components/maintenance/job-profiles-table";
 import { LookupTable } from "@/components/maintenance/lookup-table";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LOOKUP_META, type LookupKind } from "@/server/maintenance/types";
+
+/** `"job_profile"` isn't a `LookupKind` — it's a composite (Position × Level) entity with its own table, not a flat name-only lookup — so the tab set is a superset of `LookupKind`. */
+type MaintenanceTab = LookupKind | "job_profile";
 
 const TAB_ICONS = {
   client: Building2,
@@ -30,7 +36,8 @@ const TAB_ICONS = {
   solutions_manager: UserCog,
   engagement_type: Handshake,
   employment_type: FileSignature,
-} as const;
+  job_profile: BriefcaseBusiness,
+} satisfies Record<MaintenanceTab, LucideIcon>;
 
 const KINDS: LookupKind[] = [
   "client",
@@ -44,8 +51,11 @@ const KINDS: LookupKind[] = [
   "solutions_manager",
 ];
 
-function tabLabelFor(kind: LookupKind): string {
-  return LOOKUP_META[kind].tabLabel ?? LOOKUP_META[kind].label;
+const TABS: MaintenanceTab[] = [...KINDS, "job_profile"];
+
+function tabLabelFor(tab: MaintenanceTab): string {
+  if (tab === "job_profile") return "Job Profiles";
+  return LOOKUP_META[tab].tabLabel ?? LOOKUP_META[tab].label;
 }
 
 type MaintenanceViewProps = {
@@ -53,14 +63,14 @@ type MaintenanceViewProps = {
 };
 
 export function MaintenanceView({ canManage }: MaintenanceViewProps) {
-  const [active, setActive] = React.useState<LookupKind>("client");
+  const [active, setActive] = React.useState<MaintenanceTab>("client");
 
   const scrollRef = React.useRef<HTMLDivElement>(null);
-  const triggerRefs = React.useRef<Map<LookupKind, HTMLButtonElement>>(new Map());
+  const triggerRefs = React.useRef<Map<MaintenanceTab, HTMLButtonElement>>(new Map());
   // Which tabs are fully within the scroll container's visible width right
   // now — the jump menu only lists the rest, so it never duplicates a tab
   // the user can already see and click directly.
-  const [visibleKinds, setVisibleKinds] = React.useState<Set<LookupKind>>(new Set(KINDS));
+  const [visibleTabs, setVisibleTabs] = React.useState<Set<MaintenanceTab>>(new Set(TABS));
 
   React.useEffect(() => {
     const root = scrollRef.current;
@@ -68,12 +78,12 @@ export function MaintenanceView({ canManage }: MaintenanceViewProps) {
 
     const observer = new IntersectionObserver(
       (entries) => {
-        setVisibleKinds((previous) => {
+        setVisibleTabs((previous) => {
           const next = new Set(previous);
           for (const entry of entries) {
-            const kind = entry.target.getAttribute("data-kind") as LookupKind;
-            if (entry.intersectionRatio >= 0.99) next.add(kind);
-            else next.delete(kind);
+            const tab = entry.target.getAttribute("data-tab") as MaintenanceTab;
+            if (entry.intersectionRatio >= 0.99) next.add(tab);
+            else next.delete(tab);
           }
           return next;
         });
@@ -85,43 +95,43 @@ export function MaintenanceView({ canManage }: MaintenanceViewProps) {
     return () => observer.disconnect();
   }, []);
 
-  const hiddenKinds = KINDS.filter((kind) => !visibleKinds.has(kind));
+  const hiddenTabs = TABS.filter((tab) => !visibleTabs.has(tab));
 
-  function jumpTo(kind: LookupKind) {
-    setActive(kind);
-    triggerRefs.current.get(kind)?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
+  function jumpTo(tab: MaintenanceTab) {
+    setActive(tab);
+    triggerRefs.current.get(tab)?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
   }
 
   return (
-    <Tabs value={active} onValueChange={(value) => setActive(value as LookupKind)} className="gap-6">
+    <Tabs value={active} onValueChange={(value) => setActive(value as MaintenanceTab)} className="gap-6">
       <div className="flex items-center gap-1 border-b">
         {/* The tab row itself still scrolls for anyone who prefers clicking a
             visible tab — the menu alongside it lists only what's currently
             scrolled out of view, so nothing is ever offered twice. */}
         <div ref={scrollRef} className="scrollbar-none min-w-0 flex-1 overflow-x-auto">
           <TabsList variant="line">
-            {KINDS.map((kind) => {
-              const Icon = TAB_ICONS[kind];
+            {TABS.map((tab) => {
+              const Icon = TAB_ICONS[tab];
               return (
                 <TabsTrigger
-                  key={kind}
-                  value={kind}
-                  data-kind={kind}
+                  key={tab}
+                  value={tab}
+                  data-tab={tab}
                   ref={(element) => {
-                    if (element) triggerRefs.current.set(kind, element);
-                    else triggerRefs.current.delete(kind);
+                    if (element) triggerRefs.current.set(tab, element);
+                    else triggerRefs.current.delete(tab);
                   }}
                   className="gap-1.5"
                 >
                   <Icon aria-hidden />
-                  {tabLabelFor(kind)}
+                  {tabLabelFor(tab)}
                 </TabsTrigger>
               );
             })}
           </TabsList>
         </div>
 
-        {hiddenKinds.length > 0 ? (
+        {hiddenTabs.length > 0 ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="shrink-0" aria-label="Jump to a Maintenance list">
@@ -129,12 +139,12 @@ export function MaintenanceView({ canManage }: MaintenanceViewProps) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              {hiddenKinds.map((kind) => {
-                const Icon = TAB_ICONS[kind];
+              {hiddenTabs.map((tab) => {
+                const Icon = TAB_ICONS[tab];
                 return (
-                  <DropdownMenuItem key={kind} onSelect={() => jumpTo(kind)}>
+                  <DropdownMenuItem key={tab} onSelect={() => jumpTo(tab)}>
                     <Icon className="size-4" aria-hidden />
-                    {tabLabelFor(kind)}
+                    {tabLabelFor(tab)}
                   </DropdownMenuItem>
                 );
               })}
@@ -154,6 +164,10 @@ export function MaintenanceView({ canManage }: MaintenanceViewProps) {
           />
         </TabsContent>
       ))}
+
+      <TabsContent value="job_profile">
+        <JobProfilesTable canManage={canManage} />
+      </TabsContent>
     </Tabs>
   );
 }

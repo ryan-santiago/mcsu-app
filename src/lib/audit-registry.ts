@@ -31,6 +31,7 @@ export const AUDIT_MODULES = [
   { value: "solutions_managers", label: "Maintenance — Solutions Managers" },
   { value: "engagement_types", label: "Maintenance — Engagement Types" },
   { value: "employment_types", label: "Maintenance — Employment Types" },
+  { value: "job_profiles", label: "Maintenance — Job Profiles" },
   { value: "roles", label: "Access Control" },
 ] as const;
 

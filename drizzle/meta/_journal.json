@@ -316,6 +316,13 @@
       "when": 1787673553631,
       "tag": "0044_grant_announcements_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1787677703943,
+      "tag": "0045_add_job_profiles",
+      "breakpoints": true
     }
   ]
 }

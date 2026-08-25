@@ -314,6 +314,47 @@ export const engagementType = pgTable("engagement_type", lookupColumns, (table) 
   uniqueIndex("engagement_type_name_idx").on(table.name),
 ]);
 
+/**
+ * A job description/qualification pinned to one Position × Level combination
+ * — e.g. "Software Developer" + "Junior" reads very differently from
+ * "Software Developer" + "Mid". Deliberately its own table rather than
+ * columns on `position` or `level`: neither lookup alone can express the
+ * combination, and not every combination needs a profile (no "Junior HR
+ * Manager"), so this has to be a sparse list an admin opts into rather than a
+ * full cross-product.
+ *
+ * `positionId`/`levelId` reference the same lookup rows `employeeEmployment`
+ * already uses — this table doesn't touch that assignment path at all, it
+ * only adds richer content keyed off the same two lookups. Intended as the
+ * anchor for the future Talent Acquisition module (a requisition references
+ * a Job Profile for its description/qualifications).
+ */
+export const jobProfile = pgTable(
+  "job_profile",
+  {
+    id: text("id").primaryKey(),
+    positionId: text("position_id")
+      .notNull()
+      .references(() => position.id, { onDelete: "restrict" }),
+    levelId: text("level_id")
+      .notNull()
+      .references(() => level.id, { onDelete: "restrict" }),
+    /** Sanitized HTML from the shared rich text editor — see `sanitizeDescriptionHtml()`. */
+    jobDescription: text("job_description"),
+    jobQualification: text("job_qualification"),
+    isActive: boolean("is_active").notNull().default(true),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [uniqueIndex("job_profile_position_level_idx").on(table.positionId, table.levelId)],
+);
+
 /* -------------------------------------------------------------------------- */
 /*  Projects module — S3P (Sales Profit Projection per Project)              */
 /* -------------------------------------------------------------------------- */
@@ -1322,6 +1363,12 @@ export const announcementRelations = relations(announcement, ({ one }) => ({
   author: one(user, { fields: [announcement.createdBy], references: [user.id] }),
 }));
 
+export const jobProfileRelations = relations(jobProfile, ({ one }) => ({
+  position: one(position, { fields: [jobProfile.positionId], references: [position.id] }),
+  level: one(level, { fields: [jobProfile.levelId], references: [level.id] }),
+  author: one(user, { fields: [jobProfile.createdBy], references: [user.id] }),
+}));
+
 /* -------------------------------------------------------------------------- */
 /*  Inferred types                                                            */
 /* -------------------------------------------------------------------------- */
@@ -1406,3 +1453,6 @@ export type OneLotProjectDocumentType = (typeof oneLotProjectDocumentType.enumVa
 export type Announcement = typeof announcement.$inferSelect;
 export type NewAnnouncement = typeof announcement.$inferInsert;
 export type AnnouncementType = (typeof announcementType.enumValues)[number];
+
+export type JobProfile = typeof jobProfile.$inferSelect;
+export type NewJobProfile = typeof jobProfile.$inferInsert;

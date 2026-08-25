@@ -13,6 +13,7 @@ import {
   employmentType,
   engagementType,
   gender,
+  jobProfile,
   level,
   position,
   project,
@@ -95,18 +96,20 @@ async function usageCount(kind: LookupKind, id: string): Promise<number> {
       return (employeeRow?.total ?? 0) + (detailTeamRow?.total ?? 0);
     }
     case "level": {
-      const [row] = await db
+      const [employmentRow] = await db
         .select({ total: count() })
         .from(employeeEmployment)
         .where(eq(employeeEmployment.levelId, id));
-      return row?.total ?? 0;
+      const [profileRow] = await db.select({ total: count() }).from(jobProfile).where(eq(jobProfile.levelId, id));
+      return (employmentRow?.total ?? 0) + (profileRow?.total ?? 0);
     }
     case "position": {
-      const [row] = await db
+      const [employmentRow] = await db
         .select({ total: count() })
         .from(employeeEmployment)
         .where(eq(employeeEmployment.positionId, id));
-      return row?.total ?? 0;
+      const [profileRow] = await db.select({ total: count() }).from(jobProfile).where(eq(jobProfile.positionId, id));
+      return (employmentRow?.total ?? 0) + (profileRow?.total ?? 0);
     }
     case "client": {
       const [deploymentRow] = await db
