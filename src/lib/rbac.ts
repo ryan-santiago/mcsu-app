@@ -22,6 +22,11 @@ export const PERMISSIONS = [
   "dashboard:edit",
   "dashboard:delete",
 
+  "announcements:read",
+  "announcements:write",
+  "announcements:edit",
+  "announcements:delete",
+
   "users:read",
   "users:write",
   /** Covers create/update plus approve/reject, suspend/reinstate and role assignment. */
@@ -84,6 +89,7 @@ export type Permission = (typeof PERMISSIONS)[number];
  */
 export const MODULES = [
   { id: "dashboard", label: "Dashboard" },
+  { id: "announcements", label: "Announcements" },
   { id: "employees", label: "Employees" },
   { id: "projects", label: "Projects" },
   { id: "staff_augmentation", label: "Staff Augmentation" },

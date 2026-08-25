@@ -15,6 +15,7 @@ import { endOfToday, startOfToday, subDays } from "date-fns";
 export const AUDIT_MODULES = [
   { value: "users", label: "User Management" },
   { value: "auth", label: "Authentication" },
+  { value: "announcements", label: "Announcements" },
   { value: "employees", label: "Employees" },
   { value: "projects", label: "Projects" },
   { value: "devices", label: "Device Inventory" },

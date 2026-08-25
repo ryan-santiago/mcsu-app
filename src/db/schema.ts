@@ -1059,6 +1059,36 @@ export const oneLotProjectWorkItemComment = pgTable(
 
 export const oneLotProjectDocumentType = pgEnum("one_lot_project_document_type", ["folder", "file"]);
 
+/* -------------------------------------------------------------------------- */
+/*  Announcements                                                             */
+/* -------------------------------------------------------------------------- */
+
+export const announcementType = pgEnum("announcement_type", ["news", "activity"]);
+
+export const announcement = pgTable(
+  "announcement",
+  {
+    id: text("id").primaryKey(),
+    announcementDate: date("announcement_date").notNull(),
+    type: announcementType("type").notNull(),
+    title: text("title").notNull(),
+    /** Sanitized HTML from the shared rich text editor — see `sanitizeDescriptionHtml()`. */
+    description: text("description"),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("announcement_date_idx").on(table.announcementDate),
+    index("announcement_type_idx").on(table.type),
+  ],
+);
+
 /**
  * A file-explorer-style document tree per project — folders and files in one
  * self-referencing table, the same `parentId` convention
@@ -1288,6 +1318,10 @@ export const staffAugmentationAssignmentRelations = relations(staffAugmentationA
   employee: one(employee, { fields: [staffAugmentationAssignment.employeeId], references: [employee.id] }),
 }));
 
+export const announcementRelations = relations(announcement, ({ one }) => ({
+  author: one(user, { fields: [announcement.createdBy], references: [user.id] }),
+}));
+
 /* -------------------------------------------------------------------------- */
 /*  Inferred types                                                            */
 /* -------------------------------------------------------------------------- */
@@ -1368,3 +1402,7 @@ export type NewOneLotProjectBoardColumn = typeof oneLotProjectBoardColumn.$infer
 export type OneLotProjectDocument = typeof oneLotProjectDocument.$inferSelect;
 export type NewOneLotProjectDocument = typeof oneLotProjectDocument.$inferInsert;
 export type OneLotProjectDocumentType = (typeof oneLotProjectDocumentType.enumValues)[number];
+
+export type Announcement = typeof announcement.$inferSelect;
+export type NewAnnouncement = typeof announcement.$inferInsert;
+export type AnnouncementType = (typeof announcementType.enumValues)[number];

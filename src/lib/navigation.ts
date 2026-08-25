@@ -12,6 +12,7 @@ import { canAny } from '@/lib/rbac'
  */
 export type NavIconKey =
 	| 'dashboard'
+	| 'announcements'
 	| 'users'
 	| 'audit'
 	| 'employees'
@@ -84,6 +85,12 @@ export const NAVIGATION: readonly NavGroup[] = [
 				href: '/dashboard',
 				icon: 'dashboard',
 				permissions: ['dashboard:read'],
+			},
+			{
+				title: 'Announcements',
+				href: '/announcements',
+				icon: 'announcements',
+				permissions: ['announcements:read'],
 			},
 		],
 	},

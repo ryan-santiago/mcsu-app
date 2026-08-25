@@ -10,6 +10,7 @@ import {
   Laptop,
   LayoutDashboard,
   ListChecks,
+  Megaphone,
   Settings,
   ShieldCheck,
   UserRoundCog,
@@ -29,6 +30,7 @@ import type { EngagementNavData } from "@/server/engagement/nav";
 /** Resolves the serializable icon key from `lib/navigation.ts` to a component. */
 const NAV_ICONS: Record<NavIconKey, LucideIcon> = {
   dashboard: LayoutDashboard,
+  announcements: Megaphone,
   users: Users,
   audit: History,
   employees: IdCard,
