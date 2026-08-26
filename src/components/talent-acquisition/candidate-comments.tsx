@@ -15,7 +15,8 @@ import type { TaCandidateCommentRow } from "@/server/talent-acquisition/comment-
 
 type CandidateCommentsProps = {
   candidateId: string;
-  requestId: string;
+  /** Omitted on the candidate's own profile page, which isn't scoped to one request. */
+  requestId?: string;
   canComment: boolean;
 };
 

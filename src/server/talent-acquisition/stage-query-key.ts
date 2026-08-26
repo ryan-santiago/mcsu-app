@@ -1,3 +1,3 @@
-export function taCandidateStagesQueryKey(candidateId: string) {
-  return ["ta-candidate-stages", candidateId] as const;
+export function taApplicationStagesQueryKey(applicationId: string) {
+  return ["ta-application-stages", applicationId] as const;
 }

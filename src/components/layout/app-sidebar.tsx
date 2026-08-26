@@ -17,13 +17,15 @@ type AppSidebarProps = {
   groups: NavGroup[];
   user: CurrentUser;
   dynamicNav: EngagementNavData;
+  /** Pending-count badges for nav items, keyed by href — see `app/(app)/layout.tsx`. */
+  navBadges: Record<string, number>;
 };
 
-function SidebarBody({ groups, user, dynamicNav, onNavigate }: AppSidebarProps & { onNavigate?: () => void }) {
+function SidebarBody({ groups, user, dynamicNav, navBadges, onNavigate }: AppSidebarProps & { onNavigate?: () => void }) {
   return (
     <>
       <div className="min-h-0 flex-1 overflow-y-auto py-4">
-        <SidebarNav groups={groups} dynamicNav={dynamicNav} onNavigate={onNavigate} />
+        <SidebarNav groups={groups} dynamicNav={dynamicNav} navBadges={navBadges} onNavigate={onNavigate} />
       </div>
 
       <div className="border-sidebar-border border-t p-2">
@@ -34,7 +36,7 @@ function SidebarBody({ groups, user, dynamicNav, onNavigate }: AppSidebarProps &
 }
 
 /** Fixed rail on desktop; a slide-over drawer on small screens. */
-export function AppSidebar({ groups, user, dynamicNav }: AppSidebarProps) {
+export function AppSidebar({ groups, user, dynamicNav, navBadges }: AppSidebarProps) {
   return (
     <aside className="bg-sidebar border-sidebar-border hidden w-64 shrink-0 flex-col border-r lg:flex">
       <div className="border-sidebar-border flex h-16 items-center border-b px-5">
@@ -43,12 +45,12 @@ export function AppSidebar({ groups, user, dynamicNav }: AppSidebarProps) {
         </Link>
       </div>
 
-      <SidebarBody groups={groups} user={user} dynamicNav={dynamicNav} />
+      <SidebarBody groups={groups} user={user} dynamicNav={dynamicNav} navBadges={navBadges} />
     </aside>
   );
 }
 
-export function MobileSidebar({ groups, user, dynamicNav }: AppSidebarProps) {
+export function MobileSidebar({ groups, user, dynamicNav, navBadges }: AppSidebarProps) {
   const [open, setOpen] = React.useState(false);
 
   return (
@@ -65,7 +67,13 @@ export function MobileSidebar({ groups, user, dynamicNav }: AppSidebarProps) {
           <Logo height={26} />
         </SheetHeader>
 
-        <SidebarBody groups={groups} user={user} dynamicNav={dynamicNav} onNavigate={() => setOpen(false)} />
+        <SidebarBody
+          groups={groups}
+          user={user}
+          dynamicNav={dynamicNav}
+          navBadges={navBadges}
+          onNavigate={() => setOpen(false)}
+        />
       </SheetContent>
     </Sheet>
   );

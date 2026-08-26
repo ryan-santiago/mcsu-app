@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import * as React from "react";
 
 import { MobileSidebar } from "@/components/layout/app-sidebar";
+import { NotificationBell } from "@/components/layout/notification-bell";
 import { Badge } from "@/components/ui/badge";
 import {
   Breadcrumb,
@@ -23,15 +24,17 @@ type AppTopbarProps = {
   groups: NavGroup[];
   user: CurrentUser;
   dynamicNav: EngagementNavData;
+  /** Pending-count badges for nav items, keyed by href — see `app/(app)/layout.tsx`. */
+  navBadges: Record<string, number>;
 };
 
-export function AppTopbar({ groups, user, dynamicNav }: AppTopbarProps) {
+export function AppTopbar({ groups, user, dynamicNav, navBadges }: AppTopbarProps) {
   const pathname = usePathname();
   const trail = breadcrumbsFor(pathname);
 
   return (
     <header className="bg-background/80 sticky top-0 z-30 flex h-16 shrink-0 items-center gap-3 border-b px-4 backdrop-blur-sm sm:px-6">
-      <MobileSidebar groups={groups} user={user} dynamicNav={dynamicNav} />
+      <MobileSidebar groups={groups} user={user} dynamicNav={dynamicNav} navBadges={navBadges} />
 
       <div className="min-w-0 flex-1">
         {trail.length === 0 ? (
@@ -57,6 +60,8 @@ export function AppTopbar({ groups, user, dynamicNav }: AppTopbarProps) {
           </Breadcrumb>
         )}
       </div>
+
+      <NotificationBell />
 
       <Badge variant="secondary" className="hidden shrink-0 font-normal sm:inline-flex">
         {user.roleLabel}

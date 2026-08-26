@@ -1,8 +1,8 @@
 import type { TaStage, TaStageStatus } from "@/db/schema";
 
-export type TaCandidateStageRow = {
+export type TaApplicationStageRow = {
   id: string;
-  candidateId: string;
+  applicationId: string;
   stage: TaStage;
   status: TaStageStatus;
   assigneeId: string | null;

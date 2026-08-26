@@ -21,7 +21,7 @@ import {
   projectDetailTeam,
   salesRepresentative,
   solutionsManager,
-  taCandidate,
+  taApplication,
   taRequest,
   team,
 } from "@/db/schema";
@@ -155,7 +155,7 @@ async function usageCount(kind: LookupKind, id: string): Promise<number> {
       return row?.total ?? 0;
     }
     case "job_posting_source": {
-      const [row] = await db.select({ total: count() }).from(taCandidate).where(eq(taCandidate.sourceId, id));
+      const [row] = await db.select({ total: count() }).from(taApplication).where(eq(taApplication.sourceId, id));
       return row?.total ?? 0;
     }
   }

@@ -1,8 +1,7 @@
-import type { TaCandidateStatus } from "@/db/schema";
+import type { TaApplicationStatus, TaStage } from "@/db/schema";
 
 export type TaCandidateRow = {
   id: string;
-  requestId: string;
   firstName: string;
   middleName: string | null;
   lastName: string;
@@ -10,23 +9,27 @@ export type TaCandidateRow = {
   genderName: string | null;
   mobileNumber: string | null;
   personalEmail: string | null;
-  sourceId: string | null;
-  sourceName: string | null;
-  /** The storage key itself is never exposed here — see `getTaCandidateCvFile` in `candidate-queries.ts`, used only by the download route. */
+  /** The storage key itself is never exposed here — see `getTaCandidateCvFile`, used only by the download route. */
   cvFileName: string | null;
   cvMimeType: string | null;
   cvSize: number | null;
-  clientInterviewRequired: boolean;
-  targetOnboardDate: string | null;
-  status: TaCandidateStatus;
   employeeId: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
 
-export const TA_CANDIDATE_STATUS_LABELS: Record<TaCandidateStatus, string> = {
-  active: "Active",
-  hired: "Hired",
-  rejected: "Rejected",
-  withdrawn: "Withdrawn",
+/** One row in a candidate's application-history table — every request they've ever pursued. */
+export type TaCandidateApplicationHistoryRow = {
+  id: string;
+  requestId: string;
+  positionName: string;
+  levelName: string;
+  clientName: string;
+  status: TaApplicationStatus;
+  currentStage: TaStage;
+  createdAt: Date;
+};
+
+export type TaCandidateProfileRow = TaCandidateRow & {
+  applications: TaCandidateApplicationHistoryRow[];
 };

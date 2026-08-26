@@ -2,7 +2,8 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import { Loader2, Search, UserPlus } from "lucide-react";
+import * as React from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
@@ -18,7 +19,10 @@ import {
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { fetchGenderOptions, fetchJobPostingSourceOptions } from "@/server/talent-acquisition/candidate-actions";
+import { formatEmployeeDisplayName } from "@/lib/employee-format";
+import { fetchJobPostingSourceOptions } from "@/server/talent-acquisition/application-actions";
+import type { TaApplicationRow } from "@/server/talent-acquisition/application-types";
+import { fetchGenderOptions, fetchTaCandidatePool } from "@/server/talent-acquisition/candidate-actions";
 import type { TaCandidateRow } from "@/server/talent-acquisition/candidate-types";
 
 const candidateFormSchema = z.object({
@@ -34,49 +38,47 @@ type CandidateFormInput = z.infer<typeof candidateFormSchema>;
 export type CandidateFormValues = CandidateFormInput;
 
 type CandidateFormDialogProps = {
-  /** `"new"` for the add form, a `TaCandidateRow` to edit it, `null` to close. */
-  target: TaCandidateRow | "new" | null;
+  /** `"new"` for the add form, a `TaApplicationRow` to edit it, `null` to close. */
+  target: TaApplicationRow | "new" | null;
   pending: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (values: CandidateFormValues) => void;
+  /** Adding someone already in the talent pool — bypasses the new-person form entirely. */
+  onSelectExisting: (candidateId: string) => void;
 };
 
-export function CandidateFormDialog({ target, pending, onOpenChange, onSubmit }: CandidateFormDialogProps) {
-  const isEdit = target !== null && target !== "new";
-
+export function CandidateFormDialog({ target, pending, onOpenChange, onSubmit, onSelectExisting }: CandidateFormDialogProps) {
   const genderOptions = useQuery({ queryKey: ["ta-candidates", "gender-options"], queryFn: fetchGenderOptions });
   const sourceOptions = useQuery({ queryKey: ["ta-candidates", "source-options"], queryFn: fetchJobPostingSourceOptions });
 
   return (
     <Dialog open={Boolean(target)} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
-        {target ? (
-          <CandidateForm
-            key={isEdit ? target.id : "new-candidate"}
-            isEdit={isEdit}
+        {target === "new" ? (
+          <AddCandidateContent
+            key="new-candidate"
             genderOptions={genderOptions.data ?? []}
             sourceOptions={sourceOptions.data ?? []}
-            defaultValues={
-              isEdit
-                ? {
-                    firstName: target.firstName,
-                    middleName: target.middleName ?? "",
-                    lastName: target.lastName,
-                    genderId: target.genderId ?? "",
-                    mobileNumber: target.mobileNumber ?? "",
-                    personalEmail: target.personalEmail ?? "",
-                    sourceId: target.sourceId ?? "",
-                  }
-                : {
-                    firstName: "",
-                    middleName: "",
-                    lastName: "",
-                    genderId: "",
-                    mobileNumber: "",
-                    personalEmail: "",
-                    sourceId: "",
-                  }
-            }
+            pending={pending}
+            onOpenChange={onOpenChange}
+            onSubmit={onSubmit}
+            onSelectExisting={onSelectExisting}
+          />
+        ) : target ? (
+          <CandidateForm
+            key={target.id}
+            isEdit
+            genderOptions={genderOptions.data ?? []}
+            sourceOptions={sourceOptions.data ?? []}
+            defaultValues={{
+              firstName: target.firstName,
+              middleName: target.middleName ?? "",
+              lastName: target.lastName,
+              genderId: target.genderId ?? "",
+              mobileNumber: target.mobileNumber ?? "",
+              personalEmail: target.personalEmail ?? "",
+              sourceId: target.sourceId ?? "",
+            }}
             pending={pending}
             onOpenChange={onOpenChange}
             onSubmit={onSubmit}
@@ -84,6 +86,112 @@ export function CandidateFormDialog({ target, pending, onOpenChange, onSubmit }:
         ) : null}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** The "new" flow's first step: search the talent pool before falling back to a brand-new person form. */
+function AddCandidateContent({
+  genderOptions,
+  sourceOptions,
+  pending,
+  onOpenChange,
+  onSubmit,
+  onSelectExisting,
+}: {
+  genderOptions: { id: string; name: string }[];
+  sourceOptions: { id: string; name: string }[];
+  pending: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (values: CandidateFormValues) => void;
+  onSelectExisting: (candidateId: string) => void;
+}) {
+  const [mode, setMode] = React.useState<"search" | "form">("search");
+  const [search, setSearch] = React.useState("");
+  const [debouncedSearch, setDebouncedSearch] = React.useState("");
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const pool = useQuery({
+    queryKey: ["ta-candidate-pool", debouncedSearch],
+    queryFn: () => fetchTaCandidatePool(debouncedSearch),
+  });
+
+  if (mode === "form") {
+    return (
+      <CandidateForm
+        isEdit={false}
+        genderOptions={genderOptions}
+        sourceOptions={sourceOptions}
+        defaultValues={{ firstName: "", middleName: "", lastName: "", genderId: "", mobileNumber: "", personalEmail: "", sourceId: "" }}
+        pending={pending}
+        onOpenChange={onOpenChange}
+        onSubmit={onSubmit}
+        onBack={() => setMode("search")}
+      />
+    );
+  }
+
+  const results = pool.data ?? [];
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>Add candidate</DialogTitle>
+        <DialogDescription>Search the talent pool first — someone may already be on file from a previous request.</DialogDescription>
+      </DialogHeader>
+
+      <div className="space-y-3">
+        <div className="relative">
+          <Search className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2" aria-hidden />
+          <Input
+            autoFocus
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search by name, email, or mobile number"
+            className="pl-9"
+            disabled={pending}
+          />
+        </div>
+
+        <div className="max-h-64 space-y-1 overflow-y-auto">
+          {pool.isFetching && results.length === 0 ? (
+            <p className="text-muted-foreground p-3 text-sm">Searching…</p>
+          ) : results.length === 0 ? (
+            <p className="text-muted-foreground p-3 text-sm">
+              {search.trim() ? "No one in the talent pool matches that search." : "No one in the talent pool yet."}
+            </p>
+          ) : (
+            results.map((candidate: TaCandidateRow) => (
+              <button
+                key={candidate.id}
+                type="button"
+                disabled={pending}
+                onClick={() => onSelectExisting(candidate.id)}
+                className="hover:bg-accent flex w-full items-center justify-between gap-2 rounded-lg border p-2.5 text-left text-sm transition-colors disabled:opacity-50"
+              >
+                <span>
+                  <span className="font-medium">{formatEmployeeDisplayName(candidate)}</span>
+                  <span className="text-muted-foreground ml-2 text-xs">{candidate.mobileNumber || candidate.personalEmail || ""}</span>
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+
+      <DialogFooter className="sm:justify-between">
+        <Button type="button" variant="ghost" onClick={() => setMode("form")} disabled={pending}>
+          <UserPlus className="size-4" aria-hidden />
+          Not in the pool — add a new person
+        </Button>
+        <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
+          Cancel
+        </Button>
+      </DialogFooter>
+    </>
   );
 }
 
@@ -95,6 +203,7 @@ function CandidateForm({
   pending,
   onOpenChange,
   onSubmit,
+  onBack,
 }: {
   isEdit: boolean;
   genderOptions: { id: string; name: string }[];
@@ -103,6 +212,8 @@ function CandidateForm({
   pending: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (values: CandidateFormValues) => void;
+  /** Returns to the pool-search step — only present for the "new" flow. */
+  onBack?: () => void;
 }) {
   const form = useForm<CandidateFormInput>({
     resolver: zodResolver(candidateFormSchema),
@@ -112,7 +223,7 @@ function CandidateForm({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>{isEdit ? "Edit candidate" : "Add candidate"}</DialogTitle>
+        <DialogTitle>{isEdit ? "Edit candidate" : "Add a new person"}</DialogTitle>
         <DialogDescription>
           {isEdit ? "Update this candidate's details." : "Capture what's known so far — CV and pipeline stages come after."}
         </DialogDescription>
@@ -255,14 +366,21 @@ function CandidateForm({
             />
           </div>
 
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={pending}>
-              {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
-              {isEdit ? "Save changes" : "Add candidate"}
-            </Button>
+          <DialogFooter className={onBack ? "sm:justify-between" : undefined}>
+            {onBack ? (
+              <Button type="button" variant="ghost" onClick={onBack} disabled={pending}>
+                Back to search
+              </Button>
+            ) : null}
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={pending}>
+                {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
+                {isEdit ? "Save changes" : "Add candidate"}
+              </Button>
+            </div>
           </DialogFooter>
         </form>
       </Form>

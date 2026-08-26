@@ -18,8 +18,8 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { TaApplicationRow } from "@/server/talent-acquisition/application-types";
 import { fetchGenderOptions } from "@/server/talent-acquisition/candidate-actions";
-import type { TaCandidateRow } from "@/server/talent-acquisition/candidate-types";
 import {
   fetchEmploymentTypeOptions,
   fetchProjectOptionsForClient,
@@ -97,7 +97,7 @@ const BLANK_ADDRESS = {
 
 type MigrateToEmployeeFormProps = {
   requestId: string;
-  candidate: TaCandidateRow;
+  application: TaApplicationRow;
   clientId: string;
   clientName: string;
   positionName: string;
@@ -106,7 +106,7 @@ type MigrateToEmployeeFormProps = {
 
 export function MigrateToEmployeeForm({
   requestId,
-  candidate,
+  application,
   clientId,
   clientName,
   positionName,
@@ -133,13 +133,13 @@ export function MigrateToEmployeeForm({
     defaultValues: {
       profile: {
         code: "",
-        firstName: candidate.firstName,
-        middleName: candidate.middleName ?? "",
-        lastName: candidate.lastName,
-        genderId: candidate.genderId ?? "",
-        mobileNumber: candidate.mobileNumber ?? "",
+        firstName: application.firstName,
+        middleName: application.middleName ?? "",
+        lastName: application.lastName,
+        genderId: application.genderId ?? "",
+        mobileNumber: application.mobileNumber ?? "",
         viberNumber: "",
-        personalEmail: candidate.personalEmail ?? "",
+        personalEmail: application.personalEmail ?? "",
         workEmail: "",
         teamId: "",
       },
@@ -159,7 +159,7 @@ export function MigrateToEmployeeForm({
   const isSubmitting = form.formState.isSubmitting;
 
   async function onSubmit(values: MigrateFormInput) {
-    const result = await migrateCandidateToEmployee({ candidateId: candidate.id, requestId, ...values });
+    const result = await migrateCandidateToEmployee({ applicationId: application.id, requestId, ...values });
     if (!result.ok) {
       toast.error(result.error);
       return;

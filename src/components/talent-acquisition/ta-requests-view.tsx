@@ -19,6 +19,7 @@ type TaRequestsViewProps = {
 };
 
 const STATUS_BADGE_VARIANT: Record<TaRequestRow["status"], "default" | "secondary" | "outline"> = {
+  pending_approval: "secondary",
   open: "default",
   partially_filled: "secondary",
   filled: "secondary",

@@ -366,18 +366,19 @@ export const jobProfile = pgTable(
 
 export const workSetup = pgEnum("work_setup", ["onsite", "hybrid", "remote"]);
 export const taRequestStatus = pgEnum("ta_request_status", [
+  "pending_approval",
   "open",
   "partially_filled",
   "filled",
   "cancelled",
 ]);
-export const taCandidateStatus = pgEnum("ta_candidate_status", [
+export const taApplicationStatus = pgEnum("ta_application_status", [
   "active",
   "hired",
   "rejected",
   "withdrawn",
 ]);
-/** `client_interview` only applies when `taCandidate.clientInterviewRequired` is set. */
+/** `client_interview` only applies when `taApplication.clientInterviewRequired` is set. */
 export const taStage = pgEnum("ta_stage", [
   "l1_assessment",
   "l2_assessment",
@@ -392,11 +393,14 @@ export const taStageStatus = pgEnum("ta_stage_status", [
   "failed",
   "skipped",
 ]);
+export const taScorecardRating = pgEnum("ta_scorecard_rating", ["strong_yes", "yes", "no", "strong_no"]);
 
 /**
  * A Manager's headcount request — Position/Level comes from a `jobProfile`
  * (never duplicated here as raw `positionId`/`levelId`), so the request
  * carries whatever job description/qualification the profile already has.
+ * Starts `pending_approval`; a Dept Head/Unit Manager must approve it
+ * (`approvedBy`/`approvedAt`) before it becomes sourceable.
  */
 export const taRequest = pgTable(
   "ta_request",
@@ -412,9 +416,13 @@ export const taRequest = pgTable(
     workSetup: workSetup("work_setup").notNull(),
     /** Onsite location, or a description of the hybrid schedule. Null for fully remote. */
     workSetupDetail: text("work_setup_detail"),
-    status: taRequestStatus("status").notNull().default("open"),
+    status: taRequestStatus("status").notNull().default("pending_approval"),
     notes: text("notes"),
     requestedBy: text("requested_by").references(() => user.id, { onDelete: "set null" }),
+    approvedBy: text("approved_by").references(() => user.id, { onDelete: "set null" }),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    /** Rejection reason when a pending request is declined, or an optional approval note. */
+    reviewNote: text("review_note"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .$defaultFn(() => new Date())
       .notNull(),
@@ -430,33 +438,28 @@ export const taRequest = pgTable(
 );
 
 /**
- * Deliberately a *lighter* profile than `employee` — full addresses,
+ * The durable person record — a talent pool entry independent of any single
+ * request. Deliberately a *lighter* profile than `employee` — full addresses,
  * government IDs, salary and employment type stay Employee-only, captured at
  * migration time (`migrateCandidateToEmployee`) rather than duplicated here.
+ * `employeeId` lives here (not on `taApplication`) since "already hired" is a
+ * person-level fact true regardless of which application converted them.
  */
 export const taCandidate = pgTable(
   "ta_candidate",
   {
     id: text("id").primaryKey(),
-    requestId: text("request_id")
-      .notNull()
-      .references(() => taRequest.id, { onDelete: "cascade" }),
     firstName: text("first_name").notNull(),
     middleName: text("middle_name"),
     lastName: text("last_name").notNull(),
     genderId: text("gender_id").references(() => gender.id, { onDelete: "set null" }),
     mobileNumber: text("mobile_number"),
     personalEmail: text("personal_email"),
-    sourceId: text("source_id").references(() => jobPostingSource.id, { onDelete: "set null" }),
-    /** One CV per candidate — reuses the One-Lot Project Docs storage mechanism, see `src/lib/document-storage.ts`. */
+    /** One CV on file — reuses the One-Lot Project Docs storage mechanism, see `src/lib/document-storage.ts`. */
     cvStorageKey: text("cv_storage_key"),
     cvFileName: text("cv_file_name"),
     cvMimeType: text("cv_mime_type"),
     cvSize: integer("cv_size"),
-    /** Set by the L2 assignee when completing L2 Assessment — an explicit toggle rather than implicitly skipping the stage. */
-    clientInterviewRequired: boolean("client_interview_required").notNull().default(false),
-    targetOnboardDate: date("target_onboard_date"),
-    status: taCandidateStatus("status").notNull().default("active"),
     /** Set once migrated — the candidate row is kept for history, not deleted. */
     employeeId: text("employee_id").references(() => employee.id, { onDelete: "set null" }),
     createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
@@ -468,25 +471,70 @@ export const taCandidate = pgTable(
       .$onUpdate(() => new Date())
       .notNull(),
   },
-  (table) => [
-    index("ta_candidate_request_idx").on(table.requestId),
-    index("ta_candidate_employee_idx").on(table.employeeId),
-  ],
+  (table) => [index("ta_candidate_employee_idx").on(table.employeeId)],
 );
 
 /**
- * One row per applicable stage per candidate, created lazily as the pipeline
- * advances — not all five upfront, since `client_interview` may never apply.
- * `assigneeId` is enforced (actor must match) only for `l2_assessment` and
- * `client_interview` in the action layer; informational only for the rest.
+ * One person's pursuit of one request — the join between the talent pool and
+ * a requisition. A candidate can have many applications over time (rejected
+ * for one request, later hired via another). Only one *active* application
+ * per candidate/request pair is allowed (partial unique index below); a
+ * rejected-then-reapplied history is fine.
  */
-export const taCandidateStage = pgTable(
-  "ta_candidate_stage",
+export const taApplication = pgTable(
+  "ta_application",
   {
     id: text("id").primaryKey(),
     candidateId: text("candidate_id")
       .notNull()
       .references(() => taCandidate.id, { onDelete: "cascade" }),
+    requestId: text("request_id")
+      .notNull()
+      .references(() => taRequest.id, { onDelete: "cascade" }),
+    sourceId: text("source_id").references(() => jobPostingSource.id, { onDelete: "set null" }),
+    status: taApplicationStatus("status").notNull().default("active"),
+    /** Why rejected/withdrawn — set alongside `status`/`statusChangedAt`/`statusChangedBy`. */
+    statusReason: text("status_reason"),
+    statusChangedAt: timestamp("status_changed_at", { withTimezone: true }),
+    statusChangedBy: text("status_changed_by").references(() => user.id, { onDelete: "set null" }),
+    /** The board column this application currently sits in — written directly on move, not derived from stage rows. */
+    currentStage: taStage("current_stage").notNull().default("l1_assessment"),
+    /** Set by the L2 assignee when completing L2 Assessment — an explicit toggle rather than implicitly skipping the stage. */
+    clientInterviewRequired: boolean("client_interview_required").notNull().default(false),
+    targetOnboardDate: date("target_onboard_date"),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("ta_application_candidate_idx").on(table.candidateId),
+    index("ta_application_request_idx").on(table.requestId),
+    uniqueIndex("ta_application_one_active_idx")
+      .on(table.candidateId, table.requestId)
+      .where(sql`${table.status} = 'active'`),
+  ],
+);
+
+/**
+ * One row per applicable stage per application, created lazily as the
+ * pipeline advances — not all five upfront, since `client_interview` may
+ * never apply. Stages are not gated on the previous one having passed — an
+ * application can be moved to any stage, or rejected/withdrawn, at any point.
+ * `assigneeId` is enforced (actor must match) only for `l2_assessment` and
+ * `client_interview` in the action layer; informational only for the rest.
+ */
+export const taApplicationStage = pgTable(
+  "ta_application_stage",
+  {
+    id: text("id").primaryKey(),
+    applicationId: text("application_id")
+      .notNull()
+      .references(() => taApplication.id, { onDelete: "cascade" }),
     stage: taStage("stage").notNull(),
     status: taStageStatus("status").notNull().default("pending"),
     assigneeId: text("assignee_id").references(() => user.id, { onDelete: "set null" }),
@@ -501,12 +549,41 @@ export const taCandidateStage = pgTable(
       .notNull(),
   },
   (table) => [
-    index("ta_candidate_stage_candidate_idx").on(table.candidateId),
-    uniqueIndex("ta_candidate_stage_candidate_stage_idx").on(table.candidateId, table.stage),
+    index("ta_application_stage_application_idx").on(table.applicationId),
+    uniqueIndex("ta_application_stage_application_stage_idx").on(table.applicationId, table.stage),
   ],
 );
 
-/** Flat comment list — verbatim port of `oneLotProjectWorkItemComment`'s shape. */
+/**
+ * Structured per-evaluator feedback on a stage — independent of the stage's
+ * own `status`/`notes`, which stay the "official" line set by whoever holds
+ * that stage's tier permission. Re-scoring updates the existing row.
+ */
+export const taCandidateScorecard = pgTable(
+  "ta_candidate_scorecard",
+  {
+    id: text("id").primaryKey(),
+    applicationStageId: text("application_stage_id")
+      .notNull()
+      .references(() => taApplicationStage.id, { onDelete: "cascade" }),
+    evaluatorId: text("evaluator_id").references(() => user.id, { onDelete: "set null" }),
+    rating: taScorecardRating("rating").notNull(),
+    comments: text("comments"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("ta_candidate_scorecard_application_stage_idx").on(table.applicationStageId),
+    uniqueIndex("ta_candidate_scorecard_stage_evaluator_idx").on(table.applicationStageId, table.evaluatorId),
+  ],
+);
+
+/** Flat comment list, person-scoped (not per-application) — verbatim port of `oneLotProjectWorkItemComment`'s shape. */
 export const taCandidateComment = pgTable(
   "ta_candidate_comment",
   {
@@ -521,6 +598,43 @@ export const taCandidateComment = pgTable(
       .notNull(),
   },
   (table) => [index("ta_candidate_comment_candidate_idx").on(table.candidateId)],
+);
+
+/* -------------------------------------------------------------------------- */
+/*  Notifications                                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Per-viewer read markers for the header notification bell.
+ *
+ * Notifications themselves are never stored — they're computed on read from
+ * each source module's own live data (e.g. a pending `user` row), the same
+ * way the bell's badge count is just a query, not a materialized feed. This
+ * table only remembers whether a given viewer has already seen a given
+ * source row, so a resolved item (e.g. a user that gets approved/rejected)
+ * disappears from the feed on its own — nothing to clean up here.
+ *
+ * `module` namespaces `entityId` the same way `audit_log.module` does, so
+ * future notification sources (Talent Acquisition approvals, etc.) reuse
+ * this table without a schema change — see AGENTS.md's note on this feature
+ * starting out scoped to User Management only.
+ */
+export const notificationRead = pgTable(
+  "notification_read",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    module: text("module").notNull(),
+    entityId: text("entity_id").notNull(),
+    readAt: timestamp("read_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("notification_read_user_module_entity_idx").on(table.userId, table.module, table.entityId),
+  ],
 );
 
 /* -------------------------------------------------------------------------- */
@@ -1541,27 +1655,48 @@ export const taRequestRelations = relations(taRequest, ({ one, many }) => ({
   jobProfile: one(jobProfile, { fields: [taRequest.jobProfileId], references: [jobProfile.id] }),
   client: one(client, { fields: [taRequest.clientId], references: [client.id] }),
   requester: one(user, { fields: [taRequest.requestedBy], references: [user.id] }),
-  candidates: many(taCandidate),
+  approver: one(user, { fields: [taRequest.approvedBy], references: [user.id] }),
+  applications: many(taApplication),
 }));
 
 export const taCandidateRelations = relations(taCandidate, ({ one, many }) => ({
-  request: one(taRequest, { fields: [taCandidate.requestId], references: [taRequest.id] }),
   gender: one(gender, { fields: [taCandidate.genderId], references: [gender.id] }),
-  source: one(jobPostingSource, { fields: [taCandidate.sourceId], references: [jobPostingSource.id] }),
   employee: one(employee, { fields: [taCandidate.employeeId], references: [employee.id] }),
   author: one(user, { fields: [taCandidate.createdBy], references: [user.id] }),
-  stages: many(taCandidateStage),
+  applications: many(taApplication),
   comments: many(taCandidateComment),
 }));
 
-export const taCandidateStageRelations = relations(taCandidateStage, ({ one }) => ({
-  candidate: one(taCandidate, { fields: [taCandidateStage.candidateId], references: [taCandidate.id] }),
-  assignee: one(user, { fields: [taCandidateStage.assigneeId], references: [user.id] }),
+export const taApplicationRelations = relations(taApplication, ({ one, many }) => ({
+  candidate: one(taCandidate, { fields: [taApplication.candidateId], references: [taCandidate.id] }),
+  request: one(taRequest, { fields: [taApplication.requestId], references: [taRequest.id] }),
+  source: one(jobPostingSource, { fields: [taApplication.sourceId], references: [jobPostingSource.id] }),
+  statusChangedByUser: one(user, { fields: [taApplication.statusChangedBy], references: [user.id] }),
+  author: one(user, { fields: [taApplication.createdBy], references: [user.id] }),
+  stages: many(taApplicationStage),
+}));
+
+export const taApplicationStageRelations = relations(taApplicationStage, ({ one, many }) => ({
+  application: one(taApplication, { fields: [taApplicationStage.applicationId], references: [taApplication.id] }),
+  assignee: one(user, { fields: [taApplicationStage.assigneeId], references: [user.id] }),
+  scorecards: many(taCandidateScorecard),
+}));
+
+export const taCandidateScorecardRelations = relations(taCandidateScorecard, ({ one }) => ({
+  applicationStage: one(taApplicationStage, {
+    fields: [taCandidateScorecard.applicationStageId],
+    references: [taApplicationStage.id],
+  }),
+  evaluator: one(user, { fields: [taCandidateScorecard.evaluatorId], references: [user.id] }),
 }));
 
 export const taCandidateCommentRelations = relations(taCandidateComment, ({ one }) => ({
   candidate: one(taCandidate, { fields: [taCandidateComment.candidateId], references: [taCandidate.id] }),
   author: one(user, { fields: [taCandidateComment.authorId], references: [user.id] }),
+}));
+
+export const notificationReadRelations = relations(notificationRead, ({ one }) => ({
+  user: one(user, { fields: [notificationRead.userId], references: [user.id] }),
 }));
 
 /* -------------------------------------------------------------------------- */
@@ -1660,10 +1795,15 @@ export type NewTaRequest = typeof taRequest.$inferInsert;
 export type TaRequestStatus = (typeof taRequestStatus.enumValues)[number];
 export type TaCandidate = typeof taCandidate.$inferSelect;
 export type NewTaCandidate = typeof taCandidate.$inferInsert;
-export type TaCandidateStatus = (typeof taCandidateStatus.enumValues)[number];
-export type TaCandidateStage = typeof taCandidateStage.$inferSelect;
-export type NewTaCandidateStage = typeof taCandidateStage.$inferInsert;
+export type TaApplication = typeof taApplication.$inferSelect;
+export type NewTaApplication = typeof taApplication.$inferInsert;
+export type TaApplicationStatus = (typeof taApplicationStatus.enumValues)[number];
+export type TaApplicationStage = typeof taApplicationStage.$inferSelect;
+export type NewTaApplicationStage = typeof taApplicationStage.$inferInsert;
 export type TaStage = (typeof taStage.enumValues)[number];
 export type TaStageStatus = (typeof taStageStatus.enumValues)[number];
 export type TaCandidateComment = typeof taCandidateComment.$inferSelect;
 export type NewTaCandidateComment = typeof taCandidateComment.$inferInsert;
+export type TaCandidateScorecard = typeof taCandidateScorecard.$inferSelect;
+export type NewTaCandidateScorecard = typeof taCandidateScorecard.$inferInsert;
+export type TaScorecardRating = (typeof taScorecardRating.enumValues)[number];

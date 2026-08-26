@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 
+import { ScorecardPanel } from "@/components/talent-acquisition/scorecard-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -13,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import type { ActionResult } from "@/lib/action-result";
 import { formatRelative } from "@/lib/format";
-import { taCandidatesQueryKey } from "@/server/talent-acquisition/candidate-query-key";
+import { taApplicationsQueryKey } from "@/server/talent-acquisition/application-query-key";
 import {
   assignL2Assessment,
   completeClientInterview,
@@ -22,13 +23,14 @@ import {
   completeL1Assessment,
   completeL2Assessment,
   fetchL2AssigneeOptions,
-  fetchTaCandidateStages,
+  fetchTaApplicationStages,
+  moveApplicationStage,
 } from "@/server/talent-acquisition/stage-actions";
-import { taCandidateStagesQueryKey } from "@/server/talent-acquisition/stage-query-key";
+import { taApplicationStagesQueryKey } from "@/server/talent-acquisition/stage-query-key";
 import {
   TA_STAGE_LABELS,
   TA_STAGE_STATUS_LABELS,
-  type TaCandidateStageRow,
+  type TaApplicationStageRow,
   type UserOption,
 } from "@/server/talent-acquisition/stage-types";
 import type { TaStage } from "@/db/schema";
@@ -39,7 +41,7 @@ function applicableStages(clientInterviewRequired: boolean): TaStage[] {
   return STAGE_ORDER.filter((stage) => stage !== "client_interview" || clientInterviewRequired);
 }
 
-const STATUS_BADGE_VARIANT: Record<TaCandidateStageRow["status"], "default" | "secondary" | "outline"> = {
+const STATUS_BADGE_VARIANT: Record<TaApplicationStageRow["status"], "default" | "secondary" | "outline"> = {
   pending: "outline",
   in_progress: "secondary",
   passed: "default",
@@ -48,7 +50,7 @@ const STATUS_BADGE_VARIANT: Record<TaCandidateStageRow["status"], "default" | "s
 };
 
 type StageChecklistProps = {
-  candidateId: string;
+  applicationId: string;
   requestId: string;
   clientInterviewRequired: boolean;
   currentUserId: string;
@@ -57,10 +59,12 @@ type StageChecklistProps = {
   canAssignL2: boolean;
   canL2Assess: boolean;
   canFinalize: boolean;
+  /** May move this application to a not-yet-started stage — the flexible, non-linear part of the pipeline. */
+  canMove: boolean;
 };
 
 export function StageChecklist({
-  candidateId,
+  applicationId,
   requestId,
   clientInterviewRequired,
   currentUserId,
@@ -69,16 +73,17 @@ export function StageChecklist({
   canAssignL2,
   canL2Assess,
   canFinalize,
+  canMove,
 }: StageChecklistProps) {
   const queryClient = useQueryClient();
 
-  const { data, isPending } = useQuery<TaCandidateStageRow[]>({
-    queryKey: taCandidateStagesQueryKey(candidateId),
-    queryFn: () => fetchTaCandidateStages(candidateId),
+  const { data, isPending } = useQuery<TaApplicationStageRow[]>({
+    queryKey: taApplicationStagesQueryKey(applicationId),
+    queryFn: () => fetchTaApplicationStages(applicationId),
   });
 
   const assigneeOptions = useQuery<UserOption[]>({
-    queryKey: ["ta-candidate-stages", "l2-assignee-options"],
+    queryKey: ["ta-application-stages", "l2-assignee-options"],
     queryFn: fetchL2AssigneeOptions,
     enabled: canAssignL2,
   });
@@ -88,8 +93,8 @@ export function StageChecklist({
     onSuccess: (result) => {
       if (result.ok) {
         toast.success(result.message);
-        void queryClient.invalidateQueries({ queryKey: taCandidateStagesQueryKey(candidateId) });
-        void queryClient.invalidateQueries({ queryKey: taCandidatesQueryKey(requestId) });
+        void queryClient.invalidateQueries({ queryKey: taApplicationStagesQueryKey(applicationId) });
+        void queryClient.invalidateQueries({ queryKey: taApplicationsQueryKey(requestId) });
       } else {
         toast.error(result.error);
       }
@@ -110,12 +115,11 @@ export function StageChecklist({
       <h4 className="text-muted-foreground text-xs font-medium">Pipeline</h4>
 
       <ol className="space-y-2">
-        {order.map((stage, index) => {
+        {order.map((stage) => {
           const row = stageByKey.get(stage);
-          const prerequisite = index === 0 ? null : order[index - 1];
-          const prerequisiteRow = prerequisite ? stageByKey.get(prerequisite) : undefined;
-          const locked = index > 0 && prerequisiteRow?.status !== "passed";
           const completed = row?.status === "passed" || row?.status === "failed";
+          const notStarted = !row && stage !== "l1_assessment" && stage !== "l2_assessment";
+          const canScore = stage === "l1_assessment" ? canL1Assess : stage === "final_interview" || stage === "job_offer" ? canFinalize : canL2Assess;
 
           return (
             <li key={stage} className="rounded-lg border p-3">
@@ -126,9 +130,7 @@ export function StageChecklist({
                 </Badge>
               </div>
 
-              {locked ? (
-                <p className="text-muted-foreground mt-1.5 text-xs">Complete {TA_STAGE_LABELS[prerequisite!]} first.</p>
-              ) : completed ? (
+              {completed ? (
                 <div className="mt-1.5 space-y-1">
                   {row?.assigneeName ? (
                     <p className="text-muted-foreground text-xs">Reviewer: {row.assigneeName}</p>
@@ -143,7 +145,7 @@ export function StageChecklist({
                   <StageResultControls
                     pending={mutation.isPending}
                     onSubmit={(passed, notes) =>
-                      mutation.mutate(() => completeL1Assessment({ candidateId, requestId, passed, notes }))
+                      mutation.mutate(() => completeL1Assessment({ applicationId, requestId, passed, notes }))
                     }
                   />
                 ) : (
@@ -156,7 +158,7 @@ export function StageChecklist({
                       options={assigneeOptions.data ?? []}
                       pending={mutation.isPending}
                       onAssign={(assigneeId) =>
-                        mutation.mutate(() => assignL2Assessment({ candidateId, requestId, assigneeId }))
+                        mutation.mutate(() => assignL2Assessment({ applicationId, requestId, assigneeId }))
                       }
                     />
                   ) : (
@@ -170,7 +172,7 @@ export function StageChecklist({
                       onSubmit={(passed, clientInterviewRequiredInput, notes) =>
                         mutation.mutate(() =>
                           completeL2Assessment({
-                            candidateId,
+                            applicationId,
                             requestId,
                             passed,
                             clientInterviewRequired: clientInterviewRequiredInput,
@@ -183,6 +185,20 @@ export function StageChecklist({
                 ) : (
                   <p className="text-muted-foreground mt-1.5 text-xs">Assigned to {row.assigneeName}.</p>
                 )
+              ) : notStarted ? (
+                <div className="mt-1.5 space-y-2">
+                  <p className="text-muted-foreground text-xs">Not started yet.</p>
+                  {canMove ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={mutation.isPending}
+                      onClick={() => mutation.mutate(() => moveApplicationStage({ applicationId, requestId, stage }))}
+                    >
+                      Move here to start
+                    </Button>
+                  ) : null}
+                </div>
               ) : stage === "client_interview" ? (
                 !canL2Assess && !isAdmin ? (
                   <p className="text-muted-foreground mt-1.5 text-xs">Assigned to {row?.assigneeName ?? "the L2 reviewer"}.</p>
@@ -192,7 +208,7 @@ export function StageChecklist({
                     <StageResultControls
                       pending={mutation.isPending}
                       onSubmit={(passed, notes) =>
-                        mutation.mutate(() => completeClientInterview({ candidateId, requestId, passed, notes }))
+                        mutation.mutate(() => completeClientInterview({ applicationId, requestId, passed, notes }))
                       }
                     />
                   </div>
@@ -204,7 +220,7 @@ export function StageChecklist({
                   <StageResultControls
                     pending={mutation.isPending}
                     onSubmit={(passed, notes) =>
-                      mutation.mutate(() => completeFinalInterview({ candidateId, requestId, passed, notes }))
+                      mutation.mutate(() => completeFinalInterview({ applicationId, requestId, passed, notes }))
                     }
                   />
                 ) : (
@@ -215,12 +231,22 @@ export function StageChecklist({
                   <JobOfferControls
                     pending={mutation.isPending}
                     onSubmit={(passed, notes, targetOnboardDate) =>
-                      mutation.mutate(() => completeJobOffer({ candidateId, requestId, passed, notes, targetOnboardDate }))
+                      mutation.mutate(() => completeJobOffer({ applicationId, requestId, passed, notes, targetOnboardDate }))
                     }
                   />
                 ) : (
                   <p className="text-muted-foreground mt-1.5 text-xs">Only Unit Manager tier can complete this.</p>
                 )
+              ) : null}
+
+              {row ? (
+                <ScorecardPanel
+                  applicationStageId={row.id}
+                  requestId={requestId}
+                  stage={stage}
+                  canScore={canScore}
+                  currentUserId={currentUserId}
+                />
               ) : null}
             </li>
           );

@@ -1,12 +1,15 @@
 import "server-only";
 
+import { alias } from "drizzle-orm/pg-core";
 import { count, desc, eq } from "drizzle-orm";
 
 import { db } from "@/db";
-import { client, jobProfile, level, position, taCandidate, taRequest, user } from "@/db/schema";
+import { client, jobProfile, level, position, taApplication, taRequest, user } from "@/db/schema";
 import { authorize } from "@/lib/session";
 
 import type { TaRequestRow } from "./types";
+
+const approver = alias(user, "approver");
 
 const REQUEST_SELECTION = {
   id: taRequest.id,
@@ -22,10 +25,14 @@ const REQUEST_SELECTION = {
   workSetupDetail: taRequest.workSetupDetail,
   status: taRequest.status,
   notes: taRequest.notes,
+  reviewNote: taRequest.reviewNote,
+  approvedAt: taRequest.approvedAt,
   createdAt: taRequest.createdAt,
   updatedAt: taRequest.updatedAt,
   requesterId: user.id,
   requesterName: user.name,
+  approverId: approver.id,
+  approverName: approver.name,
 };
 
 function baseRequestQuery() {
@@ -36,16 +43,17 @@ function baseRequestQuery() {
     .innerJoin(position, eq(jobProfile.positionId, position.id))
     .innerJoin(level, eq(jobProfile.levelId, level.id))
     .innerJoin(client, eq(taRequest.clientId, client.id))
-    .leftJoin(user, eq(taRequest.requestedBy, user.id));
+    .leftJoin(user, eq(taRequest.requestedBy, user.id))
+    .leftJoin(approver, eq(taRequest.approvedBy, approver.id));
 }
 
-/** Hired-candidate count per request — cheap enough to compute for every list render, this isn't a large table. */
+/** Hired-application count per request — cheap enough to compute for every list render, this isn't a large table. */
 async function headcountFilledByRequest(): Promise<Map<string, number>> {
   const rows = await db
-    .select({ requestId: taCandidate.requestId, total: count() })
-    .from(taCandidate)
-    .where(eq(taCandidate.status, "hired"))
-    .groupBy(taCandidate.requestId);
+    .select({ requestId: taApplication.requestId, total: count() })
+    .from(taApplication)
+    .where(eq(taApplication.status, "hired"))
+    .groupBy(taApplication.requestId);
 
   return new Map(rows.map((row) => [row.requestId, row.total]));
 }
@@ -67,6 +75,9 @@ function toRow(row: Awaited<ReturnType<typeof baseRequestQuery>>[number], filled
     status: row.status,
     notes: row.notes,
     requestedBy: row.requesterId ? { id: row.requesterId, name: row.requesterName ?? "" } : null,
+    approvedBy: row.approverId ? { id: row.approverId, name: row.approverName ?? "" } : null,
+    approvedAt: row.approvedAt,
+    reviewNote: row.reviewNote,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

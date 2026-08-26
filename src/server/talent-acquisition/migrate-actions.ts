@@ -12,8 +12,9 @@ import {
   employeeEmployment,
   jobProfile,
   project,
+  taApplication,
+  taApplicationStage,
   taCandidate,
-  taCandidateStage,
   taRequest,
 } from "@/db/schema";
 import type { ActionResult } from "@/lib/action-result";
@@ -56,7 +57,7 @@ const allowanceSchema = z
   .refine((value) => Number.isFinite(Number(value)) && Number(value) >= 0, "Enter a valid amount");
 
 const migrateInputSchema = z.object({
-  candidateId: z.string().min(1),
+  applicationId: z.string().min(1),
   requestId: z.string().min(1),
   profile: z.object({
     code: employeeCodeSchema,
@@ -138,15 +139,18 @@ export async function migrateCandidateToEmployee(input: MigrateCandidateInput): 
     const actor = await authorize("talent_acquisition:migrate");
     const values = migrateInputSchema.parse(input);
 
-    const [candidate] = await db.select().from(taCandidate).where(eq(taCandidate.id, values.candidateId)).limit(1);
+    const [application] = await db.select().from(taApplication).where(eq(taApplication.id, values.applicationId)).limit(1);
+    if (!application) return { ok: false, error: "That application no longer exists." };
+    if (application.status !== "active") return { ok: false, error: "Only an active application can be migrated." };
+
+    const [candidate] = await db.select().from(taCandidate).where(eq(taCandidate.id, application.candidateId)).limit(1);
     if (!candidate) return { ok: false, error: "That candidate no longer exists." };
     if (candidate.employeeId) return { ok: false, error: "This candidate has already been migrated to Employee." };
-    if (candidate.status !== "active") return { ok: false, error: "Only an active candidate can be migrated." };
 
     const [jobOfferStage] = await db
-      .select({ status: taCandidateStage.status })
-      .from(taCandidateStage)
-      .where(and(eq(taCandidateStage.candidateId, values.candidateId), eq(taCandidateStage.stage, "job_offer")))
+      .select({ status: taApplicationStage.status })
+      .from(taApplicationStage)
+      .where(and(eq(taApplicationStage.applicationId, values.applicationId), eq(taApplicationStage.stage, "job_offer")))
       .limit(1);
     if (jobOfferStage?.status !== "passed") {
       return { ok: false, error: "Job Offer must be marked passed before migrating this candidate." };
@@ -232,15 +236,17 @@ export async function migrateCandidateToEmployee(input: MigrateCandidateInput): 
       endDate: null,
     });
 
+    await db.update(taCandidate).set({ employeeId }).where(eq(taCandidate.id, application.candidateId));
+
     await db
-      .update(taCandidate)
-      .set({ employeeId, status: "hired" })
-      .where(eq(taCandidate.id, values.candidateId));
+      .update(taApplication)
+      .set({ status: "hired", statusChangedAt: new Date(), statusChangedBy: actor.id })
+      .where(eq(taApplication.id, values.applicationId));
 
     const [{ hiredCount }] = await db
       .select({ hiredCount: count() })
-      .from(taCandidate)
-      .where(and(eq(taCandidate.requestId, values.requestId), eq(taCandidate.status, "hired")));
+      .from(taApplication)
+      .where(and(eq(taApplication.requestId, values.requestId), eq(taApplication.status, "hired")));
     if (request.status !== "cancelled") {
       await db
         .update(taRequest)
@@ -289,7 +295,7 @@ export async function migrateCandidateToEmployee(input: MigrateCandidateInput): 
     await recordAudit({
       module: "ta_candidates",
       action: "migrated_to_employee",
-      entityId: values.candidateId,
+      entityId: application.candidateId,
       entityLabel: label,
       actorId: actor.id,
       actorEmail: actor.email,

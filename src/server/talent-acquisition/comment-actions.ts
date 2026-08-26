@@ -34,7 +34,8 @@ export async function fetchTaCandidateComments(candidateId: string): Promise<TaC
 
 export async function addTaCandidateComment(input: {
   candidateId: string;
-  requestId: string;
+  /** Omitted when commenting from the candidate's own profile page, which isn't scoped to one request. */
+  requestId?: string;
   body: string;
 }): Promise<ActionResult<{ id: string }>> {
   return run(async () => {
@@ -55,7 +56,8 @@ export async function addTaCandidateComment(input: {
       actorEmail: actor.email,
     });
 
-    revalidatePath(`/talent-acquisition/${input.requestId}`);
+    if (input.requestId) revalidatePath(`/talent-acquisition/${input.requestId}`);
+    revalidatePath(`/talent-acquisition/candidates/${input.candidateId}`);
     return { ok: true, data: { id }, message: "Comment added." };
   });
 }

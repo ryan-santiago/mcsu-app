@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { db } from "@/db";
-import { taCandidate, taRequest } from "@/db/schema";
+import { taCandidate } from "@/db/schema";
 import type { ActionResult } from "@/lib/action-result";
 import { diffFields, recordAudit } from "@/lib/audit";
 import { deleteDocumentFile, isDocumentStorageAvailable, saveDocumentFile } from "@/lib/document-storage";
@@ -15,32 +15,11 @@ import { AuthorizationError, authorize } from "@/lib/session";
 import { listLookupOptions } from "@/server/maintenance/queries";
 import type { LookupOption } from "@/server/maintenance/types";
 
-import { listTaCandidates } from "./candidate-queries";
-import type { TaCandidateRow } from "./candidate-types";
+import { getTaCandidateProfile, listTaCandidatePool } from "./candidate-queries";
+import type { TaCandidateProfileRow, TaCandidateRow } from "./candidate-types";
 
 /** A CV doesn't need the 50 MB ceiling project docs get. */
 const MAX_CV_SIZE_BYTES = 10 * 1024 * 1024;
-
-const candidateInputSchema = z.object({
-  requestId: z.string().min(1),
-  firstName: z.string().trim().min(1, "First name is required").max(100, "That's too long"),
-  middleName: z.string().optional(),
-  lastName: z.string().trim().min(1, "Last name is required").max(100, "That's too long"),
-  genderId: z.string().optional(),
-  mobileNumber: z.string().optional(),
-  personalEmail: z.string().trim().email("Enter a valid email").optional().or(z.literal("")),
-  sourceId: z.string().optional(),
-});
-
-const CHANGE_LABELS = {
-  firstName: "First name",
-  middleName: "Middle name",
-  lastName: "Last name",
-  genderId: "Gender",
-  mobileNumber: "Mobile number",
-  personalEmail: "Personal email",
-  sourceId: "Source",
-};
 
 async function run<T>(fn: () => Promise<ActionResult<T>>): Promise<ActionResult<T>> {
   try {
@@ -59,210 +38,23 @@ function buildCandidateCvStorageKey(candidateId: string, fileName: string): stri
   return `Documents/Talent Acquisition/Candidates/${candidateId}/cv-${sanitizeDocumentName(fileName)}`;
 }
 
-/** Server-action entry point for the Candidates list's TanStack Query `queryFn`. */
-export async function fetchTaCandidates(requestId: string): Promise<TaCandidateRow[]> {
-  return listTaCandidates(requestId);
-}
-
-/** Gated on `talent_acquisition:write`, not `:read` — only someone adding a candidate needs these pickers. */
+/** Gated on `talent_acquisition:write`, not `:read` — only someone adding/editing a candidate needs this picker. */
 export async function fetchGenderOptions(): Promise<LookupOption[]> {
   await authorize("talent_acquisition:write");
   return listLookupOptions("gender");
 }
 
-export async function fetchJobPostingSourceOptions(): Promise<LookupOption[]> {
-  await authorize("talent_acquisition:write");
-  return listLookupOptions("job_posting_source");
+/** Server-action entry point for the talent pool page, and for "search existing candidates" when adding one to a request. */
+export async function fetchTaCandidatePool(search?: string): Promise<TaCandidateRow[]> {
+  return listTaCandidatePool(search);
 }
 
-export async function createTaCandidate(input: {
-  requestId: string;
-  firstName: string;
-  middleName?: string;
-  lastName: string;
-  genderId?: string;
-  mobileNumber?: string;
-  personalEmail?: string;
-  sourceId?: string;
-}): Promise<ActionResult<{ id: string }>> {
-  return run(async () => {
-    const actor = await authorize("talent_acquisition:write");
-    const values = candidateInputSchema.parse(input);
-
-    const [request] = await db.select().from(taRequest).where(eq(taRequest.id, values.requestId)).limit(1);
-    if (!request) return { ok: false, error: "That request no longer exists." };
-    if (request.status === "cancelled") {
-      return { ok: false, error: "This request is cancelled — candidates can't be added to it." };
-    }
-
-    const id = crypto.randomUUID();
-    const middleName = values.middleName?.trim() || null;
-    const mobileNumber = values.mobileNumber?.trim() || null;
-    const personalEmail = values.personalEmail?.trim() || null;
-    const genderId = values.genderId || null;
-    const sourceId = values.sourceId || null;
-
-    await db.insert(taCandidate).values({
-      id,
-      requestId: values.requestId,
-      firstName: values.firstName,
-      middleName,
-      lastName: values.lastName,
-      genderId,
-      mobileNumber,
-      personalEmail,
-      sourceId,
-      createdBy: actor.id,
-    });
-
-    const fullName = formatEmployeeDisplayName(values);
-
-    await recordAudit({
-      module: "ta_candidates",
-      action: "candidate_added",
-      entityId: id,
-      entityLabel: fullName,
-      actorId: actor.id,
-      actorEmail: actor.email,
-      changes: diffFields(
-        null,
-        { firstName: values.firstName, middleName, lastName: values.lastName, genderId, mobileNumber, personalEmail, sourceId },
-        CHANGE_LABELS,
-      ),
-    });
-
-    revalidatePath(`/talent-acquisition/${values.requestId}`);
-    return { ok: true, data: { id }, message: `${fullName} added.` };
-  });
+/** Server-action entry point for the candidate profile page's TanStack Query `queryFn`. */
+export async function fetchTaCandidateProfile(candidateId: string): Promise<TaCandidateProfileRow | null> {
+  return getTaCandidateProfile(candidateId);
 }
 
-export async function updateTaCandidate(input: {
-  id: string;
-  requestId: string;
-  firstName: string;
-  middleName?: string;
-  lastName: string;
-  genderId?: string;
-  mobileNumber?: string;
-  personalEmail?: string;
-  sourceId?: string;
-}): Promise<ActionResult> {
-  return run(async () => {
-    const actor = await authorize("talent_acquisition:edit");
-    const values = candidateInputSchema.parse(input);
-
-    const [target] = await db.select().from(taCandidate).where(eq(taCandidate.id, input.id)).limit(1);
-    if (!target) return { ok: false, error: "That candidate no longer exists." };
-
-    const middleName = values.middleName?.trim() || null;
-    const mobileNumber = values.mobileNumber?.trim() || null;
-    const personalEmail = values.personalEmail?.trim() || null;
-    const genderId = values.genderId || null;
-    const sourceId = values.sourceId || null;
-
-    await db
-      .update(taCandidate)
-      .set({
-        firstName: values.firstName,
-        middleName,
-        lastName: values.lastName,
-        genderId,
-        mobileNumber,
-        personalEmail,
-        sourceId,
-      })
-      .where(eq(taCandidate.id, input.id));
-
-    const fullName = formatEmployeeDisplayName(values);
-
-    await recordAudit({
-      module: "ta_candidates",
-      action: "candidate_updated",
-      entityId: input.id,
-      entityLabel: fullName,
-      actorId: actor.id,
-      actorEmail: actor.email,
-      changes: diffFields(
-        {
-          firstName: target.firstName,
-          middleName: target.middleName,
-          lastName: target.lastName,
-          genderId: target.genderId,
-          mobileNumber: target.mobileNumber,
-          personalEmail: target.personalEmail,
-          sourceId: target.sourceId,
-        },
-        { firstName: values.firstName, middleName, lastName: values.lastName, genderId, mobileNumber, personalEmail, sourceId },
-        CHANGE_LABELS,
-      ),
-    });
-
-    revalidatePath(`/talent-acquisition/${input.requestId}`);
-    return { ok: true, data: undefined, message: `${fullName} updated.` };
-  });
-}
-
-export async function setTaCandidateStatus(input: {
-  id: string;
-  requestId: string;
-  status: "active" | "rejected" | "withdrawn";
-}): Promise<ActionResult> {
-  return run(async () => {
-    const actor = await authorize("talent_acquisition:edit");
-
-    const [target] = await db.select().from(taCandidate).where(eq(taCandidate.id, input.id)).limit(1);
-    if (!target) return { ok: false, error: "That candidate no longer exists." };
-    if (target.status === "hired") return { ok: false, error: "This candidate has already been hired." };
-    if (target.status === input.status) return { ok: false, error: "That's already this candidate's status." };
-
-    await db.update(taCandidate).set({ status: input.status }).where(eq(taCandidate.id, input.id));
-
-    const fullName = formatEmployeeDisplayName(target);
-
-    await recordAudit({
-      module: "ta_candidates",
-      action: "candidate_updated",
-      entityId: input.id,
-      entityLabel: fullName,
-      actorId: actor.id,
-      actorEmail: actor.email,
-      changes: diffFields({ status: target.status }, { status: input.status }, { status: "Status" }),
-    });
-
-    revalidatePath(`/talent-acquisition/${input.requestId}`);
-    return { ok: true, data: undefined, message: `${fullName} marked ${input.status}.` };
-  });
-}
-
-export async function deleteTaCandidate(input: { id: string; requestId: string }): Promise<ActionResult> {
-  return run(async () => {
-    const actor = await authorize("talent_acquisition:delete");
-
-    const [target] = await db.select().from(taCandidate).where(eq(taCandidate.id, input.id)).limit(1);
-    if (!target) return { ok: false, error: "That candidate no longer exists." };
-
-    const fullName = formatEmployeeDisplayName(target);
-
-    // Cascade deletes the candidate's stage rows and comments — see `taCandidateStage`/`taCandidateComment`'s FKs.
-    await db.delete(taCandidate).where(eq(taCandidate.id, input.id));
-
-    if (target.cvStorageKey) await deleteDocumentFile(target.cvStorageKey);
-
-    await recordAudit({
-      module: "ta_candidates",
-      action: "deleted",
-      entityId: input.id,
-      entityLabel: fullName,
-      actorId: actor.id,
-      actorEmail: actor.email,
-      changes: diffFields({ name: fullName }, null, { name: "Name" }),
-    });
-
-    revalidatePath(`/talent-acquisition/${input.requestId}`);
-    return { ok: true, data: undefined, message: `${fullName} removed.` };
-  });
-}
-
+/** CV lives on the talent-pool person record, not the application — a returning candidate's re-upload replaces what was on file. */
 export async function uploadTaCandidateCv(formData: FormData): Promise<ActionResult> {
   return run(async () => {
     if (!isDocumentStorageAvailable()) {

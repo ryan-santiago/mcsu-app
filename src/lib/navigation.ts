@@ -55,6 +55,13 @@ export type NavItem = {
 	permissions?: readonly Permission[]
 	/** Match child routes too, e.g. /admin/users/123 highlights User Management. */
 	matchNested?: boolean
+	/**
+	 * Sub-paths `matchNested` should NOT claim — for a sibling static route
+	 * nested under the same href prefix as this item's own dynamic routes,
+	 * e.g. `/talent-acquisition/candidates` sits under `/talent-acquisition`
+	 * but has its own nav item and must not also highlight "Requests".
+	 */
+	excludeNestedPrefixes?: readonly string[]
 	/** Known sub-routes, deepest match wins — see `breadcrumbsFor()`. */
 	children?: readonly NavBreadcrumbChild[]
 	/**
@@ -131,10 +138,19 @@ export const NAVIGATION: readonly NavGroup[] = [
 				icon: 'talent-acquisition',
 				permissions: ['talent_acquisition:read'],
 				matchNested: true,
+				excludeNestedPrefixes: ['/talent-acquisition/candidates'],
 				children: [
 					{ title: 'New request', path: '/talent-acquisition/new' },
 					{ title: 'View request', dynamic: true },
 				],
+			},
+			{
+				title: 'Candidates',
+				href: '/talent-acquisition/candidates',
+				icon: 'users',
+				permissions: ['talent_acquisition:read'],
+				matchNested: true,
+				children: [{ title: 'Candidate profile', dynamic: true }],
 			},
 		],
 	},
@@ -257,7 +273,10 @@ export function visibleNavigation(principal: Principal | null): NavGroup[] {
 
 export function isNavItemActive(item: NavItem, pathname: string): boolean {
 	if (pathname === item.href) return true
-	return Boolean(item.matchNested) && pathname.startsWith(`${item.href}/`)
+	if (!item.matchNested || !pathname.startsWith(`${item.href}/`)) return false
+	return !item.excludeNestedPrefixes?.some(
+		(prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+	)
 }
 
 /** Breadcrumb/title lookup for the topbar. */

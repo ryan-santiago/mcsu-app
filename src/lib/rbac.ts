@@ -65,6 +65,8 @@ export const PERMISSIONS = [
   "talent_acquisition:finalize",
   /** Migrate a candidate into the Employee module. */
   "talent_acquisition:migrate",
+  /** Approve or reject a pending request before it becomes sourceable. */
+  "talent_acquisition:approve",
 
   "maintenance:read",
   "maintenance:write",
@@ -146,6 +148,7 @@ export function permissionFor(moduleId: ModuleId, action: Action): Permission {
  * follow the same shape without touching the main grid.
  */
 export const TALENT_ACQUISITION_STAGE_PERMISSIONS: readonly { permission: Permission; label: string }[] = [
+  { permission: "talent_acquisition:approve", label: "Approve / Reject Request" },
   { permission: "talent_acquisition:l1_assess", label: "L1 Assessment" },
   { permission: "talent_acquisition:l2_assess", label: "L2 Assessment / Client Interview" },
   { permission: "talent_acquisition:finalize", label: "Final Interview / Job Offer" },

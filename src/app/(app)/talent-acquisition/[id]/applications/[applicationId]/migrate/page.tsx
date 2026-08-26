@@ -8,13 +8,13 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { formatEmployeeDisplayName } from "@/lib/employee-format";
 import { requirePermission } from "@/lib/session";
-import { getTaCandidateById } from "@/server/talent-acquisition/candidate-queries";
+import { getTaApplicationById } from "@/server/talent-acquisition/application-queries";
 import { getTaRequestById } from "@/server/talent-acquisition/queries";
-import { listTaCandidateStages } from "@/server/talent-acquisition/stage-queries";
+import { listTaApplicationStages } from "@/server/talent-acquisition/stage-queries";
 import { MigrateToEmployeeForm } from "@/components/talent-acquisition/migrate-to-employee-form";
 
 type MigratePageProps = {
-  params: Promise<{ id: string; candidateId: string }>;
+  params: Promise<{ id: string; applicationId: string }>;
 };
 
 export const metadata: Metadata = {
@@ -23,17 +23,17 @@ export const metadata: Metadata = {
 
 export default async function MigrateToEmployeePage({ params }: MigratePageProps) {
   await requirePermission("talent_acquisition:migrate");
-  const { id: requestId, candidateId } = await params;
+  const { id: requestId, applicationId } = await params;
 
-  const [candidate, request, stages] = await Promise.all([
-    getTaCandidateById(candidateId),
+  const [application, request, stages] = await Promise.all([
+    getTaApplicationById(applicationId),
     getTaRequestById(requestId),
-    listTaCandidateStages(candidateId),
+    listTaApplicationStages(applicationId),
   ]);
 
-  if (!candidate || !request || candidate.requestId !== requestId) notFound();
+  if (!application || !request || application.requestId !== requestId) notFound();
 
-  const fullName = formatEmployeeDisplayName(candidate);
+  const fullName = formatEmployeeDisplayName(application);
   const jobOfferPassed = stages.some((stage) => stage.stage === "job_offer" && stage.status === "passed");
 
   return (
@@ -43,7 +43,7 @@ export default async function MigrateToEmployeePage({ params }: MigratePageProps
         description="Complete the details Talent Acquisition doesn't already capture, then create the Employee record."
       />
 
-      {candidate.employeeId ? (
+      {application.employeeId ? (
         <EmptyState
           icon={UserCheck}
           title="Already migrated"
@@ -68,7 +68,7 @@ export default async function MigrateToEmployeePage({ params }: MigratePageProps
       ) : (
         <MigrateToEmployeeForm
           requestId={requestId}
-          candidate={candidate}
+          application={application}
           clientId={request.clientId}
           clientName={request.clientName}
           positionName={request.positionName}

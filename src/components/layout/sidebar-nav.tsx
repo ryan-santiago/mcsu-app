@@ -51,6 +51,8 @@ type SidebarNavProps = {
   groups: NavGroup[];
   /** Item lists for `dynamicKind` nav items — fetched server-side, see `getEngagementNavData()`. */
   dynamicNav: EngagementNavData;
+  /** Pending-count badges for nav items, keyed by href — see `app/(app)/layout.tsx`. */
+  navBadges: Record<string, number>;
   /** Called after a link is followed, so the mobile drawer can close itself. */
   onNavigate?: () => void;
 };
@@ -62,7 +64,7 @@ type SidebarNavProps = {
  * orange bar for everyone else — the one place the brand accent appears in the
  * app chrome.
  */
-export function SidebarNav({ groups, dynamicNav, onNavigate }: SidebarNavProps) {
+export function SidebarNav({ groups, dynamicNav, navBadges, onNavigate }: SidebarNavProps) {
   const pathname = usePathname();
 
   return (
@@ -80,6 +82,7 @@ export function SidebarNav({ groups, dynamicNav, onNavigate }: SidebarNavProps) 
               const active = isNavItemActive(item, pathname);
               const Icon = NAV_ICONS[item.icon];
               const dynamicGroup = item.dynamicKind ? dynamicNav[item.dynamicKind] : undefined;
+              const badgeCount = navBadges[item.href];
 
               const link = (
                 <Link
@@ -102,6 +105,11 @@ export function SidebarNav({ groups, dynamicNav, onNavigate }: SidebarNavProps) 
                   />
                   <Icon className="size-4 shrink-0" aria-hidden />
                   <span className="truncate">{item.title}</span>
+                  {badgeCount !== undefined && badgeCount > 0 ? (
+                    <span className="bg-warning/15 text-warning ml-auto rounded-full px-1.5 py-0.5 text-[0.6875rem] leading-none font-semibold tabular-nums">
+                      {badgeCount}
+                    </span>
+                  ) : null}
                 </Link>
               );
 

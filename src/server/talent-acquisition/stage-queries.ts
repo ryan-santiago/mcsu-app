@@ -3,31 +3,31 @@ import "server-only";
 import { eq } from "drizzle-orm";
 
 import { db } from "@/db";
-import { role, taCandidateStage, user } from "@/db/schema";
+import { role, taApplicationStage, user } from "@/db/schema";
 import type { Permission } from "@/lib/rbac";
 import { authorize } from "@/lib/session";
 
-import type { TaCandidateStageRow, UserOption } from "./stage-types";
+import type { TaApplicationStageRow, UserOption } from "./stage-types";
 
-export async function listTaCandidateStages(candidateId: string): Promise<TaCandidateStageRow[]> {
+export async function listTaApplicationStages(applicationId: string): Promise<TaApplicationStageRow[]> {
   await authorize("talent_acquisition:read");
 
   return db
     .select({
-      id: taCandidateStage.id,
-      candidateId: taCandidateStage.candidateId,
-      stage: taCandidateStage.stage,
-      status: taCandidateStage.status,
-      assigneeId: taCandidateStage.assigneeId,
+      id: taApplicationStage.id,
+      applicationId: taApplicationStage.applicationId,
+      stage: taApplicationStage.stage,
+      status: taApplicationStage.status,
+      assigneeId: taApplicationStage.assigneeId,
       assigneeName: user.name,
-      notes: taCandidateStage.notes,
-      completedAt: taCandidateStage.completedAt,
-      createdAt: taCandidateStage.createdAt,
-      updatedAt: taCandidateStage.updatedAt,
+      notes: taApplicationStage.notes,
+      completedAt: taApplicationStage.completedAt,
+      createdAt: taApplicationStage.createdAt,
+      updatedAt: taApplicationStage.updatedAt,
     })
-    .from(taCandidateStage)
-    .leftJoin(user, eq(taCandidateStage.assigneeId, user.id))
-    .where(eq(taCandidateStage.candidateId, candidateId));
+    .from(taApplicationStage)
+    .leftJoin(user, eq(taApplicationStage.assigneeId, user.id))
+    .where(eq(taApplicationStage.applicationId, applicationId));
 }
 
 /**

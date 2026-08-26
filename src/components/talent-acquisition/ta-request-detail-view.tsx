@@ -20,9 +20,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { RICH_TEXT_CONTENT_CLASSNAME } from "@/components/ui/rich-text-editor";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import type { ActionResult } from "@/lib/action-result";
 import { cn } from "@/lib/utils";
-import { cancelTaRequest, fetchTaRequest } from "@/server/talent-acquisition/actions";
+import { approveTaRequest, cancelTaRequest, fetchTaRequest, rejectTaRequest } from "@/server/talent-acquisition/actions";
 import { taRequestQueryKey } from "@/server/talent-acquisition/query-key";
 import { TA_REQUEST_STATUS_LABELS, WORK_SETUP_LABELS, type TaRequestRow } from "@/server/talent-acquisition/types";
 
@@ -31,6 +32,7 @@ type TaRequestDetailViewProps = {
   canWrite: boolean;
   canEdit: boolean;
   canDelete: boolean;
+  canApprove: boolean;
   canL1Assess: boolean;
   canL2Assess: boolean;
   canFinalize: boolean;
@@ -39,11 +41,20 @@ type TaRequestDetailViewProps = {
   hasOverrideAccess: boolean;
 };
 
+const REQUEST_STATUS_BADGE_VARIANT: Record<TaRequestRow["status"], "default" | "secondary" | "outline"> = {
+  pending_approval: "secondary",
+  open: "default",
+  partially_filled: "default",
+  filled: "default",
+  cancelled: "outline",
+};
+
 export function TaRequestDetailView({
   requestId,
   canWrite,
   canEdit,
   canDelete,
+  canApprove,
   canL1Assess,
   canL2Assess,
   canFinalize,
@@ -53,6 +64,8 @@ export function TaRequestDetailView({
 }: TaRequestDetailViewProps) {
   const queryClient = useQueryClient();
   const [confirmingCancel, setConfirmingCancel] = React.useState(false);
+  const [rejecting, setRejecting] = React.useState(false);
+  const [rejectReason, setRejectReason] = React.useState("");
 
   const { data: request, isPending } = useQuery<TaRequestRow | null>({
     queryKey: taRequestQueryKey(requestId),
@@ -66,6 +79,8 @@ export function TaRequestDetailView({
         toast.success(result.message);
         void queryClient.invalidateQueries({ queryKey: taRequestQueryKey(requestId) });
         setConfirmingCancel(false);
+        setRejecting(false);
+        setRejectReason("");
       } else {
         toast.error(result.error);
       }
@@ -84,6 +99,7 @@ export function TaRequestDetailView({
   }
 
   const canCancel = canEdit && request.status !== "cancelled";
+  const canReview = canApprove && request.status === "pending_approval";
 
   return (
     <div className="space-y-6">
@@ -93,7 +109,7 @@ export function TaRequestDetailView({
             <div>
               <dt className="text-muted-foreground text-xs">Status</dt>
               <dd className="mt-0.5">
-                <Badge variant={request.status === "cancelled" ? "outline" : "default"} className="font-normal">
+                <Badge variant={REQUEST_STATUS_BADGE_VARIANT[request.status]} className="font-normal">
                   {TA_REQUEST_STATUS_LABELS[request.status]}
                 </Badge>
               </dd>
@@ -123,12 +139,34 @@ export function TaRequestDetailView({
             </div>
           </dl>
 
-          {canCancel ? (
-            <Button variant="outline" size="sm" onClick={() => setConfirmingCancel(true)}>
-              Cancel request
-            </Button>
-          ) : null}
+          <div className="flex gap-2">
+            {canReview ? (
+              <>
+                <Button variant="outline" size="sm" disabled={mutation.isPending} onClick={() => setRejecting(true)}>
+                  Reject
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={mutation.isPending}
+                  onClick={() => mutation.mutate(() => approveTaRequest({ id: requestId }))}
+                >
+                  Approve
+                </Button>
+              </>
+            ) : canCancel ? (
+              <Button variant="outline" size="sm" onClick={() => setConfirmingCancel(true)}>
+                Cancel request
+              </Button>
+            ) : null}
+          </div>
         </div>
+
+        {request.status === "cancelled" && request.reviewNote ? (
+          <div className="border-t pt-4">
+            <p className="text-muted-foreground text-xs">Rejection reason</p>
+            <p className="mt-1 text-sm whitespace-pre-wrap">{request.reviewNote}</p>
+          </div>
+        ) : null}
 
         {request.notes ? (
           <div className="border-t pt-4">
@@ -163,7 +201,7 @@ export function TaRequestDetailView({
 
       <CandidateList
         requestId={requestId}
-        requestCancelled={request.status === "cancelled"}
+        candidatesBlocked={request.status === "cancelled" || request.status === "pending_approval"}
         canWrite={canWrite}
         canEdit={canEdit}
         canDelete={canDelete}
@@ -197,6 +235,46 @@ export function TaRequestDetailView({
               }}
             >
               Cancel request
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={rejecting}
+        onOpenChange={(open) => {
+          setRejecting(open);
+          if (!open) setRejectReason("");
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reject this request?</AlertDialogTitle>
+            <AlertDialogDescription>
+              <span className="text-foreground font-medium">
+                {request.positionName} — {request.levelName}
+              </span>{" "}
+              for {request.clientName} will be marked cancelled. Let the requester know why.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <Textarea
+            value={rejectReason}
+            onChange={(event) => setRejectReason(event.target.value)}
+            placeholder="Reason for rejecting"
+            rows={3}
+            disabled={mutation.isPending}
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={mutation.isPending}>Keep pending</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={mutation.isPending || !rejectReason.trim()}
+              onClick={(event) => {
+                event.preventDefault();
+                mutation.mutate(() => rejectTaRequest({ id: requestId, reviewNote: rejectReason }));
+              }}
+            >
+              Reject request
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
