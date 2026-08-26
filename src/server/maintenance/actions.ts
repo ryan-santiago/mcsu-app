@@ -13,6 +13,7 @@ import {
   employmentType,
   engagementType,
   gender,
+  jobPostingSource,
   jobProfile,
   level,
   position,
@@ -20,6 +21,8 @@ import {
   projectDetailTeam,
   salesRepresentative,
   solutionsManager,
+  taCandidate,
+  taRequest,
   team,
 } from "@/db/schema";
 import type { ActionResult } from "@/lib/action-result";
@@ -40,6 +43,7 @@ const kindSchema = z.enum([
   "solutions_manager",
   "engagement_type",
   "employment_type",
+  "job_posting_source",
 ]);
 const nameSchema = z.string().trim().min(1, "Name is required").max(100, "That name is too long");
 const optionalEmailSchema = emailSchema.optional().or(z.literal(""));
@@ -77,6 +81,8 @@ function tableFor(kind: LookupKind) {
       return engagementType;
     case "employment_type":
       return employmentType;
+    case "job_posting_source":
+      return jobPostingSource;
   }
 }
 
@@ -117,7 +123,8 @@ async function usageCount(kind: LookupKind, id: string): Promise<number> {
         .from(employeeDeployment)
         .where(eq(employeeDeployment.clientId, id));
       const [projectRow] = await db.select({ total: count() }).from(project).where(eq(project.clientId, id));
-      return (deploymentRow?.total ?? 0) + (projectRow?.total ?? 0);
+      const [taRequestRow] = await db.select({ total: count() }).from(taRequest).where(eq(taRequest.clientId, id));
+      return (deploymentRow?.total ?? 0) + (projectRow?.total ?? 0) + (taRequestRow?.total ?? 0);
     }
     case "sales_representative": {
       const [row] = await db
@@ -145,6 +152,10 @@ async function usageCount(kind: LookupKind, id: string): Promise<number> {
         .select({ total: count() })
         .from(employeeEmployment)
         .where(eq(employeeEmployment.employmentTypeId, id));
+      return row?.total ?? 0;
+    }
+    case "job_posting_source": {
+      const [row] = await db.select({ total: count() }).from(taCandidate).where(eq(taCandidate.sourceId, id));
       return row?.total ?? 0;
     }
   }

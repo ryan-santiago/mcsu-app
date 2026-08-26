@@ -17,6 +17,7 @@ export type NavIconKey =
 	| 'audit'
 	| 'employees'
 	| 'projects'
+	| 'talent-acquisition'
 	| 'activity-report'
 	| 'maintenance'
 	| 'devices'
@@ -117,6 +118,22 @@ export const NAVIGATION: readonly NavGroup[] = [
 				children: [
 					{ title: 'Add project', path: '/projects/new' },
 					{ title: 'View / Edit Project', dynamic: true },
+				],
+			},
+		],
+	},
+	{
+		title: 'Talent Acquisition',
+		items: [
+			{
+				title: 'Requests',
+				href: '/talent-acquisition',
+				icon: 'talent-acquisition',
+				permissions: ['talent_acquisition:read'],
+				matchNested: true,
+				children: [
+					{ title: 'New request', path: '/talent-acquisition/new' },
+					{ title: 'View request', dynamic: true },
 				],
 			},
 		],

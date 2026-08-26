@@ -11,3 +11,6 @@ export type JobProfileRow = {
   createdAt: Date;
   updatedAt: Date;
 };
+
+/** "Position — Level", for the Talent Acquisition Request form's picker. */
+export type JobProfileOption = { id: string; label: string };

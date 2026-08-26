@@ -7,6 +7,7 @@ import {
   Contact,
   FileSignature,
   Handshake,
+  Link2,
   MoreHorizontal,
   TrendingUp,
   UserCog,
@@ -36,6 +37,7 @@ const TAB_ICONS = {
   solutions_manager: UserCog,
   engagement_type: Handshake,
   employment_type: FileSignature,
+  job_posting_source: Link2,
   job_profile: BriefcaseBusiness,
 } satisfies Record<MaintenanceTab, LucideIcon>;
 
@@ -49,6 +51,7 @@ const KINDS: LookupKind[] = [
   "gender",
   "sales_representative",
   "solutions_manager",
+  "job_posting_source",
 ];
 
 const TABS: MaintenanceTab[] = [...KINDS, "job_profile"];

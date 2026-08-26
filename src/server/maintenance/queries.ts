@@ -8,6 +8,7 @@ import {
   employmentType,
   engagementType,
   gender,
+  jobPostingSource,
   level,
   position,
   salesRepresentative,
@@ -39,6 +40,8 @@ function tableFor(kind: LookupKind) {
       return engagementType;
     case "employment_type":
       return employmentType;
+    case "job_posting_source":
+      return jobPostingSource;
   }
 }
 

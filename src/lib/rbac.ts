@@ -43,6 +43,29 @@ export const PERMISSIONS = [
   "projects:edit",
   "projects:delete",
 
+  "talent_acquisition:read",
+  "talent_acquisition:write",
+  /** Covers editing request/candidate details and uploading a CV. */
+  "talent_acquisition:edit",
+  "talent_acquisition:delete",
+  /**
+   * Stage-transition permissions, additive to the standard four above. These
+   * don't get a column in the Access Control matrix's uniform Read/Write/
+   * Edit/Delete grid (`role-permission-matrix.tsx`'s `MatrixBody` renders one
+   * shared header row across every module) — instead they get their own
+   * small "Additional Permissions" section in the same per-role dialog. See
+   * docs/RBAC.md "Add a permission" for the general recipe; this is the one
+   * deliberate deviation from "every module gets exactly four actions".
+   */
+  /** Mark L1 Assessment passed/failed. */
+  "talent_acquisition:l1_assess",
+  /** Be assignable to, and complete, L2 Assessment — Client Interview (if flagged) inherits the same assignee. */
+  "talent_acquisition:l2_assess",
+  /** Final Interview and Job Offer — folded into one permission, same grantee tier for both. */
+  "talent_acquisition:finalize",
+  /** Migrate a candidate into the Employee module. */
+  "talent_acquisition:migrate",
+
   "maintenance:read",
   "maintenance:write",
   /** Covers update, activate and deactivate. */
@@ -92,6 +115,7 @@ export const MODULES = [
   { id: "announcements", label: "Announcements" },
   { id: "employees", label: "Employees" },
   { id: "projects", label: "Projects" },
+  { id: "talent_acquisition", label: "Talent Acquisition" },
   { id: "staff_augmentation", label: "Staff Augmentation" },
   { id: "one_lot_projects", label: "One-Lot Projects" },
   { id: "maintenance", label: "Maintenance" },
@@ -112,6 +136,21 @@ export type Action = (typeof ACTIONS)[number];
 export function permissionFor(moduleId: ModuleId, action: Action): Permission {
   return `${moduleId}:${action}` as Permission;
 }
+
+/**
+ * Talent Acquisition's stage-transition permissions — the one set of
+ * permissions that doesn't fit the standard Read/Write/Edit/Delete grid (see
+ * the comment above their entries in `PERMISSIONS`). Rendered as a small
+ * second table in `RolePermissionMatrix`, keyed off this list rather than
+ * `MODULES`/`ACTIONS`, so a future module needing the same treatment can
+ * follow the same shape without touching the main grid.
+ */
+export const TALENT_ACQUISITION_STAGE_PERMISSIONS: readonly { permission: Permission; label: string }[] = [
+  { permission: "talent_acquisition:l1_assess", label: "L1 Assessment" },
+  { permission: "talent_acquisition:l2_assess", label: "L2 Assessment / Client Interview" },
+  { permission: "talent_acquisition:finalize", label: "Final Interview / Job Offer" },
+  { permission: "talent_acquisition:migrate", label: "Migrate to Employee" },
+];
 
 /* -------------------------------------------------------------------------- */
 /*  Roles                                                                    */

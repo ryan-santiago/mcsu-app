@@ -314,6 +314,11 @@ export const engagementType = pgTable("engagement_type", lookupColumns, (table) 
   uniqueIndex("engagement_type_name_idx").on(table.name),
 ]);
 
+/** Where a Talent Acquisition candidate was sourced from — LinkedIn, Indeed, referral, etc. */
+export const jobPostingSource = pgTable("job_posting_source", lookupColumns, (table) => [
+  uniqueIndex("job_posting_source_name_idx").on(table.name),
+]);
+
 /**
  * A job description/qualification pinned to one Position × Level combination
  * — e.g. "Software Developer" + "Junior" reads very differently from
@@ -353,6 +358,169 @@ export const jobProfile = pgTable(
       .notNull(),
   },
   (table) => [uniqueIndex("job_profile_position_level_idx").on(table.positionId, table.levelId)],
+);
+
+/* -------------------------------------------------------------------------- */
+/*  Talent Acquisition                                                        */
+/* -------------------------------------------------------------------------- */
+
+export const workSetup = pgEnum("work_setup", ["onsite", "hybrid", "remote"]);
+export const taRequestStatus = pgEnum("ta_request_status", [
+  "open",
+  "partially_filled",
+  "filled",
+  "cancelled",
+]);
+export const taCandidateStatus = pgEnum("ta_candidate_status", [
+  "active",
+  "hired",
+  "rejected",
+  "withdrawn",
+]);
+/** `client_interview` only applies when `taCandidate.clientInterviewRequired` is set. */
+export const taStage = pgEnum("ta_stage", [
+  "l1_assessment",
+  "l2_assessment",
+  "client_interview",
+  "final_interview",
+  "job_offer",
+]);
+export const taStageStatus = pgEnum("ta_stage_status", [
+  "pending",
+  "in_progress",
+  "passed",
+  "failed",
+  "skipped",
+]);
+
+/**
+ * A Manager's headcount request — Position/Level comes from a `jobProfile`
+ * (never duplicated here as raw `positionId`/`levelId`), so the request
+ * carries whatever job description/qualification the profile already has.
+ */
+export const taRequest = pgTable(
+  "ta_request",
+  {
+    id: text("id").primaryKey(),
+    jobProfileId: text("job_profile_id")
+      .notNull()
+      .references(() => jobProfile.id, { onDelete: "restrict" }),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => client.id, { onDelete: "restrict" }),
+    headcountNeeded: integer("headcount_needed").notNull(),
+    workSetup: workSetup("work_setup").notNull(),
+    /** Onsite location, or a description of the hybrid schedule. Null for fully remote. */
+    workSetupDetail: text("work_setup_detail"),
+    status: taRequestStatus("status").notNull().default("open"),
+    notes: text("notes"),
+    requestedBy: text("requested_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("ta_request_job_profile_idx").on(table.jobProfileId),
+    index("ta_request_client_idx").on(table.clientId),
+  ],
+);
+
+/**
+ * Deliberately a *lighter* profile than `employee` — full addresses,
+ * government IDs, salary and employment type stay Employee-only, captured at
+ * migration time (`migrateCandidateToEmployee`) rather than duplicated here.
+ */
+export const taCandidate = pgTable(
+  "ta_candidate",
+  {
+    id: text("id").primaryKey(),
+    requestId: text("request_id")
+      .notNull()
+      .references(() => taRequest.id, { onDelete: "cascade" }),
+    firstName: text("first_name").notNull(),
+    middleName: text("middle_name"),
+    lastName: text("last_name").notNull(),
+    genderId: text("gender_id").references(() => gender.id, { onDelete: "set null" }),
+    mobileNumber: text("mobile_number"),
+    personalEmail: text("personal_email"),
+    sourceId: text("source_id").references(() => jobPostingSource.id, { onDelete: "set null" }),
+    /** One CV per candidate — reuses the One-Lot Project Docs storage mechanism, see `src/lib/document-storage.ts`. */
+    cvStorageKey: text("cv_storage_key"),
+    cvFileName: text("cv_file_name"),
+    cvMimeType: text("cv_mime_type"),
+    cvSize: integer("cv_size"),
+    /** Set by the L2 assignee when completing L2 Assessment — an explicit toggle rather than implicitly skipping the stage. */
+    clientInterviewRequired: boolean("client_interview_required").notNull().default(false),
+    targetOnboardDate: date("target_onboard_date"),
+    status: taCandidateStatus("status").notNull().default("active"),
+    /** Set once migrated — the candidate row is kept for history, not deleted. */
+    employeeId: text("employee_id").references(() => employee.id, { onDelete: "set null" }),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("ta_candidate_request_idx").on(table.requestId),
+    index("ta_candidate_employee_idx").on(table.employeeId),
+  ],
+);
+
+/**
+ * One row per applicable stage per candidate, created lazily as the pipeline
+ * advances — not all five upfront, since `client_interview` may never apply.
+ * `assigneeId` is enforced (actor must match) only for `l2_assessment` and
+ * `client_interview` in the action layer; informational only for the rest.
+ */
+export const taCandidateStage = pgTable(
+  "ta_candidate_stage",
+  {
+    id: text("id").primaryKey(),
+    candidateId: text("candidate_id")
+      .notNull()
+      .references(() => taCandidate.id, { onDelete: "cascade" }),
+    stage: taStage("stage").notNull(),
+    status: taStageStatus("status").notNull().default("pending"),
+    assigneeId: text("assignee_id").references(() => user.id, { onDelete: "set null" }),
+    notes: text("notes"),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("ta_candidate_stage_candidate_idx").on(table.candidateId),
+    uniqueIndex("ta_candidate_stage_candidate_stage_idx").on(table.candidateId, table.stage),
+  ],
+);
+
+/** Flat comment list — verbatim port of `oneLotProjectWorkItemComment`'s shape. */
+export const taCandidateComment = pgTable(
+  "ta_candidate_comment",
+  {
+    id: text("id").primaryKey(),
+    candidateId: text("candidate_id")
+      .notNull()
+      .references(() => taCandidate.id, { onDelete: "cascade" }),
+    body: text("body").notNull(),
+    authorId: text("author_id").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => [index("ta_candidate_comment_candidate_idx").on(table.candidateId)],
 );
 
 /* -------------------------------------------------------------------------- */
@@ -1369,6 +1537,33 @@ export const jobProfileRelations = relations(jobProfile, ({ one }) => ({
   author: one(user, { fields: [jobProfile.createdBy], references: [user.id] }),
 }));
 
+export const taRequestRelations = relations(taRequest, ({ one, many }) => ({
+  jobProfile: one(jobProfile, { fields: [taRequest.jobProfileId], references: [jobProfile.id] }),
+  client: one(client, { fields: [taRequest.clientId], references: [client.id] }),
+  requester: one(user, { fields: [taRequest.requestedBy], references: [user.id] }),
+  candidates: many(taCandidate),
+}));
+
+export const taCandidateRelations = relations(taCandidate, ({ one, many }) => ({
+  request: one(taRequest, { fields: [taCandidate.requestId], references: [taRequest.id] }),
+  gender: one(gender, { fields: [taCandidate.genderId], references: [gender.id] }),
+  source: one(jobPostingSource, { fields: [taCandidate.sourceId], references: [jobPostingSource.id] }),
+  employee: one(employee, { fields: [taCandidate.employeeId], references: [employee.id] }),
+  author: one(user, { fields: [taCandidate.createdBy], references: [user.id] }),
+  stages: many(taCandidateStage),
+  comments: many(taCandidateComment),
+}));
+
+export const taCandidateStageRelations = relations(taCandidateStage, ({ one }) => ({
+  candidate: one(taCandidate, { fields: [taCandidateStage.candidateId], references: [taCandidate.id] }),
+  assignee: one(user, { fields: [taCandidateStage.assigneeId], references: [user.id] }),
+}));
+
+export const taCandidateCommentRelations = relations(taCandidateComment, ({ one }) => ({
+  candidate: one(taCandidate, { fields: [taCandidateComment.candidateId], references: [taCandidate.id] }),
+  author: one(user, { fields: [taCandidateComment.authorId], references: [user.id] }),
+}));
+
 /* -------------------------------------------------------------------------- */
 /*  Inferred types                                                            */
 /* -------------------------------------------------------------------------- */
@@ -1456,3 +1651,19 @@ export type AnnouncementType = (typeof announcementType.enumValues)[number];
 
 export type JobProfile = typeof jobProfile.$inferSelect;
 export type NewJobProfile = typeof jobProfile.$inferInsert;
+
+export type JobPostingSource = typeof jobPostingSource.$inferSelect;
+
+export type WorkSetup = (typeof workSetup.enumValues)[number];
+export type TaRequest = typeof taRequest.$inferSelect;
+export type NewTaRequest = typeof taRequest.$inferInsert;
+export type TaRequestStatus = (typeof taRequestStatus.enumValues)[number];
+export type TaCandidate = typeof taCandidate.$inferSelect;
+export type NewTaCandidate = typeof taCandidate.$inferInsert;
+export type TaCandidateStatus = (typeof taCandidateStatus.enumValues)[number];
+export type TaCandidateStage = typeof taCandidateStage.$inferSelect;
+export type NewTaCandidateStage = typeof taCandidateStage.$inferInsert;
+export type TaStage = (typeof taStage.enumValues)[number];
+export type TaStageStatus = (typeof taStageStatus.enumValues)[number];
+export type TaCandidateComment = typeof taCandidateComment.$inferSelect;
+export type NewTaCandidateComment = typeof taCandidateComment.$inferInsert;

@@ -22,6 +22,8 @@ export const AUDIT_MODULES = [
   { value: "activity_reports", label: "Activity Reports" },
   { value: "staff_augmentation", label: "Staff Augmentation" },
   { value: "one_lot_projects", label: "One-Lot Projects" },
+  { value: "ta_requests", label: "Talent Acquisition — Requests" },
+  { value: "ta_candidates", label: "Talent Acquisition — Candidates" },
   { value: "clients", label: "Maintenance — Clients" },
   { value: "positions", label: "Maintenance — Positions" },
   { value: "levels", label: "Maintenance — Levels" },
@@ -32,6 +34,7 @@ export const AUDIT_MODULES = [
   { value: "engagement_types", label: "Maintenance — Engagement Types" },
   { value: "employment_types", label: "Maintenance — Employment Types" },
   { value: "job_profiles", label: "Maintenance — Job Profiles" },
+  { value: "job_posting_sources", label: "Maintenance — Job Posting Sources" },
   { value: "roles", label: "Access Control" },
 ] as const;
 
@@ -84,6 +87,11 @@ export const AUDIT_ACTIONS = [
   { value: "document_uploaded", label: "Document uploaded" },
   { value: "document_renamed", label: "Document renamed" },
   { value: "document_deleted", label: "Document deleted" },
+  { value: "candidate_added", label: "Candidate added" },
+  { value: "candidate_updated", label: "Candidate updated" },
+  { value: "cv_uploaded", label: "CV uploaded" },
+  { value: "stage_updated", label: "Stage updated" },
+  { value: "migrated_to_employee", label: "Migrated to Employee" },
   { value: "deleted", label: "Deleted" },
   { value: "login", label: "Signed in" },
 ] as const;

@@ -10,7 +10,8 @@ export type LookupKind =
   | "sales_representative"
   | "solutions_manager"
   | "engagement_type"
-  | "employment_type";
+  | "employment_type"
+  | "job_posting_source";
 
 export const LOOKUP_KINDS: readonly LookupKind[] = [
   "client",
@@ -22,6 +23,7 @@ export const LOOKUP_KINDS: readonly LookupKind[] = [
   "solutions_manager",
   "engagement_type",
   "employment_type",
+  "job_posting_source",
 ];
 
 export type LookupRow = {
@@ -72,5 +74,12 @@ export const LOOKUP_META: Record<
     auditModule: "employment_types",
     hasEmail: false,
     tabLabel: "Employment",
+  },
+  job_posting_source: {
+    label: "Job Posting Sources",
+    singular: "Job Posting Source",
+    auditModule: "job_posting_sources",
+    hasEmail: false,
+    tabLabel: "Job Sources",
   },
 };
