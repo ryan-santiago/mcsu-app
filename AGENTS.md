@@ -22,6 +22,7 @@ Internal console for the Managed Cloud Services Unit at Questronix Corporation.
 | `docs/SETUP.md` | Environment and deployment |
 | `docs/ROADMAP.md` | What's next and what's deliberately missing |
 | `docs/DOCUMENTS.md` | One-Lot Project Docs — local-disk storage now, SharePoint plan, IT asks |
+| `docs/EMPLOYEE_RECOMMENDATION.md` | Employee Recommendation module — plan, data model, generic approval engine, open questions |
 
 ## Rules that are easy to get wrong
 

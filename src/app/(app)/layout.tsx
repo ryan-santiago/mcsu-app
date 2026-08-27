@@ -2,6 +2,8 @@ import { AppSidebar } from "@/components/layout/app-sidebar";
 import { AppTopbar } from "@/components/layout/app-topbar";
 import { visibleNavigation } from "@/lib/navigation";
 import { requireUser } from "@/lib/session";
+import { countPendingChangeRequestApprovals } from "@/server/change-requests/queries";
+import { countPendingApprovalsForActor } from "@/server/employee-recommendations/queries";
 import { getEngagementNavData } from "@/server/engagement/nav";
 import { countPendingUserApprovals } from "@/server/notifications/queries";
 
@@ -14,16 +16,22 @@ import { countPendingUserApprovals } from "@/server/notifications/queries";
  */
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const user = await requireUser();
-  const [dynamicNav, pendingUserApprovals] = await Promise.all([
-    getEngagementNavData(user),
-    countPendingUserApprovals(),
-  ]);
+  const [dynamicNav, pendingUserApprovals, pendingRecommendationApprovals, pendingChangeRequestApprovals] =
+    await Promise.all([
+      getEngagementNavData(user),
+      countPendingUserApprovals(),
+      countPendingApprovalsForActor(),
+      countPendingChangeRequestApprovals(),
+    ]);
 
-  // Only User Management has a live badge source today — see AGENTS.md's
-  // note on this feature starting out scoped there. `countPendingUserApprovals()`
-  // already returns 0 for anyone without `users:edit`, so no separate guard here.
-  const navBadges: Record<string, number> =
-    pendingUserApprovals > 0 ? { "/admin/users": pendingUserApprovals } : {};
+  // `countPendingUserApprovals()`/`countPendingApprovalsForActor()`/
+  // `countPendingChangeRequestApprovals()` already return 0 for anyone
+  // without the relevant permission, so no separate guard here.
+  const navBadges: Record<string, number> = {
+    ...(pendingUserApprovals > 0 ? { "/admin/users": pendingUserApprovals } : {}),
+    ...(pendingRecommendationApprovals > 0 ? { "/employee-recommendations": pendingRecommendationApprovals } : {}),
+    ...(pendingChangeRequestApprovals > 0 ? { "/admin/approvals": pendingChangeRequestApprovals } : {}),
+  };
 
   // Static permission-based filtering (`visibleNavigation()`) can't see
   // One-Lot Project's membership-based access — no DB access there — so a

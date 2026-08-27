@@ -16,6 +16,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   ACTIONS,
+  EMPLOYEE_RECOMMENDATION_STAGE_PERMISSIONS,
   MODULES,
   permissionFor,
   TALENT_ACQUISITION_STAGE_PERMISSIONS,
@@ -176,6 +177,29 @@ function MatrixBody({
           <Table>
             <TableBody>
               {TALENT_ACQUISITION_STAGE_PERMISSIONS.map(({ permission, label }) => (
+                <TableRow key={permission}>
+                  <TableCell className="font-medium">{label}</TableCell>
+                  <TableCell className="w-16 text-center">
+                    <Checkbox
+                      checked={locked || granted.has(permission)}
+                      disabled={readOnly || pending}
+                      onCheckedChange={(checked) => toggle(permission, checked === true)}
+                      aria-label={label}
+                    />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-muted-foreground text-sm font-medium">Employee Recommendation — Additional Permissions</p>
+        <div className="overflow-x-auto rounded-lg border">
+          <Table>
+            <TableBody>
+              {EMPLOYEE_RECOMMENDATION_STAGE_PERMISSIONS.map(({ permission, label }) => (
                 <TableRow key={permission}>
                   <TableCell className="font-medium">{label}</TableCell>
                   <TableCell className="w-16 text-center">

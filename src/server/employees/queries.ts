@@ -71,6 +71,7 @@ function buildWhere(
 export function latestEmploymentSubquery() {
   return db
     .selectDistinctOn([employeeEmployment.employeeId], {
+      id: employeeEmployment.id,
       employeeId: employeeEmployment.employeeId,
       // `.as()` forces distinct column names in the subquery's own SELECT
       // list — without it, Drizzle emits both `level.name` and
@@ -80,6 +81,8 @@ export function latestEmploymentSubquery() {
       positionName: sql<string>`${position.name}`.as("position_name"),
       employmentTypeId: employeeEmployment.employmentTypeId,
       employmentTypeName: sql<string>`${employmentType.name}`.as("employment_type_name"),
+      /** Needed by Employee Recommendation's monitoring queue — see src/server/employee-recommendations/queries.ts. */
+      endDate: employeeEmployment.endDate,
     })
     .from(employeeEmployment)
     .innerJoin(level, eq(level.id, employeeEmployment.levelId))

@@ -38,6 +38,14 @@ export type LookupRow = {
 
 export type LookupOption = { id: string; name: string };
 
+/** One row in the Team Approvers panel — see `listTeamApprovers()`. */
+export type TeamApproverRow = {
+  teamId: string;
+  teamName: string;
+  unitManager: LookupOption | null;
+  departmentHead: LookupOption | null;
+};
+
 export const LOOKUP_META: Record<
   LookupKind,
   { label: string; singular: string; auditModule: AuditModule; hasEmail: boolean; tabLabel?: string }

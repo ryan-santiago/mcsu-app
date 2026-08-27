@@ -130,6 +130,16 @@ Six demo accounts spanning every role and status, including two pending ones so
 you can exercise the approval flow. Re-running is safe — existing emails are
 skipped.
 
+### Testing against this dev database
+
+The `admin@questronix.com.ph` / `ChangeMe!MCSU2026` pair above is only what
+`npm run db:seed` creates on an **empty** database — it won't match this
+project's already-provisioned dev database, which has its own real accounts
+created through `/register`. For automated/agent testing against a live dev
+database, sign-in credentials belong in `.env.local` (gitignored, never
+committed) as `TEST_ADMIN_EMAIL` / `TEST_ADMIN_PASSWORD` — check there before
+asking a teammate for one.
+
 ## 6. Run
 
 ```bash

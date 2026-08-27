@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { notificationRead, user } from "@/db/schema";
 import { can } from "@/lib/rbac";
 import { getCurrentUser, type CurrentUser } from "@/lib/session";
+import { listPendingApprovalsForActor } from "@/server/employee-recommendations/queries";
 
 import type { NotificationItem } from "./types";
 
@@ -39,7 +40,23 @@ async function pendingUserSource(actor: CurrentUser): Promise<Array<Omit<Notific
   }));
 }
 
-const NOTIFICATION_SOURCES: readonly NotificationSource[] = [pendingUserSource];
+/** Reuses the "Needs your approval" list's own query rather than duplicating it — see `listPendingApprovalsForActor()`. */
+async function pendingRecommendationApprovalSource(actor: CurrentUser): Promise<Array<Omit<NotificationItem, "read">>> {
+  if (!can(actor, "employee_recommendations:approve")) return [];
+
+  const items = await listPendingApprovalsForActor();
+  return items.map((item) => ({
+    key: `employee_recommendations:${item.stepId}`,
+    module: "employee_recommendations",
+    entityId: item.stepId,
+    title: "Recommendation needs your approval",
+    description: `${item.employeeName} — submitted by ${item.requestedByLabel}`,
+    href: `/employee-recommendations/${item.recommendationId}`,
+    createdAt: item.submittedAt,
+  }));
+}
+
+const NOTIFICATION_SOURCES: readonly NotificationSource[] = [pendingUserSource, pendingRecommendationApprovalSource];
 
 /** The header bell's feed: every open item across every source, marked read/unread for the current viewer. */
 export async function listNotifications(): Promise<NotificationItem[]> {

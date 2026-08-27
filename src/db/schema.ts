@@ -288,9 +288,27 @@ export const gender = pgTable("gender", lookupColumns, (table) => [
   uniqueIndex("gender_name_idx").on(table.name),
 ]);
 
-export const team = pgTable("team", lookupColumns, (table) => [
-  uniqueIndex("team_name_idx").on(table.name),
-]);
+/**
+ * `unitManagerUserId`/`departmentHeadUserId` resolve "who approves for this
+ * team" for the Employee Recommendation approval chain (and any future
+ * consumer of the generic approval engine below) — there is no general
+ * reporting-line/org-hierarchy model in this schema, so this is the
+ * explicit, admin-editable stand-in for one. References `user`, not
+ * `employee` (changed 2026-08-27): a Department Head/Unit Manager is
+ * identified by the account that logs in and clicks Approve, and isn't
+ * necessarily tracked as an "employee" in the HR sense — requiring an
+ * Employee record just to be assignable here proved to be the wrong
+ * constraint in practice. See docs/EMPLOYEE_RECOMMENDATION.md §9.
+ */
+export const team = pgTable(
+  "team",
+  () => ({
+    ...lookupColumns(),
+    unitManagerUserId: text("unit_manager_user_id").references(() => user.id, { onDelete: "set null" }),
+    departmentHeadUserId: text("department_head_user_id").references(() => user.id, { onDelete: "set null" }),
+  }),
+  (table) => [uniqueIndex("team_name_idx").on(table.name)],
+);
 
 /**
  * The only two lookup kinds that carry an email — for future notifications
@@ -918,8 +936,26 @@ export const employeeDeployment = pgTable(
  * values (applied on approval); `changes` snapshots the `diffFields()` output
  * at submission time so the review UI never has to recompute a diff against
  * a record that may have moved on since.
+ *
+ * `approvalRequestId` links this into the generic approval engine below
+ * (`approvalRequest`/`approvalStep`, migrated onto 2026-08-27) purely so a
+ * future unified inbox/notification/badge can enumerate this alongside
+ * Employee Recommendation without a second query shape — `status`/
+ * `reviewedBy`/`reviewedAt`/`reviewNote` stay right here as the denormalized
+ * quick-read mirror (same convention `employeeRecommendation.status` already
+ * uses), so nothing that reads this table directly had to change. Unlike
+ * Employee Recommendation, there is no single named approver — any
+ * `employees:edit` holder in scope may act (see `approvalStep.approverUserId`'s
+ * doc comment) — so this is still authorized by `checkReviewerOutranksRequester`/
+ * `assertRequestInScope` in `src/server/change-requests/actions.ts`, not by
+ * matching a specific approver.
  */
-export const changeRequestStatus = pgEnum("change_request_status", ["pending", "approved", "rejected"]);
+export const changeRequestStatus = pgEnum("change_request_status", [
+  "pending",
+  "approved",
+  "rejected",
+  "cancelled",
+]);
 
 export const employeeChangeRequest = pgTable(
   "employee_change_request",
@@ -937,6 +973,9 @@ export const employeeChangeRequest = pgTable(
     reviewedBy: text("reviewed_by").references(() => user.id, { onDelete: "set null" }),
     reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
     reviewNote: text("review_note"),
+    approvalRequestId: text("approval_request_id").references((): AnyPgColumn => approvalRequest.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .$defaultFn(() => new Date())
       .notNull(),
@@ -1468,6 +1507,209 @@ export const oneLotProjectDocument = pgTable(
 );
 
 /* -------------------------------------------------------------------------- */
+/*  Approval Workflow — generic engine                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Entity-agnostic multi-step approval, built for Employee Recommendation but
+ * deliberately not named after it — see docs/EMPLOYEE_RECOMMENDATION.md §1/§4.2.
+ * `employeeChangeRequest` migrated onto this 2026-08-27 (`taRequest` hasn't
+ * yet). Extend `approvalEntityType` for a future migration — don't add a
+ * second polymorphic table.
+ */
+export const approvalEntityType = pgEnum("approval_entity_type", [
+  "employee_recommendation",
+  "employee_change_request",
+]);
+export const approvalRequestStatus = pgEnum("approval_request_status", [
+  "pending",
+  "approved",
+  "rejected",
+  "cancelled",
+]);
+export const approvalStepStatus = pgEnum("approval_step_status", ["pending", "approved", "rejected", "skipped"]);
+
+/**
+ * `entityId` is a deliberate plain reference, not a foreign key — same
+ * reasoning as `auditLog.entityId`: one table can't reference N different
+ * domain tables. `entityType` namespaces it. `requestedByLabel`/
+ * `requesterRank` are snapshots taken at submission time, so a later role
+ * change doesn't retroactively alter what a step's rank-check compared
+ * against.
+ */
+export const approvalRequest = pgTable(
+  "approval_request",
+  {
+    id: text("id").primaryKey(),
+    entityType: approvalEntityType("entity_type").notNull(),
+    entityId: text("entity_id").notNull(),
+    requestedBy: text("requested_by").references(() => user.id, { onDelete: "set null" }),
+    requestedByLabel: text("requested_by_label").notNull(),
+    requesterRank: integer("requester_rank").notNull(),
+    status: approvalRequestStatus("status").default("pending").notNull(),
+    /** 1-based — which `approvalStep.stepOrder` is currently actionable. */
+    currentStepOrder: integer("current_step_order").notNull().default(1),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("approval_request_entity_idx").on(table.entityType, table.entityId),
+    index("approval_request_status_idx").on(table.status),
+  ],
+);
+
+/**
+ * One approver, one step — for entity types with a single *named* approver.
+ * `approverUserId` is resolved and snapshotted at creation time (from
+ * `team.unitManagerUserId`/`departmentHeadUserId` for Employee
+ * Recommendation) — a later team reassignment doesn't retroactively change
+ * who a pending step is waiting on. References `user`, not `employee`
+ * (changed 2026-08-27) — see `team`'s doc comment above.
+ *
+ * `approverUserId`/`requiredRoleId` are nullable (changed 2026-08-27, for
+ * `employee_change_request`): that entity type has no single named
+ * approver — any `employees:edit` holder in scope may act, a *pool* rather
+ * than one assignee. Null on both means "no single approver/role for this
+ * step; see the entity's own action layer (`checkReviewerOutranksRequester`/
+ * `assertRequestInScope` in `src/server/change-requests/actions.ts`) for who
+ * may act." Employee Recommendation steps always still set both.
+ */
+export const approvalStep = pgTable(
+  "approval_step",
+  {
+    id: text("id").primaryKey(),
+    approvalRequestId: text("approval_request_id")
+      .notNull()
+      .references(() => approvalRequest.id, { onDelete: "cascade" }),
+    stepOrder: integer("step_order").notNull(),
+    requiredRoleId: text("required_role_id").references(() => role.id, { onDelete: "restrict" }),
+    approverUserId: text("approver_user_id").references(() => user.id, { onDelete: "restrict" }),
+    status: approvalStepStatus("status").default("pending").notNull(),
+    decidedBy: text("decided_by").references(() => user.id, { onDelete: "set null" }),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("approval_step_request_idx").on(table.approvalRequestId),
+    uniqueIndex("approval_step_request_order_idx").on(table.approvalRequestId, table.stepOrder),
+  ],
+);
+
+/* -------------------------------------------------------------------------- */
+/*  Employee Recommendation                                                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Why a recommendation exists: system-flagged from an expiring PH/
+ * Probationary `employeeEmployment` row, or started by hand for a Regular
+ * employee's annual KPI cycle. See docs/EMPLOYEE_RECOMMENDATION.md §6.
+ */
+export const recommendationTriggerType = pgEnum("recommendation_trigger_type", [
+  "ph_contract_expiring",
+  "probationary_expiring",
+  "manual_regular",
+]);
+
+/**
+ * `submitted`/`approved`/`rejected` mirror the linked `approvalRequest`'s
+ * status (denormalized here too for fast list/filter queries without a
+ * join). `erf_generated`/`applied` are post-approval, Talent Acquisition
+ * Manager-only steps with no `approvalStep` of their own.
+ */
+export const recommendationStatus = pgEnum("recommendation_status", [
+  "draft",
+  "submitted",
+  "approved",
+  "rejected",
+  "erf_generated",
+  "applied",
+  "cancelled",
+]);
+
+/**
+ * Digitizes the paper "QSERV – MCSU Employee Recommendation Form". General
+ * Information fields are snapshotted at creation (not live-joined), so the
+ * generated ERF PDF always reflects what was true when filed — same
+ * reasoning as `employeeChangeRequest.changes`. `requestedActions` holds
+ * only the sections the submitter actually checked on the paper form (every
+ * key optional), mirroring `employeeChangeRequest.proposedProfile`'s
+ * jsonb-blob convention rather than ~20 mostly-empty discrete columns; its
+ * shape is Zod-typed in `src/lib/validation/employee-recommendations.ts`,
+ * not enforced by Postgres.
+ *
+ * Approval does not auto-apply anything — unlike `employeeChangeRequest`,
+ * applying an approved recommendation to `employeeEmployment` is a separate,
+ * explicit Talent Acquisition Manager action (`appliedToEmploymentHistoryAt`
+ * etc.) taken after HRD has processed the ERF externally.
+ */
+export const employeeRecommendation = pgTable(
+  "employee_recommendation",
+  {
+    id: text("id").primaryKey(),
+    employeeId: text("employee_id")
+      .notNull()
+      .references(() => employee.id, { onDelete: "restrict" }),
+    triggerType: recommendationTriggerType("trigger_type").notNull(),
+    /** The employment row that triggered this (the expiring PH/Probationary record). Null for `manual_regular`. */
+    sourceEmploymentId: text("source_employment_id").references(() => employeeEmployment.id, {
+      onDelete: "set null",
+    }),
+    /** Null while `status = 'draft'`; set on submit. */
+    approvalRequestId: text("approval_request_id").references(() => approvalRequest.id, { onDelete: "set null" }),
+    status: recommendationStatus("status").default("draft").notNull(),
+
+    // --- General Information, snapshotted at creation ---
+    submittedBy: text("submitted_by").references(() => user.id, { onDelete: "set null" }),
+    submittedByName: text("submitted_by_name").notNull(),
+    employeeNumberSnapshot: text("employee_number_snapshot"),
+    /** Constant "QSERV-MCSU" per current process — no department/division table exists in this schema. */
+    departmentSnapshot: text("department_snapshot").notNull().default("QSERV-MCSU"),
+    /** "Level - Position", e.g. "Mid - API Developer". */
+    positionSnapshot: text("position_snapshot").notNull(),
+    /** Same person as `submittedByName` today — see docs/EMPLOYEE_RECOMMENDATION.md §2 open question 4. */
+    managerNameSnapshot: text("manager_name_snapshot").notNull(),
+
+    /** Shape: `{ supervisorChange?, departmentChange?, jobTitleChange?, divisionChange?, salaryChange?, categoryChange? }` — see validation module. */
+    requestedActions: jsonb("requested_actions").notNull().default({}),
+
+    /** Sanitized HTML from the shared rich text editor — see `sanitizeDescriptionHtml()`. */
+    accomplishmentsAndRecommendation: text("accomplishments_and_recommendation"),
+
+    /** Relative storage-root path — see `src/lib/document-storage.ts` and docs/EMPLOYEE_RECOMMENDATION.md §7. Never returned to the client directly. */
+    kpiResultStorageKey: text("kpi_result_storage_key"),
+    erfStorageKey: text("erf_storage_key"),
+    erfGeneratedAt: timestamp("erf_generated_at", { withTimezone: true }),
+    erfGeneratedBy: text("erf_generated_by").references(() => user.id, { onDelete: "set null" }),
+
+    appliedToEmploymentHistoryAt: timestamp("applied_to_employment_history_at", { withTimezone: true }),
+    appliedBy: text("applied_by").references(() => user.id, { onDelete: "set null" }),
+    resultingEmploymentId: text("resulting_employment_id").references(() => employeeEmployment.id, {
+      onDelete: "set null",
+    }),
+
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("employee_recommendation_employee_idx").on(table.employeeId),
+    index("employee_recommendation_status_idx").on(table.status),
+  ],
+);
+
+/* -------------------------------------------------------------------------- */
 /*  Relations                                                                 */
 /* -------------------------------------------------------------------------- */
 
@@ -1523,6 +1765,10 @@ export const employeeChangeRequestRelations = relations(employeeChangeRequest, (
   employee: one(employee, { fields: [employeeChangeRequest.employeeId], references: [employee.id] }),
   requestedByUser: one(user, { fields: [employeeChangeRequest.requestedBy], references: [user.id] }),
   reviewedByUser: one(user, { fields: [employeeChangeRequest.reviewedBy], references: [user.id] }),
+  approvalRequest: one(approvalRequest, {
+    fields: [employeeChangeRequest.approvalRequestId],
+    references: [approvalRequest.id],
+  }),
 }));
 
 export const projectRelations = relations(project, ({ one, many }) => ({
@@ -1699,6 +1945,36 @@ export const notificationReadRelations = relations(notificationRead, ({ one }) =
   user: one(user, { fields: [notificationRead.userId], references: [user.id] }),
 }));
 
+export const teamRelations = relations(team, ({ one }) => ({
+  unitManager: one(user, { fields: [team.unitManagerUserId], references: [user.id] }),
+  departmentHead: one(user, { fields: [team.departmentHeadUserId], references: [user.id] }),
+}));
+
+export const approvalRequestRelations = relations(approvalRequest, ({ one, many }) => ({
+  requestedByUser: one(user, { fields: [approvalRequest.requestedBy], references: [user.id] }),
+  steps: many(approvalStep),
+}));
+
+export const approvalStepRelations = relations(approvalStep, ({ one }) => ({
+  request: one(approvalRequest, { fields: [approvalStep.approvalRequestId], references: [approvalRequest.id] }),
+  requiredRole: one(role, { fields: [approvalStep.requiredRoleId], references: [role.id] }),
+  approver: one(user, { fields: [approvalStep.approverUserId], references: [user.id] }),
+  decidedByUser: one(user, { fields: [approvalStep.decidedBy], references: [user.id] }),
+}));
+
+export const employeeRecommendationRelations = relations(employeeRecommendation, ({ one }) => ({
+  employee: one(employee, { fields: [employeeRecommendation.employeeId], references: [employee.id] }),
+  sourceEmployment: one(employeeEmployment, {
+    fields: [employeeRecommendation.sourceEmploymentId],
+    references: [employeeEmployment.id],
+  }),
+  approvalRequest: one(approvalRequest, {
+    fields: [employeeRecommendation.approvalRequestId],
+    references: [approvalRequest.id],
+  }),
+  submittedByUser: one(user, { fields: [employeeRecommendation.submittedBy], references: [user.id] }),
+}));
+
 /* -------------------------------------------------------------------------- */
 /*  Inferred types                                                            */
 /* -------------------------------------------------------------------------- */
@@ -1807,3 +2083,16 @@ export type NewTaCandidateComment = typeof taCandidateComment.$inferInsert;
 export type TaCandidateScorecard = typeof taCandidateScorecard.$inferSelect;
 export type NewTaCandidateScorecard = typeof taCandidateScorecard.$inferInsert;
 export type TaScorecardRating = (typeof taScorecardRating.enumValues)[number];
+
+export type ApprovalEntityType = (typeof approvalEntityType.enumValues)[number];
+export type ApprovalRequestStatus = (typeof approvalRequestStatus.enumValues)[number];
+export type ApprovalStepStatus = (typeof approvalStepStatus.enumValues)[number];
+export type ApprovalRequest = typeof approvalRequest.$inferSelect;
+export type NewApprovalRequest = typeof approvalRequest.$inferInsert;
+export type ApprovalStep = typeof approvalStep.$inferSelect;
+export type NewApprovalStep = typeof approvalStep.$inferInsert;
+
+export type RecommendationTriggerType = (typeof recommendationTriggerType.enumValues)[number];
+export type RecommendationStatus = (typeof recommendationStatus.enumValues)[number];
+export type EmployeeRecommendation = typeof employeeRecommendation.$inferSelect;
+export type NewEmployeeRecommendation = typeof employeeRecommendation.$inferInsert;

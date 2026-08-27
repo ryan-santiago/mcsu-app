@@ -19,6 +19,7 @@ import * as React from "react";
 
 import { JobProfilesTable } from "@/components/maintenance/job-profiles-table";
 import { LookupTable } from "@/components/maintenance/lookup-table";
+import { TeamApproversPanel } from "@/components/maintenance/team-approvers-panel";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -165,6 +166,7 @@ export function MaintenanceView({ canManage }: MaintenanceViewProps) {
             icon={TAB_ICONS[kind]}
             canManage={canManage}
           />
+          {kind === "team" ? <TeamApproversPanel canManage={canManage} /> : null}
         </TabsContent>
       ))}
 

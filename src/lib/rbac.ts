@@ -43,6 +43,20 @@ export const PERMISSIONS = [
   "projects:edit",
   "projects:delete",
 
+  "employee_recommendations:read",
+  "employee_recommendations:write",
+  /** Covers editing a draft, submitting it, and applying an approved recommendation to employment history. */
+  "employee_recommendations:edit",
+  "employee_recommendations:delete",
+  /**
+   * Non-CRUD, same "Additional Permissions" treatment as Talent Acquisition's
+   * stage-transition permissions above — see docs/RBAC.md "Add a permission".
+   */
+  /** Act on a pending approval step (Unit Manager / Department Head tier). */
+  "employee_recommendations:approve",
+  /** Generate the final ERF PDF and apply an approved recommendation to employment history — Talent Acquisition Manager only. */
+  "employee_recommendations:generate_erf",
+
   "talent_acquisition:read",
   "talent_acquisition:write",
   /** Covers editing request/candidate details and uploading a CV. */
@@ -117,6 +131,7 @@ export const MODULES = [
   { id: "announcements", label: "Announcements" },
   { id: "employees", label: "Employees" },
   { id: "projects", label: "Projects" },
+  { id: "employee_recommendations", label: "Employee Recommendation" },
   { id: "talent_acquisition", label: "Talent Acquisition" },
   { id: "staff_augmentation", label: "Staff Augmentation" },
   { id: "one_lot_projects", label: "One-Lot Projects" },
@@ -153,6 +168,12 @@ export const TALENT_ACQUISITION_STAGE_PERMISSIONS: readonly { permission: Permis
   { permission: "talent_acquisition:l2_assess", label: "L2 Assessment / Client Interview" },
   { permission: "talent_acquisition:finalize", label: "Final Interview / Job Offer" },
   { permission: "talent_acquisition:migrate", label: "Migrate to Employee" },
+];
+
+/** Employee Recommendation's own non-CRUD permissions — same "Additional Permissions" treatment as Talent Acquisition's above. */
+export const EMPLOYEE_RECOMMENDATION_STAGE_PERMISSIONS: readonly { permission: Permission; label: string }[] = [
+  { permission: "employee_recommendations:approve", label: "Approve / Reject Recommendation" },
+  { permission: "employee_recommendations:generate_erf", label: "Generate ERF / Apply to Employment History" },
 ];
 
 /* -------------------------------------------------------------------------- */

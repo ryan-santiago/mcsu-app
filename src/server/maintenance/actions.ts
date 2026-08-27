@@ -24,14 +24,15 @@ import {
   taApplication,
   taRequest,
   team,
+  user,
 } from "@/db/schema";
 import type { ActionResult } from "@/lib/action-result";
 import { diffFields, recordAudit } from "@/lib/audit";
 import { AuthorizationError, authorize } from "@/lib/session";
 import { emailSchema } from "@/lib/validation/auth";
 
-import { listLookup } from "./queries";
-import { LOOKUP_META, type LookupKind, type LookupRow } from "./types";
+import { listLookup, listRecommendationApproverOptions, listTeamApprovers } from "./queries";
+import { LOOKUP_META, type LookupKind, type LookupOption, type LookupRow, type TeamApproverRow } from "./types";
 
 const kindSchema = z.enum([
   "client",
@@ -181,6 +182,65 @@ function refreshMaintenanceViews() {
 /** Server-action entry point for the Maintenance table's TanStack Query `queryFn`. */
 export async function fetchLookup(kind: LookupKind): Promise<LookupRow[]> {
   return listLookup(kind);
+}
+
+export async function fetchTeamApprovers(): Promise<TeamApproverRow[]> {
+  return listTeamApprovers();
+}
+
+export async function fetchRecommendationApproverOptions(): Promise<LookupOption[]> {
+  return listRecommendationApproverOptions();
+}
+
+/**
+ * Assigns a team's Unit Manager / Department Head — the approvers Employee
+ * Recommendation's approval chain resolves against. Either may be cleared to
+ * `null`; a cleared team blocks any recommendation from being submitted for
+ * its members until reassigned (see `resolveApprovalChain()`).
+ */
+export async function setTeamApprovers(input: {
+  teamId: string;
+  unitManagerUserId: string | null;
+  departmentHeadUserId: string | null;
+}): Promise<ActionResult> {
+  return run(async () => {
+    const actor = await authorize("maintenance:edit");
+    const teamId = idSchema.parse(input.teamId);
+
+    const [target] = await db.select().from(team).where(eq(team.id, teamId)).limit(1);
+    if (!target) return { ok: false, error: "That team no longer exists." };
+
+    for (const userId of [input.unitManagerUserId, input.departmentHeadUserId]) {
+      if (!userId) continue;
+      const [exists] = await db.select({ id: user.id }).from(user).where(eq(user.id, userId)).limit(1);
+      if (!exists) return { ok: false, error: "That user account no longer exists." };
+    }
+
+    await db
+      .update(team)
+      .set({
+        unitManagerUserId: input.unitManagerUserId,
+        departmentHeadUserId: input.departmentHeadUserId,
+      })
+      .where(eq(team.id, teamId));
+
+    await recordAudit({
+      module: "teams",
+      action: "team_approvers_updated",
+      entityId: teamId,
+      entityLabel: target.name,
+      actorId: actor.id,
+      actorEmail: actor.email,
+      changes: diffFields(
+        { unitManagerUserId: target.unitManagerUserId, departmentHeadUserId: target.departmentHeadUserId },
+        { unitManagerUserId: input.unitManagerUserId, departmentHeadUserId: input.departmentHeadUserId },
+        { unitManagerUserId: "Unit Manager", departmentHeadUserId: "Department Head" },
+      ),
+    });
+
+    refreshMaintenanceViews();
+    return { ok: true, data: undefined, message: `Approvers updated for ${target.name}.` };
+  });
 }
 
 export async function createLookupEntry(input: {
