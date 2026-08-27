@@ -17,6 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   ACTIONS,
   EMPLOYEE_RECOMMENDATION_STAGE_PERMISSIONS,
+  EMPLOYEES_ADDITIONAL_PERMISSIONS,
   MODULES,
   permissionFor,
   TALENT_ACQUISITION_STAGE_PERMISSIONS,
@@ -49,7 +50,7 @@ type RolePermissionMatrixProps = {
 export function RolePermissionMatrix({ role, canEdit, pending, onOpenChange, onSave }: RolePermissionMatrixProps) {
   return (
     <Dialog open={Boolean(role)} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         {role ? (
           <MatrixBody
             key={role.id}
@@ -169,6 +170,29 @@ function MatrixBody({
             })}
           </TableBody>
         </Table>
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-muted-foreground text-sm font-medium">Employees — Additional Permissions</p>
+        <div className="overflow-x-auto rounded-lg border">
+          <Table>
+            <TableBody>
+              {EMPLOYEES_ADDITIONAL_PERMISSIONS.map(({ permission, label }) => (
+                <TableRow key={permission}>
+                  <TableCell className="font-medium">{label}</TableCell>
+                  <TableCell className="w-16 text-center">
+                    <Checkbox
+                      checked={locked || granted.has(permission)}
+                      disabled={readOnly || pending}
+                      onCheckedChange={(checked) => toggle(permission, checked === true)}
+                      aria-label={label}
+                    />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       </div>
 
       <div className="space-y-2">

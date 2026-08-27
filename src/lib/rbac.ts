@@ -37,6 +37,19 @@ export const PERMISSIONS = [
   "employees:write",
   "employees:edit",
   "employees:delete",
+  /**
+   * Same "Additional Permissions" treatment as Talent Acquisition's/Employee
+   * Recommendation's stage permissions below — see docs/RBAC.md "Add a
+   * permission". Without this, `employees:read` only sees the actor's own
+   * team (`hasUnrestrictedAccess()` row-scoping in
+   * `src/server/employees/queries.ts`) — this widens *reading* to every
+   * team, for roles that need org-wide visibility without also getting
+   * `hasUnrestrictedAccess()`'s full admin bypass (write access to any
+   * team, overriding approval-step assignment elsewhere, etc.). Doesn't
+   * affect `employees:write`/`:edit`/`:delete`, which stay team-scoped
+   * (`assertEmployeeInScope`) regardless.
+   */
+  "employees:read_all",
 
   "projects:read",
   "projects:write",
@@ -174,6 +187,11 @@ export const TALENT_ACQUISITION_STAGE_PERMISSIONS: readonly { permission: Permis
 export const EMPLOYEE_RECOMMENDATION_STAGE_PERMISSIONS: readonly { permission: Permission; label: string }[] = [
   { permission: "employee_recommendations:approve", label: "Approve / Reject Recommendation" },
   { permission: "employee_recommendations:generate_erf", label: "Generate ERF / Apply to Employment History" },
+];
+
+/** Employees' own non-CRUD permission — same "Additional Permissions" treatment as the two above. */
+export const EMPLOYEES_ADDITIONAL_PERMISSIONS: readonly { permission: Permission; label: string }[] = [
+  { permission: "employees:read_all", label: "View Employees Org-Wide (not just own team)" },
 ];
 
 /* -------------------------------------------------------------------------- */

@@ -428,6 +428,20 @@
       "when": 1787823091123,
       "tag": "0060_change_requests_approval_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1787826674904,
+      "tag": "0061_employees_read_all_and_role_updates",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1787831900874,
+      "tag": "0062_drop_erf_storage_key",
+      "breakpoints": true
     }
   ]
 }

@@ -100,7 +100,6 @@ export type RecommendationDetail = {
   requestedActions: RequestedActions;
   accomplishmentsAndRecommendation: string | null;
   hasKpiResult: boolean;
-  hasErf: boolean;
   erfGeneratedAt: Date | null;
   appliedToEmploymentHistoryAt: Date | null;
   createdAt: Date;

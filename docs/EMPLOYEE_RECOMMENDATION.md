@@ -461,36 +461,31 @@ without `hasUnrestrictedAccess` only see employees on their own `teamId`.
 
 ---
 
-## 7. File storage (KPI Result upload, generated ERF copy)
+## 7. File storage (KPI Result upload)
 
 Follows `docs/DOCUMENTS.md` exactly — **read that file in full before
-touching this.** Two files per recommendation, not a folder tree, so this
+touching this.** One file per recommendation, not a folder tree, so this
 is simpler than One-Lot Docs:
 
-- **KPI Result** — Manager uploads a PDF while filling the form.
-- **Generated ERF** — after TAM clicks "Generate ERF," in addition to the
-  client-side `pdf.save()` download (§3), save a copy server-side so there's
-  a durable record of exactly what was sent to HRD (the live data could
-  change after the fact; the generated snapshot shouldn't).
+- **KPI Result** — Manager uploads a PDF while filling the form. This one
+  genuinely needs storage: it's a real upload, not something that can be
+  regenerated.
 
 Path convention (mirrors the existing One-Lot pattern so the eventual
 SharePoint migration is uniform across features):
 
 ```
-storage/Documents/Employee Recommendation/{recommendationId}/kpi-result-{documentId}-{fileName}
-storage/Documents/Employee Recommendation/{recommendationId}/erf-{documentId}-{fileName}
+storage/Documents/Employee Recommendation/{recommendationId}/kpi-result.pdf
 ```
 
 Implementation:
-- Generalize `src/lib/document-storage.ts`'s `saveDocumentFile`/
-  `readDocumentFile`/`deleteDocumentFile` to accept a storage-root-relative
-  path rather than being One-Lot-specific (check whether it already is —
-  the One-Lot project code just happens to be the only caller today).
-  `isDocumentStorageAvailable()` is already feature-agnostic — reuse as-is.
-- New authenticated route handler,
-  `src/app/api/employee-recommendations/[id]/documents/[kind]/route.ts`
-  (`kind` = `kpi-result` | `erf`), same shape as the One-Lot download route:
-  re-check session + scope on every request, stream from disk.
+- `src/lib/document-storage.ts`'s `saveDocumentFile`/`readDocumentFile`/
+  `deleteDocumentFile` are storage-root-relative, not One-Lot-specific —
+  `isDocumentStorageAvailable()` is feature-agnostic too.
+- Authenticated route handler,
+  `src/app/api/employee-recommendations/[id]/kpi-result/route.ts`,
+  same shape as the One-Lot download route: re-check session + scope on
+  every request, stream from disk.
 - Upload goes through a Server Action (small PDF, well under the 1MB
   default — shouldn't need the `bodySizeLimit` override One-Lot needed for
   large files).
@@ -498,6 +493,40 @@ Implementation:
   deployed to Vercel before either SharePoint or a persistent host is in
   place, this feature must degrade to "unavailable," never silently drop a
   KPI file.
+
+**The generated ERF is deliberately *not* stored (decision reversed
+2026-08-27, see §12 step 5's addendum).** It was originally saved
+server-side too, for the same "durable record of what was sent" reason KPI
+Result needs storage. Reversed once the user weighed that against the
+practical cost: it's the only thing in this module gated on
+`isDocumentStorageAvailable()` purely for its own sake (KPI Result needs
+that guard regardless), so it was the one piece of this feature that would
+silently break the moment this app ever runs somewhere without persistent
+local disk (Vercel serverless, per `AGENTS.md`) — ahead of the SharePoint
+migration `docs/DOCUMENTS.md` describes for exactly that reason. Generating
+the ERF now only rasterizes the PDF client-side and triggers a direct
+`pdf.save()` download (`generateEmployeeRecommendationErfPdf` in
+`src/lib/employee-recommendation-pdf.ts`) — the bytes never leave the
+browser. `erfGeneratedAt`/`erfGeneratedBy` on `employeeRecommendation` stay
+(migration `0062_drop_erf_storage_key.sql` only dropped `erfStorageKey`),
+so the app still knows *that* an ERF was generated, by whom, and when —
+enough to drive `canApply` and the audit trail — just not a copy of the
+file itself. **Generation is repeatable, not one-time** (revised same day,
+right after the no-storage decision above): `canGenerateErf` stays true for
+the ERF handler through `approved`/`erf_generated`/`applied`, not just
+`approved`, and `markErfGenerated` only advances `status` on the *first*
+call (the one that unlocks Apply) — later calls just re-render from current
+data, re-download, and log another `erf_generated` audit entry, so getting
+another copy later is "click the button again," not a dead end. **Known
+tradeoff, still accepted deliberately**: each download only ever reaches
+the one person who clicked it *at that moment* — there's no durable copy
+anyone else can pull up independently, and no proof besides the audit trail
+that a given regeneration exactly matches an earlier one (the live data
+could technically have moved between clicks, e.g. team name changes,
+though `requestedActions` itself stays a frozen snapshot). If that turns
+out to matter in practice, the fix is re-adding server-side storage (the
+original version of this section, preserved in git history), not
+rebuilding the generation flow.
 
 ---
 
@@ -852,6 +881,38 @@ Suggested sequencing — each phase should be independently shippable/testable:
      label/copy). Browser-verified against the real stuck row: withdrew it,
      confirmed `employee_recommendation.status`, `approval_request.status`,
      and both `approval_step.status` values all landed correctly.
+   - **Post-Phase-5 fix (2026-08-27) — Letter page + full-page fit + no
+     server-side storage.** Three related corrections to the ERF PDF itself,
+     found while testing the letter-size fix against a real generated file:
+     1. Format was A4; changed to `letter` to match the paper form.
+     2. A one-page recommendation (the common case) rendered shorter than
+        the page, leaving dead space below the signature block — fixed by
+        stretching the image to the full page height when it renders
+        shorter than one page (`employee-recommendation-pdf.ts`).
+     3. Separately, the captured canvas was ~300px wider than the actual
+        `.qnx-erf-page` content (`html2canvas(body, ...)` captured the full
+        1200px-wide isolated iframe, not the 900px-wide content div), so
+        that same stretch was also pulling blank right-margin into the
+        page — fixed by capturing the `.qnx-erf-page` element directly
+        instead of `body`.
+     4. **Decision reversed while verifying the above**: stopped storing
+        the generated PDF server-side at all — see §7's addendum for the
+        full reasoning (compliance/audit tradeoff accepted deliberately;
+        it also removes ERF generation's dependence on
+        `isDocumentStorageAvailable()`, which nothing else in this fix
+        needed to touch). `saveGeneratedErf` → `markErfGenerated(id)`,
+        no longer takes a file; `erfStorageKey` column dropped
+        (`0062_drop_erf_storage_key.sql`); the
+        `/api/employee-recommendations/[id]/erf` download route deleted;
+        `generateEmployeeRecommendationErfPdf` now calls `pdf.save()`
+        directly instead of returning a `Blob` for the caller to both
+        download and upload.
+     5. **Follow-up (2026-08-27, same day)**: made generation repeatable
+        instead of one-time, once "nobody can get it back later" from #4
+        turned out to matter — see §7's addendum for the updated reasoning.
+        `canGenerateErf` now covers `approved`/`erf_generated`/`applied`,
+        not just `approved`; the ERF card simplified to a single "Generate
+        ERF" button with no separate "already generated" state.
 6. **Apply to employment history** — DONE (2026-08-27). `applyRecommendation()`
    (`src/server/employee-recommendations/actions.ts`) — TAM-only
    (`employee_recommendations:generate_erf`, same permission that already

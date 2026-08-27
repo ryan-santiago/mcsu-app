@@ -113,6 +113,3 @@ export type ApplyRecommendationInput = z.infer<typeof applyRecommendationSchema>
 /** KPI Result is always a PDF, per the source process ("upload KPI Result pdf file"). */
 export const KPI_RESULT_MAX_SIZE_BYTES = 10 * 1024 * 1024;
 export const KPI_RESULT_ACCEPT = "application/pdf";
-
-/** Generated client-side (§3) — generous cap for a mostly-text, multi-page rasterized PDF. */
-export const ERF_MAX_SIZE_BYTES = 20 * 1024 * 1024;

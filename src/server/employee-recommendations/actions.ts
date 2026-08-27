@@ -10,14 +10,13 @@ import type { ActionResult } from "@/lib/action-result";
 import { diffFields, recordAudit } from "@/lib/audit";
 import { deleteDocumentFile, isDocumentStorageAvailable, saveDocumentFile } from "@/lib/document-storage";
 import { formatEmployeeDisplayName } from "@/lib/employee-format";
-import { erfStorageKey, kpiResultStorageKey } from "@/lib/employee-recommendation-document-format";
+import { kpiResultStorageKey } from "@/lib/employee-recommendation-document-format";
 import { hasUnrestrictedAccess } from "@/lib/rbac";
 import { sanitizeDescriptionHtml } from "@/lib/sanitize-html";
 import { AuthorizationError, authorize } from "@/lib/session";
 import {
   applyRecommendationSchema,
   createRecommendationSchema,
-  ERF_MAX_SIZE_BYTES,
   KPI_RESULT_MAX_SIZE_BYTES,
   recommendationDraftSchema,
 } from "@/lib/validation/employee-recommendations";
@@ -577,39 +576,32 @@ export async function rejectRecommendationStep(input: { approvalRequestId: strin
 // ---------------------------------------------------------------------------
 
 /**
- * Saves the PDF the browser already rendered client-side
- * (`generateEmployeeRecommendationErfPdf`) — a durable record of exactly
- * what was sent to HRD, since the live data could change after the fact.
- * TAM-only (`employee_recommendations:generate_erf`), and only once the
- * recommendation is fully approved.
+ * Records that the ERF was (re-)generated — the PDF itself was already
+ * rendered and downloaded client-side
+ * (`generateEmployeeRecommendationErfPdf`) before this is called; nothing is
+ * kept server-side, so this is the only record of it (see
+ * docs/EMPLOYEE_RECOMMENDATION.md §7). TAM-only
+ * (`employee_recommendations:generate_erf`). Repeatable — regenerating
+ * later just re-renders from current data and logs another audit entry;
+ * only the *first* call (while still `approved`) advances the status, since
+ * that's what unlocks Apply to Employment History.
  */
-export async function saveGeneratedErf(formData: FormData): Promise<ActionResult> {
+export async function markErfGenerated(id: string): Promise<ActionResult> {
   return run(async () => {
-    if (!isDocumentStorageAvailable()) {
-      return { ok: false, error: "Document storage isn't available in this environment yet." };
-    }
-
-    const id = String(formData.get("recommendationId") ?? "");
-    const file = formData.get("file");
-
-    if (!(file instanceof File)) return { ok: false, error: "No file provided." };
-    if (file.size === 0) return { ok: false, error: "That file is empty." };
-    if (file.size > ERF_MAX_SIZE_BYTES) return { ok: false, error: "The generated PDF is unexpectedly large." };
-
     const actor = await authorize("employee_recommendations:generate_erf");
     const existing = await getRecommendationById(id);
     if (!existing) return { ok: false, error: "That recommendation no longer exists." };
-    if (existing.status !== "approved") {
+    if (existing.status !== "approved" && existing.status !== "erf_generated" && existing.status !== "applied") {
       return { ok: false, error: "The ERF can only be generated once the recommendation is fully approved." };
     }
 
-    const storageKey = erfStorageKey(id);
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    await saveDocumentFile(storageKey, bytes);
-
     await db
       .update(employeeRecommendation)
-      .set({ erfStorageKey: storageKey, erfGeneratedAt: new Date(), erfGeneratedBy: actor.id, status: "erf_generated" })
+      .set({
+        erfGeneratedAt: new Date(),
+        erfGeneratedBy: actor.id,
+        ...(existing.status === "approved" ? { status: "erf_generated" as const } : {}),
+      })
       .where(eq(employeeRecommendation.id, id));
 
     await recordAudit({

@@ -29,7 +29,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatDateTime } from "@/lib/format";
 import { formatSalary } from "@/lib/employee-format";
-import { erfFileName, generateEmployeeRecommendationErfPdf } from "@/lib/employee-recommendation-pdf";
+import { generateEmployeeRecommendationErfPdf } from "@/lib/employee-recommendation-pdf";
 import {
   requestedActionsSchema,
   type RequestedActions,
@@ -41,9 +41,9 @@ import {
   cancelRecommendation,
   fetchEmployeeRecommendationSnapshot,
   fetchRecommendationById,
+  markErfGenerated,
   rejectRecommendationStep,
   removeKpiResult,
-  saveGeneratedErf,
   submitRecommendation,
   updateRecommendationDraft,
   uploadKpiResult,
@@ -98,9 +98,17 @@ function RecommendationFormBody({ recommendation }: { recommendation: Recommenda
   const router = useRouter();
   const queryClient = useQueryClient();
 
+  // Only needed to prefill a newly-toggled section's FROM value while
+  // actively editing a draft — a read-only viewer (an approver, or TAM
+  // looking at an approved/erf_generated recommendation) never triggers
+  // that interaction, and `getEmployeeRecommendationSnapshot` requires
+  // `employee_recommendations:edit`, which approvers/TAM don't hold (they
+  // hold `:approve`/`:generate_erf` instead) — fetching it unconditionally
+  // 500'd this whole page for them.
   const snapshotQuery = useQuery({
     queryKey: recommendationSnapshotQueryKey(recommendation.employeeId),
     queryFn: () => fetchEmployeeRecommendationSnapshot(recommendation.employeeId),
+    enabled: recommendation.canEdit,
   });
 
   const [accomplishments, setAccomplishments] = React.useState(
@@ -228,23 +236,11 @@ function RecommendationFormBody({ recommendation }: { recommendation: Recommenda
 
   const generateErfMutation = useMutation({
     mutationFn: async () => {
-      const blob = await generateEmployeeRecommendationErfPdf(recommendation);
-      const fileName = erfFileName(recommendation.employeeName);
-
-      // Trigger the user's own download immediately — independent of whether the server upload below succeeds.
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = fileName;
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      URL.revokeObjectURL(url);
-
-      const formData = new FormData();
-      formData.set("recommendationId", recommendation.id);
-      formData.set("file", blob, fileName);
-      return saveGeneratedErf(formData);
+      // Downloads directly — nothing is kept server-side (see
+      // docs/EMPLOYEE_RECOMMENDATION.md §7). `markErfGenerated` just records
+      // that it happened, independent of whether the download itself succeeds.
+      await generateEmployeeRecommendationErfPdf(recommendation);
+      return markErfGenerated(recommendation.id);
     },
     onSuccess: (result) => {
       if (result.ok) {
@@ -307,7 +303,7 @@ function RecommendationFormBody({ recommendation }: { recommendation: Recommenda
           <CardDescription>Check only the sections that apply.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {snapshotQuery.isPending ? (
+          {recommendation.canEdit && snapshotQuery.isPending ? (
             <Skeleton className="h-40 w-full rounded-lg" />
           ) : (
             <ActionsRequestedSections
@@ -425,43 +421,27 @@ function RecommendationFormBody({ recommendation }: { recommendation: Recommenda
         </Card>
       ) : null}
 
-      {recommendation.canGenerateErf || recommendation.hasErf ? (
+      {recommendation.canGenerateErf ? (
         <Card>
           <CardHeader>
             <CardTitle>ERF</CardTitle>
             <CardDescription>
-              {recommendation.hasErf
-                ? "Send this, along with the KPI Result, to HRD."
-                : "Generates the filled-out form as a PDF for HRD."}
+              Downloads the filled-out form as a PDF — send it, along with the KPI Result, to HRD. Not stored here,
+              so generate again any time you need another copy.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            {recommendation.hasErf ? (
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
-                <a
-                  href={`/api/employee-recommendations/${recommendation.id}/erf`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-brand text-sm font-medium underline underline-offset-2"
-                >
-                  View ERF PDF
-                </a>
-                {recommendation.erfGeneratedAt ? (
-                  <span className="text-muted-foreground text-xs">
-                    Generated {formatDateTime(recommendation.erfGeneratedAt)}
-                  </span>
-                ) : null}
-              </div>
-            ) : (
-              <Button disabled={pending} onClick={() => generateErfMutation.mutate()}>
-                {generateErfMutation.isPending ? (
-                  <Loader2 className="size-4 animate-spin" aria-hidden />
-                ) : (
-                  <FileCheck2 className="size-4" aria-hidden />
-                )}
-                Generate ERF
-              </Button>
-            )}
+          <CardContent className="space-y-2">
+            <Button disabled={pending} onClick={() => generateErfMutation.mutate()}>
+              {generateErfMutation.isPending ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden />
+              ) : (
+                <FileCheck2 className="size-4" aria-hidden />
+              )}
+              Generate ERF
+            </Button>
+            {recommendation.erfGeneratedAt ? (
+              <p className="text-muted-foreground text-xs">Last generated {formatDateTime(recommendation.erfGeneratedAt)}.</p>
+            ) : null}
           </CardContent>
         </Card>
       ) : null}

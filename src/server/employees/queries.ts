@@ -16,13 +16,26 @@ import {
   project,
   team,
 } from "@/db/schema";
-import { hasUnrestrictedAccess } from "@/lib/rbac";
-import { authorize } from "@/lib/session";
+import { can, hasUnrestrictedAccess } from "@/lib/rbac";
+import { authorize, type CurrentUser } from "@/lib/session";
 
 import type { EmployeeDetail, EmployeeFilters, EmployeeListResult } from "./types";
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
+
+/**
+ * Read-only widening of `hasUnrestrictedAccess()` for the Employees list —
+ * `employees:read_all` lets Department Head/Unit Manager/Talent Acquisition
+ * Manager (and anyone else granted it) see every team without also getting
+ * `hasUnrestrictedAccess()`'s full admin bypass elsewhere (write access to
+ * any team, overriding approval-step assignment, etc.). `employees:write`/
+ * `:edit`/`:delete` stay team-scoped (`assertEmployeeInScope` in
+ * `src/server/employees/actions.ts`) regardless of this.
+ */
+function canViewAllTeams(actor: CurrentUser): boolean {
+  return hasUnrestrictedAccess(actor) || can(actor, "employees:read_all");
+}
 
 function buildWhere(
   filters: EmployeeFilters,
@@ -156,14 +169,14 @@ export async function listEmployees(filters: EmployeeFilters = {}): Promise<Empl
   const page = Math.max(1, filters.page ?? 1);
   const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, filters.pageSize ?? DEFAULT_PAGE_SIZE));
 
-  // Non-admins with no resolved team see nothing rather than everyone.
-  if (!hasUnrestrictedAccess(actor) && !actor.teamId) {
+  // Non-admins with no org-wide visibility and no resolved team see nothing rather than everyone.
+  if (!canViewAllTeams(actor) && !actor.teamId) {
     return { employees: [], total: 0, page, pageSize };
   }
 
   const latestEmployment = latestEmploymentSubquery();
   const latestDeployment = latestDeploymentSubquery();
-  const where = buildWhere(filters, latestEmployment, latestDeployment, hasUnrestrictedAccess(actor) ? null : actor.teamId);
+  const where = buildWhere(filters, latestEmployment, latestDeployment, canViewAllTeams(actor) ? null : actor.teamId);
 
   const rows = await db
     .select({
@@ -228,7 +241,7 @@ export async function getEmployeeById(id: string): Promise<EmployeeDetail | null
   const actor = await authorize("employees:read");
   const detail = await loadEmployeeDetail(id);
   if (!detail) return null;
-  if (!hasUnrestrictedAccess(actor) && detail.teamId !== actor.teamId) return null;
+  if (!canViewAllTeams(actor) && detail.teamId !== actor.teamId) return null;
   return detail;
 }
 

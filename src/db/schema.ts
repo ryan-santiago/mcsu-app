@@ -1685,7 +1685,7 @@ export const employeeRecommendation = pgTable(
 
     /** Relative storage-root path — see `src/lib/document-storage.ts` and docs/EMPLOYEE_RECOMMENDATION.md §7. Never returned to the client directly. */
     kpiResultStorageKey: text("kpi_result_storage_key"),
-    erfStorageKey: text("erf_storage_key"),
+    /** The ERF PDF itself is never stored — rendered client-side and downloaded directly. These two just record that it happened, and by whom. */
     erfGeneratedAt: timestamp("erf_generated_at", { withTimezone: true }),
     erfGeneratedBy: text("erf_generated_by").references(() => user.id, { onDelete: "set null" }),
 

@@ -39,7 +39,9 @@ Delete/All matrix per module. No deploy required to change what a role can do.
 | **Administrator** | 40 | yes, **locked** | Every permission, forever — see below |
 | **Department Head** | 38 | yes | Every permission (seeded admin-equivalent — `drizzle/0027_seed_dept_head_unit_manager_roles.sql`) |
 | **Unit Manager** | 35 | yes | Every permission (seeded admin-equivalent — same migration) |
-| **Manager** | 30 | yes | Dashboard, Employees & Projects: full · Users & Access: read + edit · Maintenance/Device Inventory/Audit Trail/Settings/Access Control: read only |
+| **Talent Acquisition Manager** | 32 | yes (`drizzle/0061_employees_read_all_and_role_updates.sql`) | Talent Acquisition: full + approve · Employee Recommendation: read + generate_erf · Employees: read + read_all (org-wide view, not edit — see below) |
+| **Team Lead/Manager** (id `manager`, relabeled from "Manager" — same migration) | 30 | yes | Dashboard, Employees & Projects: full · Users & Access: read + edit · Maintenance/Device Inventory/Audit Trail/Settings/Access Control: read only |
+| **Talent Acquisition Staff** | 22 | no | Talent Acquisition: read/write/edit (no approve/finalize/migrate) |
 | **Engineer** | 20 | no | Dashboard: read only |
 | **Viewer** | 10 | no | Dashboard: read only |
 
@@ -54,6 +56,19 @@ as Manager. Unlike Administrator, they are **not** special-cased in `can()`,
 so their access comes entirely from their stored `permissions` row: an
 administrator can still narrow or widen what either role can do from Access
 Control, exactly like Manager's permissions today.
+
+**`employees:read_all`** (added 2026-08-27, `drizzle/0061_...sql`) is a
+narrower, read-only cousin of the admin-only row-level bypass described
+below — see `docs/EMPLOYEE_RECOMMENDATION.md` §12 step 7's note and
+`hasUnrestrictedAccess()`'s doc comment in `src/lib/rbac.ts`. Without it,
+`employees:read` only sees the actor's own team
+(`src/server/employees/queries.ts`'s `canViewAllTeams()`), which is why
+Department Head/Unit Manager/Talent Acquisition Manager — none of whom is
+the literal `admin` role, and none of whom typically has a linked Employee
+record to derive a `teamId` from — saw **zero** employees before this was
+added. `employees:write`/`:edit`/`:delete` are unaffected and stay
+team-scoped (`assertEmployeeInScope`) regardless of who holds
+`employees:read_all`.
 
 **Administrator's permissions are locked** two ways, not just seeded that way:
 `can()` (`src/lib/rbac.ts`) short-circuits to `true` for `principal.roleId ===

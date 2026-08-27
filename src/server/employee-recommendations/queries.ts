@@ -1,7 +1,7 @@
 import "server-only";
 
 import { differenceInCalendarDays, startOfToday } from "date-fns";
-import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
 import { db } from "@/db";
@@ -243,7 +243,6 @@ export async function getRecommendationById(id: string): Promise<RecommendationD
       requestedActions: employeeRecommendation.requestedActions,
       accomplishmentsAndRecommendation: employeeRecommendation.accomplishmentsAndRecommendation,
       kpiResultStorageKey: employeeRecommendation.kpiResultStorageKey,
-      erfStorageKey: employeeRecommendation.erfStorageKey,
       erfGeneratedAt: employeeRecommendation.erfGeneratedAt,
       appliedToEmploymentHistoryAt: employeeRecommendation.appliedToEmploymentHistoryAt,
       approvalRequestId: employeeRecommendation.approvalRequestId,
@@ -289,7 +288,6 @@ export async function getRecommendationById(id: string): Promise<RecommendationD
     requestedActions: row.requestedActions as RecommendationDetail["requestedActions"],
     accomplishmentsAndRecommendation: row.accomplishmentsAndRecommendation,
     hasKpiResult: row.kpiResultStorageKey !== null,
-    hasErf: row.erfStorageKey !== null,
     erfGeneratedAt: row.erfGeneratedAt,
     appliedToEmploymentHistoryAt: row.appliedToEmploymentHistoryAt,
     createdAt: row.createdAt,
@@ -297,7 +295,10 @@ export async function getRecommendationById(id: string): Promise<RecommendationD
     canEdit: inScope && row.status === "draft" && can(actor, "employee_recommendations:edit"),
     canSubmit: inScope && row.status === "draft" && can(actor, "employee_recommendations:edit"),
     canCancel: inScope && (row.status === "draft" || row.status === "submitted") && can(actor, "employee_recommendations:edit"),
-    canGenerateErf: canActAsErfHandler && row.status === "approved",
+    // Repeatable, not one-time — the ERF is never stored (§7), so
+    // regenerating is the only way to get another copy. Available from the
+    // moment the recommendation is approved through however long after.
+    canGenerateErf: canActAsErfHandler && (row.status === "approved" || row.status === "erf_generated" || row.status === "applied"),
     canApply: canActAsErfHandler && row.status === "erf_generated",
     approval,
     actionableStepId,
@@ -409,11 +410,24 @@ export async function countPendingApprovalsForActor(): Promise<number> {
   return row.value;
 }
 
-/** Real `employeeRecommendation` rows still in play — draft through erf_generated — for the "In progress" list. */
+/**
+ * Real `employeeRecommendation` rows still in play — draft through
+ * erf_generated — for the "In progress" list. Visible to a team match
+ * (a Manager tracking their own team's recommendations) **or**, for
+ * whoever holds `generate_erf` (Talent Acquisition Manager), any row at
+ * `approved`/`erf_generated` regardless of team — those are exactly the
+ * two stages TAM acts on (Generate ERF, then Apply to Employment History)
+ * once she's downloaded the ERF and sent it to HR herself, and TAM isn't
+ * tied to the recommended employee's team any more than a Unit Manager or
+ * Department Head is (same reasoning as `canActAsErfHandler` on the detail
+ * query below — this was the same class of gap, just on the list instead
+ * of the detail page).
+ */
 export async function listRecommendations(): Promise<RecommendationListItem[]> {
   const actor = await authorize("employee_recommendations:read");
+  const canActAsErfHandler = can(actor, "employee_recommendations:generate_erf");
 
-  if (!hasUnrestrictedAccess(actor) && !actor.teamId) return [];
+  if (!hasUnrestrictedAccess(actor) && !actor.teamId && !canActAsErfHandler) return [];
 
   const rows = await db
     .select({
@@ -431,7 +445,14 @@ export async function listRecommendations(): Promise<RecommendationListItem[]> {
     .where(
       and(
         inArray(employeeRecommendation.status, IN_PROGRESS_STATUSES),
-        hasUnrestrictedAccess(actor) || !actor.teamId ? undefined : eq(employee.teamId, actor.teamId),
+        hasUnrestrictedAccess(actor)
+          ? undefined
+          : or(
+              actor.teamId ? eq(employee.teamId, actor.teamId) : undefined,
+              canActAsErfHandler
+                ? inArray(employeeRecommendation.status, ["approved", "erf_generated"])
+                : undefined,
+            ),
       ),
     )
     .orderBy(desc(employeeRecommendation.updatedAt));
