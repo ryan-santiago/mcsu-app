@@ -56,6 +56,37 @@ const allowanceSchema = z
   .min(1, "Enter an amount (0 if none)")
   .refine((value) => Number.isFinite(Number(value)) && Number(value) >= 0, "Enter a valid amount");
 
+/**
+ * Matches `MONITORED_EMPLOYMENT_TYPES` in
+ * `src/server/employee-recommendations/queries.ts` — a hire in one of these
+ * two types never shows up in that module's monitoring queue without an end
+ * date, so this form requires one rather than leaving it to a manual
+ * follow-up edit in the Employees module (the gap this fixes — see
+ * docs/EMPLOYEE_RECOMMENDATION.md §2 open question 6). Kept as a small
+ * literal duplicate rather than importing that "server-only" query module,
+ * matching how this file already duplicates its other schemas independently
+ * of the Employees module.
+ */
+const CONTRACT_END_DATE_REQUIRED_TYPES = new Set(["project_based", "probationary"]);
+
+const employmentSchema = z
+  .object({
+    salary: salarySchema,
+    communicationAllowance: allowanceSchema,
+    transportationAllowance: allowanceSchema,
+    employmentTypeId: z.string().min(1, "Select an employment type"),
+    startDate: z.string().min(1, "Select a start date"),
+    endDate: z.string().optional().or(z.literal("")),
+  })
+  .refine((data) => !CONTRACT_END_DATE_REQUIRED_TYPES.has(data.employmentTypeId) || Boolean(data.endDate), {
+    message: "Select a contract/probation end date for this employment type",
+    path: ["endDate"],
+  })
+  .refine((data) => !data.endDate || data.endDate >= data.startDate, {
+    message: "End date cannot be before the start date",
+    path: ["endDate"],
+  });
+
 const migrateInputSchema = z.object({
   applicationId: z.string().min(1),
   requestId: z.string().min(1),
@@ -73,13 +104,7 @@ const migrateInputSchema = z.object({
   }),
   currentAddress: addressSchema,
   permanentAddress: addressSchema,
-  employment: z.object({
-    salary: salarySchema,
-    communicationAllowance: allowanceSchema,
-    transportationAllowance: allowanceSchema,
-    employmentTypeId: z.string().min(1, "Select an employment type"),
-    startDate: z.string().min(1, "Select a start date"),
-  }),
+  employment: employmentSchema,
   deployment: z.object({
     projectId: z.string().min(1, "Select a project"),
     startDate: z.string().min(1, "Select a start date"),
@@ -224,7 +249,7 @@ export async function migrateCandidateToEmployee(input: MigrateCandidateInput): 
       positionId: profile.positionId,
       employmentTypeId: values.employment.employmentTypeId,
       startDate: values.employment.startDate,
-      endDate: null,
+      endDate: values.employment.endDate || null,
     });
 
     await db.insert(employeeDeployment).values({

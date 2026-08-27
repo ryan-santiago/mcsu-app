@@ -1,11 +1,14 @@
 # Employee Recommendation — implementation plan
 
-Status: **Phases 1–6 built and browser-verified (see §12) — the full
-lifecycle from monitoring queue through applying an approved recommendation
-to employment history now works end-to-end.** §12 step 7's data-layer piece
-(migrating `employeeChangeRequest` onto the generic approval engine) is also
-DONE (2026-08-27); a true unified `/admin/approvals` UI and real
-notifications remain later, not part of this build. This document is the
+Status: **Everything in this document is built and browser-verified —
+Phases 1–6 (see §12), §12 step 7 in full (data layer + the unified
+`/admin/approvals` inbox UI, both 2026-08-27), this feature's own
+email-notification trigger wiring (§13, 2026-08-27, though it can't
+actually send anything until Microsoft Graph credentials exist), and the
+related Talent Acquisition fix in §14 (2026-08-27).** The only work left
+un-started is a change-request notification-bell source (§12 step 7's tail
+note) and resolving §2's open questions with real usage feedback — neither
+blocks anything else. This document is the
 spec to implement against, and the record of what's actually shipped and
 why — work can resume from a different machine without re-deriving the
 decisions below. Keep it updated as decisions change; don't let it drift
@@ -975,9 +978,9 @@ Suggested sequencing — each phase should be independently shippable/testable:
      the test recommendation/approval rows/audit rows, deleted the new
      `employeeEmployment` row, restored the prior row's `endDate` to
      `NULL`, restored `employee.teamId` to its original value).
-7. **Unify `/admin/approvals` into the generic inbox — data layer DONE
-   (2026-08-27); the other two pieces of this step are still later, not
-   part of this build.**
+7. **Unify `/admin/approvals` into the generic inbox — DONE (2026-08-27,
+   both the data layer and the inbox UI). A change-request notification-bell
+   source is the one piece still later.**
    - **Migrate `employeeChangeRequest` onto `approvalRequest` — DONE.**
      Two decisions made with the user before implementing:
      - **Approver model: pool, not named.** Unlike Employee Recommendation,
@@ -1068,7 +1071,155 @@ Suggested sequencing — each phase should be independently shippable/testable:
        approval tables; the nav badge appeared at 1 while a request was
        pending and disappeared once both were resolved. All test rows and
        the real mutation were reverted afterward.
-   - **Still later, not part of this build**: a true single-inbox
-     `/admin/approvals` UI, real notifications (Resend + in-app for change
-     requests), resolving the open questions in §2 with real usage
-     feedback.
+   - **Unified `/admin/approvals` inbox UI — DONE (2026-08-27).**
+     `src/app/(app)/admin/approvals/page.tsx` now gates on *either*
+     `employees:edit` or `employee_recommendations:approve` (`canAny`, not
+     `requirePermission`, since neither alone should exclude someone with
+     the other) and renders up to two independent sections, each shown only
+     to whoever holds its permission:
+     - **Employee Recommendation** — `PendingApprovalsView`
+       (`src/components/employee-recommendations/pending-approvals-view.tsx`),
+       reused as-is from the recommendation module's own "Needs your
+       approval" tab rather than rebuilt — it already does exactly this:
+       list steps assigned to the viewer, each linking to
+       `/employee-recommendations/[id]` to actually review/decide.
+     - **Change Requests** — the existing `ApprovalsView`, completely
+       unchanged.
+     **Deliberately two sections, not one merged table**: a change-request
+     row is pool-approved (any `employees:edit` holder in scope, one
+     decision closes the whole request) while a recommendation row is
+     addressed to one named approver and may be step *N* of several — the
+     row shapes, the gating logic, and the approve/reject action signatures
+     (`{ id }` vs `{ approvalRequestId }`) all differ enough that forcing a
+     single table would mean either hiding real differences or building a
+     third, more complex UI layer on top of two that already work well.
+     Clicking "Review" on a recommendation row still navigates to that
+     recommendation's own detail page (richer than anything this list could
+     inline — full requested-actions diff, approval timeline, ERF/Apply
+     actions) rather than duplicating that page's UI into a dialog.
+     Nav badge (`src/app/(app)/layout.tsx`) now sums
+     `countPendingApprovalsForActor()` + `countPendingChangeRequestApprovals()`
+     onto `/admin/approvals`; `/employee-recommendations` keeps its own
+     separate count for its own tabs. Nav entry
+     (`src/lib/navigation.ts`) updated to `permissions: ['employees:edit',
+     'employee_recommendations:approve']` — `visibleNavigation()` already
+     treats a nav item's `permissions` array as "any one of these" via
+     `canAny()`, so this was a one-line change, not new nav-filtering logic.
+   - **Still later, not part of this build**: an in-app notification-bell
+     source for change requests (Employee Recommendation's own email
+     notifications are DONE — see §13), resolving the open questions in §2
+     with real usage feedback.
+
+## 14. Talent Acquisition migrate-to-Employee end date — DONE (2026-08-27)
+
+Closes §2 open question 6: `migrateCandidateToEmployee`
+(`src/server/talent-acquisition/migrate-actions.ts`) inserted every new
+hire's first `employeeEmployment` row with `endDate: null` unconditionally,
+so a Project-Hired or Probationary hire never appeared in this module's own
+monitoring queue (§6) until someone noticed and manually added an end date
+through the Employees module — an easy-to-miss step nothing prompted anyone
+to take, confirmed for real against live data back when this question was
+first raised (exactly one TA-migrated hire existed then; her employment row
+had `endDate: null`, confirming the gap was real even though her specific
+type wasn't PH/Probationary).
+
+Fixed by adding `employment.endDate` to both `migrateInputSchema`
+(server) and `migrateFormSchema` (`migrate-to-employee-form.tsx`) — same
+`z.string().optional().or(z.literal(""))` shape and the same `endDate >=
+startDate` `.refine()` as `employmentRecordSchema`
+(`src/lib/validation/employee.ts`), the Employees module's own equivalent
+schema, so the rule reads identically in both places. One addition beyond
+what the Employees module's schema does: a second `.refine()` requiring
+`endDate` whenever `employmentTypeId` is `project_based` or `probationary`
+— matching `MONITORED_EMPLOYMENT_TYPES` in
+`src/server/employee-recommendations/queries.ts` — since an *optional* end
+date would have left the exact same gap this is meant to close. Both
+schemas duplicate this as a small local `CONTRACT_END_DATE_REQUIRED_TYPES`
+set rather than importing `MONITORED_EMPLOYMENT_TYPES` directly (that
+module is `"server-only"`, so the client-side form couldn't import it
+anyway, and the server action file already duplicates its other schemas
+independently of the Employees module by existing convention).
+
+UI: the form's Employment section now shows a `DatePicker` for
+`employment.endDate` — labeled "Contract end date" or "Probation end date"
+depending on the selected employment type — only when
+`employmentTypeId` is one of the two monitored types (`useWatch`, not
+`form.watch()`, per this repo's React Compiler lint rule); hidden and
+optional for every other type, matching how the field behaves everywhere
+else in the app. Uses `toYear={MAX_DATE_PICKER_YEAR}` (`+10` years), same
+convention `employment-history-table.tsx` already uses for a
+predetermined future contract end date.
+
+`endDate` is passed straight through to the `employeeEmployment` insert
+(`endDate: values.employment.endDate || null`) — no other change to the
+migrate flow.
+
+## 13. Email notifications
+
+**Trigger wiring DONE (2026-08-27); the actual send is a deliberate no-op
+until Microsoft Graph credentials exist.** The user doesn't yet have the
+Entra ID app registration this needs (Client ID / Tenant ID / Client
+Secret), so rather than skip the phase entirely, it split into two
+independent pieces — build the part that doesn't need credentials now,
+leave one function to fill in later:
+
+- **`src/lib/email.ts`** — `isEmailAvailable()` (checks four `MS_GRAPH_*`
+  env vars, all unset today → `false`) and `sendEmail({ to, subject, html
+})`. When unavailable, `sendEmail` logs what it *would* have sent and
+  returns `false` — never throws, so nothing that calls it can be broken by
+  email being unconfigured. Once the env vars exist, only this one
+  function's body needs a real implementation (Microsoft Graph
+  `/users/{sender}/sendMail`, app-only client-credentials auth) — every
+  call site and every trigger point is already correct and doesn't change.
+- **`src/server/employee-recommendations/notifications.ts`** — the actual
+  trigger logic: who gets emailed, and with what, for each lifecycle event.
+  Wired into `src/server/employee-recommendations/actions.ts`:
+  - `submitRecommendation` → emails the first step's approver.
+  - `approveRecommendationStep` → emails the next step's approver, or (on
+    the final approval) every active user whose role holds
+    `employee_recommendations:generate_erf` — resolved the same
+    join-then-filter way `listRecommendationApproverOptions()`
+    (`src/server/maintenance/queries.ts`) already resolves TAM/approver
+    candidates elsewhere, rather than a one-off query shape.
+  - `rejectRecommendationStep` → emails the original submitter, including
+    the rejection note if one was given.
+  - Deliberately **not** wired: ERF generation or Apply to Employment
+    History. Both are TAM-initiated actions the TAM already knows she just
+    did — nobody's waiting to be told about their own click. Notifying the
+    submitter on ERF-generated/applied would be a reasonable later addition
+    if it turns out people want it; not built speculatively.
+- Every notify call is `await`ed (a serverless function can't safely leave
+  work running after it returns) but can never fail the action it's
+  attached to, since `sendEmail()` only ever returns `false` or resolves —
+  it doesn't throw.
+
+**What's still needed from IT before this actually sends anything** — same
+shape as `docs/DOCUMENTS.md`'s SharePoint ask, different Graph scope:
+1. An **Entra ID (Azure AD) app registration** — Client ID, Tenant ID, and
+   a Client Secret (or certificate, per IT's rotation policy).
+2. **API permissions**: Microsoft Graph, **application** permission
+   `Mail.Send` (not delegated — this is an unattended backend service, not
+   acting on behalf of a signed-in user), with **admin consent granted**.
+3. **A sending mailbox** — the address `Mail.Send` is scoped to send as
+   (`MS_GRAPH_SENDER_EMAIL`), e.g. a shared mailbox like
+   `mcsu-console@questronix.com.ph` rather than a real person's inbox.
+4. Confirm whether this can reuse the **same app registration** as the
+   SharePoint work in `docs/DOCUMENTS.md` (same Client ID/Tenant ID, just
+   an additional `Mail.Send` permission grant alongside `Sites.Selected`)
+   or whether IT prefers two separate registrations — either works, this
+   app doesn't care.
+
+Once those exist, set the four `MS_GRAPH_*` variables (`.env.example` has
+the full list) and implement `sendEmail()`'s body in `src/lib/email.ts` —
+that's the entire remaining scope, nothing else in this feature changes.
+
+**`EMAIL_OVERRIDE_TO` (added 2026-08-27)**: while developing/testing against
+real accounts on the shared dev database, every outbound email redirects to
+one address (`ryan_santiago@questronix.com.ph` in `.env.local` today)
+instead of its real, per-role recipients — real accounts here belong to
+real coworkers, so testing the notification triggers shouldn't spam them.
+Handled entirely inside `sendEmail()` (`src/lib/email.ts`): the real
+recipients are preserved in the subject line and a banner in the body, so
+nothing about who an email was "really" for gets lost, just redirected.
+Unset this once email is actually ready to reach its real recipients — it
+applies unconditionally whenever it's set, dev or otherwise.

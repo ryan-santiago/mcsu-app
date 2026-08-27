@@ -24,6 +24,7 @@ import { closeOtherOpenEmployments } from "@/server/employees/actions";
 import { loadEmployeeDetail } from "@/server/employees/queries";
 
 import { resolveApprovalChain } from "./approval-chain";
+import { notifyApproverAssigned, notifyErfHandlersOfApproval, notifySubmitterOfRejection } from "./notifications";
 import {
   getEmployeeRecommendationSnapshot,
   getRecommendationById,
@@ -430,6 +431,16 @@ export async function submitRecommendation(input: { id: string }): Promise<Actio
       actorEmail: actor.email,
     });
 
+    const firstStep = resolved.steps[0];
+    if (firstStep) {
+      await notifyApproverAssigned({
+        approverUserId: firstStep.approverUserId,
+        recommendationId: input.id,
+        employeeName: existing.employeeName,
+        roleLabel: resolveApprovalChain()[0]?.roleLabel ?? "approver",
+      });
+    }
+
     refreshViews(input.id);
     return { ok: true, data: undefined, message: "Submitted for approval." };
   });
@@ -529,6 +540,20 @@ export async function approveRecommendationStep(input: { approvalRequestId: stri
       changes: note ? diffFields(null, { note }, { note: "Note" }) : undefined,
     });
 
+    if (isLastStep) {
+      await notifyErfHandlersOfApproval({ recommendationId: context.recommendationId, employeeName: context.employeeName });
+    } else {
+      const nextStep = context.steps.find((step) => step.stepOrder === currentStep.stepOrder + 1);
+      if (nextStep?.approverUserId) {
+        await notifyApproverAssigned({
+          approverUserId: nextStep.approverUserId,
+          recommendationId: context.recommendationId,
+          employeeName: context.employeeName,
+          roleLabel: resolveApprovalChain().find((step) => step.roleId === nextStep.requiredRoleId)?.roleLabel ?? "approver",
+        });
+      }
+    }
+
     refreshViews(context.recommendationId);
     return {
       ok: true,
@@ -564,6 +589,13 @@ export async function rejectRecommendationStep(input: { approvalRequestId: strin
       actorId: actor.id,
       actorEmail: actor.email,
       changes: note ? diffFields(null, { note }, { note: "Note" }) : undefined,
+    });
+
+    await notifySubmitterOfRejection({
+      submitterUserId: context.request.requestedBy,
+      recommendationId: context.recommendationId,
+      employeeName: context.employeeName,
+      note: note || null,
     });
 
     refreshViews(context.recommendationId);

@@ -252,10 +252,14 @@ export const NAVIGATION: readonly NavGroup[] = [
 				matchNested: true,
 			},
 			{
+				// Either permission is enough — a Unit Manager/Department Head who
+				// only holds `employee_recommendations:approve` (not `employees:edit`)
+				// still has real work waiting on this page's Employee Recommendation
+				// section, even though the Change Requests section stays hidden for them.
 				title: 'Approvals',
 				href: '/admin/approvals',
 				icon: 'approvals',
-				permissions: ['employees:edit'],
+				permissions: ['employees:edit', 'employee_recommendations:approve'],
 				matchNested: true,
 			},
 			{

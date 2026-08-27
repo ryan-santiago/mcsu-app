@@ -67,6 +67,14 @@ Fill in:
 `src/env.ts` validates these at startup with Zod, so a typo fails immediately
 with a readable message rather than at the first query.
 
+Optional, feature-gated (leave unset and the feature just degrades quietly —
+not validated by `src/env.ts`, read directly from `process.env`, same
+pattern as `isDocumentStorageAvailable()`'s `process.env.VERCEL` check):
+
+| Variable | Notes |
+| -------- | ----- |
+| `MS_GRAPH_CLIENT_ID`, `MS_GRAPH_TENANT_ID`, `MS_GRAPH_CLIENT_SECRET`, `MS_GRAPH_SENDER_EMAIL` | Email notifications (Employee Recommendation approvals/rejections) via Microsoft Graph. Needs an Entra ID app registration with the `Mail.Send` application permission — see `docs/EMPLOYEE_RECOMMENDATION.md` §13 for the full IT ask. |
+
 > `.env.local` is gitignored. Never commit it. Use a **different**
 > `BETTER_AUTH_SECRET` in production — rotating it invalidates all sessions.
 

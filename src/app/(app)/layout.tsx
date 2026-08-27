@@ -27,10 +27,15 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   // `countPendingUserApprovals()`/`countPendingApprovalsForActor()`/
   // `countPendingChangeRequestApprovals()` already return 0 for anyone
   // without the relevant permission, so no separate guard here.
+  // `/admin/approvals` combines both — it's the one page that shows both
+  // kinds of pending work now (§13's unified inbox); `/employee-recommendations`
+  // keeps its own count too, since that page's own tabs still need it.
   const navBadges: Record<string, number> = {
     ...(pendingUserApprovals > 0 ? { "/admin/users": pendingUserApprovals } : {}),
     ...(pendingRecommendationApprovals > 0 ? { "/employee-recommendations": pendingRecommendationApprovals } : {}),
-    ...(pendingChangeRequestApprovals > 0 ? { "/admin/approvals": pendingChangeRequestApprovals } : {}),
+    ...(pendingRecommendationApprovals + pendingChangeRequestApprovals > 0
+      ? { "/admin/approvals": pendingRecommendationApprovals + pendingChangeRequestApprovals }
+      : {}),
   };
 
   // Static permission-based filtering (`visibleNavigation()`) can't see

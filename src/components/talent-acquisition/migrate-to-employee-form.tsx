@@ -6,7 +6,7 @@ import { format } from "date-fns";
 import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import * as React from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 
@@ -54,6 +54,27 @@ const allowanceSchema = z
   .min(1, "Enter an amount (0 if none)")
   .refine((value) => Number.isFinite(Number(value)) && Number(value) >= 0, "Enter a valid amount");
 
+/** Matches `CONTRACT_END_DATE_REQUIRED_TYPES` in `migrate-actions.ts` — see that file's comment. */
+const CONTRACT_END_DATE_REQUIRED_TYPES = new Set(["project_based", "probationary"]);
+
+const employmentSchema = z
+  .object({
+    salary: salarySchema,
+    communicationAllowance: allowanceSchema,
+    transportationAllowance: allowanceSchema,
+    employmentTypeId: z.string().min(1, "Select an employment type"),
+    startDate: z.string().min(1, "Select a start date"),
+    endDate: z.string().optional().or(z.literal("")),
+  })
+  .refine((data) => !CONTRACT_END_DATE_REQUIRED_TYPES.has(data.employmentTypeId) || Boolean(data.endDate), {
+    message: "Select a contract/probation end date for this employment type",
+    path: ["endDate"],
+  })
+  .refine((data) => !data.endDate || data.endDate >= data.startDate, {
+    message: "End date cannot be before the start date",
+    path: ["endDate"],
+  });
+
 const migrateFormSchema = z.object({
   profile: z.object({
     code: employeeCodeSchema,
@@ -69,19 +90,15 @@ const migrateFormSchema = z.object({
   }),
   currentAddress: addressSchema,
   permanentAddress: addressSchema,
-  employment: z.object({
-    salary: salarySchema,
-    communicationAllowance: allowanceSchema,
-    transportationAllowance: allowanceSchema,
-    employmentTypeId: z.string().min(1, "Select an employment type"),
-    startDate: z.string().min(1, "Select a start date"),
-  }),
+  employment: employmentSchema,
   deployment: z.object({
     projectId: z.string().min(1, "Select a project"),
     startDate: z.string().min(1, "Select a start date"),
   }),
 });
 type MigrateFormInput = z.infer<typeof migrateFormSchema>;
+
+const MAX_DATE_PICKER_YEAR = new Date().getFullYear() + 10;
 
 const BLANK_ADDRESS = {
   regionCode: "",
@@ -151,12 +168,15 @@ export function MigrateToEmployeeForm({
         transportationAllowance: "0",
         employmentTypeId: "",
         startDate: today,
+        endDate: "",
       },
       deployment: { projectId: "", startDate: today },
     },
   });
 
   const isSubmitting = form.formState.isSubmitting;
+  const watchedEmploymentTypeId = useWatch({ control: form.control, name: "employment.employmentTypeId" });
+  const endDateRequired = CONTRACT_END_DATE_REQUIRED_TYPES.has(watchedEmploymentTypeId);
 
   async function onSubmit(values: MigrateFormInput) {
     const result = await migrateCandidateToEmployee({ applicationId: application.id, requestId, ...values });
@@ -401,6 +421,24 @@ export function MigrateToEmployeeForm({
               )}
             />
           </div>
+
+          {endDateRequired ? (
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="employment.endDate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{watchedEmploymentTypeId === "project_based" ? "Contract end date" : "Probation end date"}</FormLabel>
+                    <FormControl>
+                      <DatePicker value={field.value ?? ""} onChange={field.onChange} disabled={isSubmitting} toYear={MAX_DATE_PICKER_YEAR} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+          ) : null}
 
           <div className="grid grid-cols-3 gap-4">
             <FormField
