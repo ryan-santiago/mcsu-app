@@ -48,6 +48,10 @@ const STATUS_STYLES: Record<ChangeRequestStatus, { icon: typeof Clock3; classNam
   pending: { icon: Clock3, className: "border-warning/30 bg-warning/10 text-warning" },
   approved: { icon: CircleCheck, className: "border-success/30 bg-success/10 text-success" },
   rejected: { icon: CircleX, className: "border-destructive/30 bg-destructive/10 text-destructive" },
+  // No tab surfaces this (self-service cancel, before any reviewer sees it) — kept only so
+  // `Record<ChangeRequestStatus, ...>` stays exhaustive, same styling as the equivalent
+  // Employee Recommendation badge (`recommendation-badges.tsx`).
+  cancelled: { icon: CircleX, className: "border-muted-foreground/30 bg-muted/40 text-muted-foreground" },
 };
 
 function StatusBadge({ status }: { status: ChangeRequestStatus }) {

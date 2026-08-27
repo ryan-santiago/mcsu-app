@@ -5,7 +5,7 @@ import { and, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/db";
-import { employee, employeeAddress, employeeChangeRequest, gender } from "@/db/schema";
+import { approvalRequest, approvalStep, employee, employeeAddress, employeeChangeRequest, gender } from "@/db/schema";
 import { diffFields, recordAudit } from "@/lib/audit";
 import { formatEmployeeName } from "@/lib/employee-format";
 import { AuthorizationError } from "@/lib/session";
@@ -145,6 +145,31 @@ export async function submitProfileChangeRequest(input: SelfServiceFormInput): P
       changes,
     });
 
+    // Mirrors the lifecycle into the shared approval engine (see
+    // `decideApprovalStep` in src/server/change-requests/actions.ts) —
+    // `requiredRoleId`/`approverUserId` stay null: there's no single named
+    // approver, any in-scope `employees:edit` holder may act.
+    const approvalRequestId = crypto.randomUUID();
+    await db.insert(approvalRequest).values({
+      id: approvalRequestId,
+      entityType: "employee_change_request",
+      entityId: id,
+      requestedBy: actor.id,
+      requestedByLabel: actor.displayName,
+      requesterRank: actor.rank,
+      status: "pending",
+      currentStepOrder: 1,
+    });
+    await db.insert(approvalStep).values({
+      id: crypto.randomUUID(),
+      approvalRequestId,
+      stepOrder: 1,
+      requiredRoleId: null,
+      approverUserId: null,
+      status: "pending",
+    });
+    await db.update(employeeChangeRequest).set({ approvalRequestId }).where(eq(employeeChangeRequest.id, id));
+
     await recordAudit({
       module: "employees",
       action: "change_requested",
@@ -173,7 +198,15 @@ export async function cancelMyChangeRequest(input: { id: string }): Promise<Acti
       return { ok: false, error: "This request has already been reviewed." };
     }
 
-    await db.delete(employeeChangeRequest).where(eq(employeeChangeRequest.id, id));
+    await db.update(employeeChangeRequest).set({ status: "cancelled" }).where(eq(employeeChangeRequest.id, id));
+
+    if (request.approvalRequestId) {
+      await db
+        .update(approvalStep)
+        .set({ status: "skipped" })
+        .where(and(eq(approvalStep.approvalRequestId, request.approvalRequestId), eq(approvalStep.status, "pending")));
+      await db.update(approvalRequest).set({ status: "cancelled" }).where(eq(approvalRequest.id, request.approvalRequestId));
+    }
 
     await recordAudit({
       module: "employees",

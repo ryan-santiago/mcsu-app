@@ -6,14 +6,14 @@ import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { employee, employeeChangeRequest, role, user, type AuditChange, type ChangeRequestStatus } from "@/db/schema";
 import { formatEmployeeName } from "@/lib/employee-format";
-import { hasUnrestrictedAccess } from "@/lib/rbac";
-import { authorize } from "@/lib/session";
+import { can, hasUnrestrictedAccess } from "@/lib/rbac";
+import { authorize, getCurrentUser } from "@/lib/session";
 
 import type { ChangeRequestCounts, ChangeRequestFilters, ChangeRequestListResult, ChangeRequestRow } from "./types";
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
-const STATUSES: ChangeRequestStatus[] = ["pending", "approved", "rejected"];
+const STATUSES: ChangeRequestStatus[] = ["pending", "approved", "rejected", "cancelled"];
 
 const reviewer = alias(user, "reviewer");
 
@@ -113,7 +113,7 @@ export async function listChangeRequests(filters: ChangeRequestFilters = {}): Pr
 
   // Non-admins with no resolved team see nothing rather than everyone's requests.
   if (!hasUnrestrictedAccess(actor) && !actor.teamId) {
-    return { requests: [], counts: { pending: 0, approved: 0, rejected: 0 }, total: 0, page, pageSize };
+    return { requests: [], counts: { pending: 0, approved: 0, rejected: 0, cancelled: 0 }, total: 0, page, pageSize };
   }
 
   const scopeTeamId = hasUnrestrictedAccess(actor) ? null : actor.teamId;
@@ -144,7 +144,7 @@ export async function listChangeRequests(filters: ChangeRequestFilters = {}): Pr
     .where(scopeTeamId ? eq(employee.teamId, scopeTeamId) : undefined)
     .groupBy(employeeChangeRequest.status);
 
-  const counts: ChangeRequestCounts = { pending: 0, approved: 0, rejected: 0 };
+  const counts: ChangeRequestCounts = { pending: 0, approved: 0, rejected: 0, cancelled: 0 };
   for (const row of grouped) counts[row.status] = row.total;
   for (const status of STATUSES) counts[status] ??= 0;
 
@@ -162,6 +162,7 @@ export async function getChangeRequestById(id: string) {
       id: employeeChangeRequest.id,
       employeeId: employeeChangeRequest.employeeId,
       status: employeeChangeRequest.status,
+      approvalRequestId: employeeChangeRequest.approvalRequestId,
       proposedProfile: employeeChangeRequest.proposedProfile,
       proposedCurrentAddress: employeeChangeRequest.proposedCurrentAddress,
       proposedPermanentAddress: employeeChangeRequest.proposedPermanentAddress,
@@ -183,4 +184,32 @@ export async function getChangeRequestById(id: string) {
     .limit(1);
 
   return row ?? null;
+}
+
+/**
+ * Count-only, for the sidebar nav badge (`app/(app)/layout.tsx`) — same
+ * `getCurrentUser()` + permission-guard-returns-0 pattern as
+ * `countPendingApprovalsForActor()` (`src/server/employee-recommendations/queries.ts`),
+ * since this runs unconditionally on every page load. Scoped the same way
+ * `listChangeRequests()` scopes its own rows — no team means no requests,
+ * not everyone's.
+ */
+export async function countPendingChangeRequestApprovals(): Promise<number> {
+  const actor = await getCurrentUser();
+  if (!actor || !can(actor, "employees:edit")) return 0;
+  if (!hasUnrestrictedAccess(actor) && !actor.teamId) return 0;
+
+  const scopeTeamId = hasUnrestrictedAccess(actor) ? null : actor.teamId;
+
+  const [row] = await db
+    .select({ value: count() })
+    .from(employeeChangeRequest)
+    .innerJoin(employee, eq(employee.id, employeeChangeRequest.employeeId))
+    .where(
+      scopeTeamId
+        ? and(eq(employeeChangeRequest.status, "pending"), eq(employee.teamId, scopeTeamId))
+        : eq(employeeChangeRequest.status, "pending"),
+    );
+
+  return row.value;
 }

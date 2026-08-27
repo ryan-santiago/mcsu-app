@@ -77,8 +77,13 @@ async function assertEmployeeInScope(actor: CurrentUser, employeeId: string): Pr
  * row (correct by `startDate DESC`) is still what every read shows as
  * current — the only residual effect is a stale row that still displays as
  * open, which self-heals the next time a record is added.
+ *
+ * Exported so `applyRecommendation`
+ * (`src/server/employee-recommendations/actions.ts`) can reuse the exact
+ * same invariant when it creates a new `employeeEmployment` row from an
+ * approved recommendation, instead of a second copy that could drift.
  */
-async function closeOtherOpenEmployments(employeeId: string, keepId: string, closeAtDate: string) {
+export async function closeOtherOpenEmployments(employeeId: string, keepId: string, closeAtDate: string) {
   await db
     .update(employeeEmployment)
     .set({ endDate: closeAtDate })

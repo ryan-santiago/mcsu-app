@@ -5,7 +5,7 @@ import { and, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/db";
-import { employee, employeeChangeRequest } from "@/db/schema";
+import { approvalRequest, approvalStep, employee, employeeChangeRequest } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
 import { formatEmployeeName } from "@/lib/employee-format";
 import { denyReasonForActingOn, hasUnrestrictedAccess } from "@/lib/rbac";
@@ -73,6 +73,31 @@ export async function fetchChangeRequests(filters: ChangeRequestFilters): Promis
   return listChangeRequests(filters);
 }
 
+/**
+ * Mirrors the decision onto the shared `approvalRequest`/`approvalStep`
+ * tables (see `docs/EMPLOYEE_RECOMMENDATION.md` §12 step 7) — purely
+ * bookkeeping so a future unified inbox/notification/badge can enumerate
+ * change requests the same way it enumerates recommendation steps.
+ * `employeeChangeRequest.status` stays the actual source of truth this
+ * module reads; this never gates anything. `approvalRequestId` is nullable
+ * only for defensiveness — every request submitted after this migration
+ * always has one (`submitProfileChangeRequest`).
+ */
+async function decideApprovalStep(
+  approvalRequestId: string | null,
+  status: "approved" | "rejected",
+  actorId: string,
+  note: string | null,
+): Promise<void> {
+  if (!approvalRequestId) return;
+
+  await db
+    .update(approvalStep)
+    .set({ status, decidedBy: actorId, decidedAt: new Date(), note })
+    .where(and(eq(approvalStep.approvalRequestId, approvalRequestId), eq(approvalStep.status, "pending")));
+  await db.update(approvalRequest).set({ status }).where(eq(approvalRequest.id, approvalRequestId));
+}
+
 export async function approveChangeRequest(input: { id: string }): Promise<ActionResult> {
   return run(async () => {
     const actor = await authorize("employees:edit");
@@ -119,6 +144,7 @@ export async function approveChangeRequest(input: { id: string }): Promise<Actio
       .update(employeeChangeRequest)
       .set({ status: "approved", reviewedBy: actor.id, reviewedAt: new Date() })
       .where(eq(employeeChangeRequest.id, id));
+    await decideApprovalStep(request.approvalRequestId, "approved", actor.id, null);
 
     const label = formatEmployeeName(profile);
     await recordAudit({
@@ -153,6 +179,7 @@ export async function rejectChangeRequest(input: { id: string; note?: string }):
       .update(employeeChangeRequest)
       .set({ status: "rejected", reviewedBy: actor.id, reviewedAt: new Date(), reviewNote: note || null })
       .where(eq(employeeChangeRequest.id, id));
+    await decideApprovalStep(request.approvalRequestId, "rejected", actor.id, note || null);
 
     const label = formatEmployeeName({
       firstName: request.employeeFirstName,
