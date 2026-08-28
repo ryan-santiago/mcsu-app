@@ -1,9 +1,10 @@
 "use client";
 
 import { useDroppable } from "@dnd-kit/core";
-import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, MoreHorizontal, Plus } from "lucide-react";
+import { GripVertical, Loader2, MoreHorizontal, Plus } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 
@@ -18,6 +19,9 @@ import type { OneLotProjectMemberRow } from "@/server/one-lot-projects/types";
 
 import { CreateWorkItemDialog } from "../backlog/create-work-item-dialog";
 import { KanbanCard } from "./kanban-card";
+
+/** Namespaces a column's own drag-to-reorder id apart from `column:{id}` (the card drop-target id `useDroppable` below already owns) and from bare work-item ids. */
+export const COLUMN_DRAG_PREFIX = "col-sort:";
 
 type KanbanColumnProps = {
   projectId: string;
@@ -35,6 +39,14 @@ export function KanbanColumn({ projectId, activeSprintId, column, columns, items
   const [renaming, setRenaming] = React.useState(false);
   const [name, setName] = React.useState(column.name);
   const { setNodeRef } = useDroppable({ id: `column:${column.id}` });
+  const {
+    attributes: columnDragAttributes,
+    listeners: columnDragListeners,
+    setNodeRef: setColumnSortableRef,
+    transform: columnTransform,
+    transition: columnTransition,
+    isDragging: isColumnDragging,
+  } = useSortable({ id: `${COLUMN_DRAG_PREFIX}${column.id}` });
   const queryClient = useQueryClient();
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["one-lot-project-kanban", projectId] });
@@ -82,7 +94,15 @@ export function KanbanColumn({ projectId, activeSprintId, column, columns, items
   const validName = boardColumnFormSchema.safeParse({ name }).success;
 
   return (
-    <div className="ring-foreground/10 bg-muted flex w-72 shrink-0 flex-col gap-3 rounded-xl p-3 ring-1">
+    <div
+      ref={setColumnSortableRef}
+      style={{
+        transform: CSS.Transform.toString(columnTransform),
+        transition: columnTransition,
+        opacity: isColumnDragging ? 0.5 : 1,
+      }}
+      className="ring-foreground/10 bg-muted flex w-72 shrink-0 flex-col gap-3 rounded-xl p-3 ring-1"
+    >
       <div className="flex items-center justify-between gap-2">
         {renaming ? (
           <div className="flex flex-1 items-center gap-1">
@@ -108,6 +128,17 @@ export function KanbanColumn({ projectId, activeSprintId, column, columns, items
           </div>
         ) : (
           <h3 className="flex min-w-0 items-center gap-2 text-sm font-semibold">
+            {canEdit ? (
+              <button
+                type="button"
+                {...columnDragAttributes}
+                {...columnDragListeners}
+                className="text-muted-foreground hover:text-foreground shrink-0 cursor-grab touch-none active:cursor-grabbing"
+                aria-label="Drag to reorder column"
+              >
+                <GripVertical className="size-4" aria-hidden />
+              </button>
+            ) : null}
             <span className="truncate">{column.name}</span>
             <span className="text-muted-foreground bg-background shrink-0 rounded-full px-1.5 py-0.5 text-xs tabular-nums">
               {items.length}

@@ -732,6 +732,33 @@ export async function reorderOneLotProjectWorkItemsOnBoard(input: {
 // Board columns
 // ---------------------------------------------------------------------------
 
+export async function reorderOneLotProjectBoardColumns(input: {
+  projectId: string;
+  moves: { id: string; sortOrder: number }[];
+}): Promise<ActionResult> {
+  return run(async () => {
+    const actor = await authorizeActiveUser();
+    await assertOneLotProjectContentAccess(input.projectId, actor);
+
+    if (input.moves.length === 0) return { ok: true, data: undefined, message: "" };
+
+    const rows = sql.join(
+      input.moves.map((m) => sql`(${m.id}::text, ${m.sortOrder}::int)`),
+      sql`, `,
+    );
+
+    await db.execute(sql`
+      UPDATE one_lot_project_board_column AS c
+      SET sort_order = v.sort_order
+      FROM (VALUES ${rows}) AS v(id, sort_order)
+      WHERE c.id = v.id AND c.project_id = ${input.projectId}
+    `);
+
+    revalidateBoard(input.projectId);
+    return { ok: true, data: undefined, message: "" };
+  });
+}
+
 export async function createOneLotProjectBoardColumn(
   input: BoardColumnFormInput & { projectId: string },
 ): Promise<ActionResult<{ id: string }>> {

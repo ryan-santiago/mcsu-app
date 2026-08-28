@@ -7,9 +7,10 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import { arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
+import { arrayMove, horizontalListSortingStrategy, SortableContext, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { KanbanSquare } from "lucide-react";
 import Link from "next/link";
@@ -17,12 +18,29 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/layout/empty-state";
-import { fetchOneLotProjectKanbanBoard, reorderOneLotProjectWorkItemsOnBoard } from "@/server/one-lot-projects/backlog-actions";
+import {
+  fetchOneLotProjectKanbanBoard,
+  reorderOneLotProjectBoardColumns,
+  reorderOneLotProjectWorkItemsOnBoard,
+} from "@/server/one-lot-projects/backlog-actions";
 import type { KanbanBoardData, WorkItemRow as WorkItemRowData } from "@/server/one-lot-projects/backlog-types";
 
 import { WorkItemDetailSheet } from "../backlog/work-item-detail-sheet";
 import { AddColumnButton } from "./add-column-button";
-import { KanbanColumn } from "./kanban-column";
+import { COLUMN_DRAG_PREFIX, KanbanColumn } from "./kanban-column";
+
+/**
+ * A column's own drag-to-reorder rect (`col-sort:{id}`, the whole column div)
+ * fully overlaps its nested card-drop rect (`column:{id}`) — plain
+ * `closestCorners` can't tell them apart. While dragging a column, this
+ * restricts candidates to other columns only, so a column drag never gets
+ * mistaken for a card drop (and vice versa).
+ */
+const collisionDetection: CollisionDetection = (args) => {
+  const isColumnDrag = String(args.active.id).startsWith(COLUMN_DRAG_PREFIX);
+  const containers = args.droppableContainers.filter((c) => String(c.id).startsWith(COLUMN_DRAG_PREFIX) === isColumnDrag);
+  return closestCorners({ ...args, droppableContainers: containers });
+};
 
 function findColumnId(itemsByColumn: Record<string, WorkItemRowData[]>, id: string): string | null {
   if (id.startsWith("column:")) return id.slice("column:".length);
@@ -61,9 +79,34 @@ export function OneLotProjectKanbanBoard({ projectId, initialBoard, canEdit }: O
     },
   });
 
+  const reorderColumnsMutation = useMutation({
+    mutationFn: reorderOneLotProjectBoardColumns,
+    onError: () => {
+      toast.error("Couldn't save the new column order — reloading.");
+      queryClient.invalidateQueries({ queryKey: ["one-lot-project-kanban", projectId] });
+    },
+  });
+
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
+
+    if (String(active.id).startsWith(COLUMN_DRAG_PREFIX)) {
+      const activeColumnId = String(active.id).slice(COLUMN_DRAG_PREFIX.length);
+      const overId = String(over.id);
+      const overColumnId = overId.startsWith(COLUMN_DRAG_PREFIX) ? overId.slice(COLUMN_DRAG_PREFIX.length) : overId;
+      const oldIndex = board.columns.findIndex((c) => c.id === activeColumnId);
+      const newIndex = board.columns.findIndex((c) => c.id === overColumnId);
+      if (oldIndex === -1 || newIndex === -1) return;
+
+      const reorderedColumns = arrayMove(board.columns, oldIndex, newIndex);
+      queryClient.setQueryData(["one-lot-project-kanban", projectId], { ...board, columns: reorderedColumns });
+      reorderColumnsMutation.mutate({
+        projectId,
+        moves: reorderedColumns.map((c, index) => ({ id: c.id, sortOrder: index })),
+      });
+      return;
+    }
 
     const sourceColumnId = findColumnId(board.itemsByColumn, String(active.id));
     const destColumnId = findColumnId(board.itemsByColumn, String(over.id));
@@ -119,23 +162,28 @@ export function OneLotProjectKanbanBoard({ projectId, initialBoard, canEdit }: O
       <DndContext
         id={`one-lot-project-kanban-${projectId}`}
         sensors={sensors}
-        collisionDetection={closestCorners}
+        collisionDetection={collisionDetection}
         onDragEnd={handleDragEnd}
       >
         <div className="flex items-start gap-4 overflow-x-auto pb-2">
-          {board.columns.map((column) => (
-            <KanbanColumn
-              key={column.id}
-              projectId={projectId}
-              activeSprintId={board.activeSprint!.id}
-              column={column}
-              columns={board.columns}
-              items={board.itemsByColumn[column.id] ?? []}
-              members={board.members}
-              canEdit={canEdit}
-              onItemClick={setOpenWorkItemId}
-            />
-          ))}
+          <SortableContext
+            items={board.columns.map((c) => `${COLUMN_DRAG_PREFIX}${c.id}`)}
+            strategy={horizontalListSortingStrategy}
+          >
+            {board.columns.map((column) => (
+              <KanbanColumn
+                key={column.id}
+                projectId={projectId}
+                activeSprintId={board.activeSprint!.id}
+                column={column}
+                columns={board.columns}
+                items={board.itemsByColumn[column.id] ?? []}
+                members={board.members}
+                canEdit={canEdit}
+                onItemClick={setOpenWorkItemId}
+              />
+            ))}
+          </SortableContext>
           {canEdit ? <AddColumnButton projectId={projectId} /> : null}
         </div>
       </DndContext>
