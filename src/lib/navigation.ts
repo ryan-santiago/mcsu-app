@@ -107,6 +107,13 @@ export const NAVIGATION: readonly NavGroup[] = [
 		title: 'Workforce',
 		items: [
 			{
+				title: 'Dashboard',
+				href: '/workforce-dashboard',
+				icon: 'dashboard',
+				permissions: ['employees:read', 'projects:read', 'employee_recommendations:read'],
+				matchNested: true,
+			},
+			{
 				title: 'Employees',
 				href: '/employees',
 				icon: 'employees',

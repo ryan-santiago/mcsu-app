@@ -104,6 +104,13 @@ export async function requirePermission(permission: Permission): Promise<Current
   return user;
 }
 
+/** Like `requirePermission()`, but passes when the actor holds any one of the given permissions — for a page that spans several modules (e.g. a cross-module dashboard). */
+export async function requirePermissionAny(permissions: readonly Permission[]): Promise<CurrentUser> {
+  const user = await requireUser();
+  if (!canAny(user, permissions)) forbidden();
+  return user;
+}
+
 /**
  * Server-action counterpart to `requirePermission`. Actions must not redirect
  * on an authorization failure — they return a result the client can render.
