@@ -1378,6 +1378,15 @@ export const oneLotProjectWorkItem = pgTable(
     assigneeId: text("assignee_id").references(() => user.id, { onDelete: "set null" }),
     /** Solid color token for the card's header strip — Task/Bug only, picked from a fixed palette, see `WORK_ITEM_COVER_COLORS`. */
     coverColor: text("cover_color"),
+    /**
+     * Set the moment this item's `columnId` becomes the project's `isDone`
+     * column, cleared the moment it leaves — a precise event timestamp, unlike
+     * `updatedAt` (which any unrelated edit also bumps). This is what
+     * `getOneLotProjectActiveSprintBurndown` reads for "was this item done by
+     * day N," instead of approximating from `updatedAt`. See
+     * `oneLotProjectBoardColumn.isDone`'s doc comment for which column that is.
+     */
+    doneAt: timestamp("done_at", { withTimezone: true }),
     dueDate: date("due_date"),
     /** 1 story point ≈ 2 hours (a team convention, not enforced here). */
     storyPoints: numeric("story_points", { precision: 5, scale: 1 }),

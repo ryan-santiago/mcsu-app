@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { boardColumnFormSchema } from "@/lib/validation/one-lot-project-backlog";
 import { createOneLotProjectWorkItemWithSubtasks, deleteOneLotProjectBoardColumn, renameOneLotProjectBoardColumn } from "@/server/one-lot-projects/backlog-actions";
 import type { BoardColumnRow, WorkItemRow } from "@/server/one-lot-projects/backlog-types";
@@ -115,19 +116,42 @@ export function KanbanColumn({ projectId, activeSprintId, column, columns, items
         )}
 
         {canEdit && !renaming ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon-sm" aria-label="Column actions">
-                <MoreHorizontal className="size-4" aria-hidden />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => setRenaming(true)}>Rename</DropdownMenuItem>
-              <DropdownMenuItem variant="destructive" onSelect={() => deleteMutation.mutate()}>
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {column.isDone ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className="bg-success size-2 rounded-full"
+                    aria-label="Done column — tracks completed work for Sprint Burndown, Velocity, and sprint completion"
+                  />
+                </TooltipTrigger>
+                <TooltipContent>
+                  This is the project&apos;s Done column — Sprint Burndown, Velocity, and sprint completion all track
+                  finished work through it. Rename it freely; it can&apos;t be deleted.
+                </TooltipContent>
+              </Tooltip>
+            ) : null}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon-sm" aria-label="Column actions">
+                  <MoreHorizontal className="size-4" aria-hidden />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => setRenaming(true)}>Rename</DropdownMenuItem>
+                <DropdownMenuItem
+                  variant="destructive"
+                  disabled={column.isDone}
+                  onSelect={() => {
+                    if (column.isDone) return;
+                    deleteMutation.mutate();
+                  }}
+                >
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         ) : null}
       </div>
 

@@ -120,7 +120,7 @@ export type CompletedSprintRow = {
 
 export type BurndownPoint = {
   date: string;
-  /** Actual remaining points as of this day (approximated from `updatedAt` on Done items — see `getOneLotProjectActiveSprintBurndown`). */
+  /** Actual remaining points as of this day (from `doneAt` on Done items — see `getOneLotProjectActiveSprintBurndown`). */
   remaining: number;
   /** Where remaining points "should" be on this day under a straight-line burn from the sprint's total. */
   ideal: number;

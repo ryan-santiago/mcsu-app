@@ -595,12 +595,14 @@ export async function getOneLotProjectCompletedSprints(projectId: string): Promi
 
 /**
  * Active sprint's burndown — remaining vs. ideal story points per day from
- * the sprint's start through today (capped at its end date). There's no
- * per-item "completed at" timestamp, so each day's "done" total is
- * approximated from `updatedAt` on items already sitting in a Done column —
- * accurate as long as a done item isn't edited again afterward. Returns
- * `points: []` when there's no active sprint, or it has no start/end date
- * yet (dates are optional at creation — see `startOneLotProjectSprint`).
+ * the sprint's start through today (capped at its end date). Each day's
+ * "done" total comes from `doneAt`, set the moment an item's `columnId`
+ * becomes the project's done column and cleared the moment it leaves (see
+ * the write paths in backlog-actions.ts) — precise regardless of later
+ * unrelated edits, unlike the `updatedAt`-based approximation this used to
+ * read. Returns `points: []` when there's no active sprint, or it has no
+ * start/end date yet (dates are optional at creation — see
+ * `startOneLotProjectSprint`).
  */
 export async function getOneLotProjectActiveSprintBurndown(projectId: string): Promise<BurndownData> {
   await authorizeActiveUser();
@@ -623,11 +625,9 @@ export async function getOneLotProjectActiveSprintBurndown(projectId: string): P
   const items = await db
     .select({
       storyPoints: oneLotProjectWorkItem.storyPoints,
-      isDone: oneLotProjectBoardColumn.isDone,
-      updatedAt: oneLotProjectWorkItem.updatedAt,
+      doneAt: oneLotProjectWorkItem.doneAt,
     })
     .from(oneLotProjectWorkItem)
-    .innerJoin(oneLotProjectBoardColumn, eq(oneLotProjectBoardColumn.id, oneLotProjectWorkItem.columnId))
     .where(and(eq(oneLotProjectWorkItem.sprintId, sprint.id), isNull(oneLotProjectWorkItem.parentId)));
 
   const totalPoints = items.reduce((sum, item) => sum + Number(item.storyPoints ?? 0), 0);
@@ -642,7 +642,7 @@ export async function getOneLotProjectActiveSprintBurndown(projectId: string): P
   for (let day = start; day <= lastDay; day = addDays(day, 1)) {
     const dayEnd = addDays(day, 1);
     const doneByDay = items.reduce((sum, item) => {
-      if (!item.isDone || item.updatedAt >= dayEnd) return sum;
+      if (!item.doneAt || item.doneAt >= dayEnd) return sum;
       return sum + Number(item.storyPoints ?? 0);
     }, 0);
     const elapsedDays = Math.min(differenceInCalendarDays(day, start), totalSprintDays);

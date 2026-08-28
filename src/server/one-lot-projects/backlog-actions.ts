@@ -394,14 +394,25 @@ export async function createOneLotProjectWorkItem(
     }
 
     let columnId = input.columnId;
+    let columnIsDone: boolean;
     if (!columnId) {
       const [defaultColumn] = await db
-        .select({ id: oneLotProjectBoardColumn.id })
+        .select({ id: oneLotProjectBoardColumn.id, isDone: oneLotProjectBoardColumn.isDone })
         .from(oneLotProjectBoardColumn)
         .where(and(eq(oneLotProjectBoardColumn.projectId, input.projectId), eq(oneLotProjectBoardColumn.isDefault, true)))
         .limit(1);
       if (!defaultColumn) return { ok: false, error: "This project has no default column configured." };
       columnId = defaultColumn.id;
+      columnIsDone = defaultColumn.isDone;
+    } else {
+      // The Kanban board's "+ Create" passes a specific column explicitly —
+      // including, sometimes, the Done column itself.
+      const [column] = await db
+        .select({ isDone: oneLotProjectBoardColumn.isDone })
+        .from(oneLotProjectBoardColumn)
+        .where(eq(oneLotProjectBoardColumn.id, columnId))
+        .limit(1);
+      columnIsDone = column?.isDone ?? false;
     }
 
     let sortOrder = 0;
@@ -445,6 +456,7 @@ export async function createOneLotProjectWorkItem(
       storyPoints: input.storyPoints || null,
       sortOrder,
       boardSortOrder,
+      doneAt: columnIsDone ? new Date() : null,
       createdBy: actor.id,
     });
 
@@ -547,6 +559,19 @@ export async function updateOneLotProjectWorkItem(input: {
     if (patch.storyPoints !== undefined) values.storyPoints = patch.storyPoints || null;
     if (patch.coverColor !== undefined) values.coverColor = patch.coverColor;
 
+    // Crossing into or out of the Done column sets/clears `doneAt` — the
+    // precise timestamp the burndown chart reads, instead of `updatedAt`
+    // (which any unrelated field edit above would also bump).
+    if (patch.columnId !== undefined && patch.columnId !== before.columnId) {
+      const columnFlags = await db
+        .select({ id: oneLotProjectBoardColumn.id, isDone: oneLotProjectBoardColumn.isDone })
+        .from(oneLotProjectBoardColumn)
+        .where(inArray(oneLotProjectBoardColumn.id, [before.columnId, patch.columnId]));
+      const isDone = (id: string) => columnFlags.find((c) => c.id === id)?.isDone ?? false;
+      if (isDone(patch.columnId) && !isDone(before.columnId)) values.doneAt = new Date();
+      else if (!isDone(patch.columnId) && isDone(before.columnId)) values.doneAt = null;
+    }
+
     if (Object.keys(values).length === 0) return { ok: true, data: undefined, message: "" };
 
     const result = await db
@@ -599,7 +624,10 @@ export async function updateOneLotProjectWorkItem(input: {
       afterDisplay.description = values.description ? "(set)" : null;
     }
 
-    const touchedKeys = Object.keys(values);
+    // `doneAt` is a derived side effect of the column change already
+    // reflected by the "Status" diff below, not a field the user directly
+    // edited — omit it so the audit trail doesn't show a redundant entry.
+    const touchedKeys = Object.keys(values).filter((key) => key !== "doneAt");
     const beforeSubset: Record<string, unknown> = {};
     const afterSubset: Record<string, unknown> = {};
     for (const key of touchedKeys) {
@@ -676,9 +704,22 @@ export async function reorderOneLotProjectWorkItemsOnBoard(input: {
       sql`, `,
     );
 
+    // Same done-column reference `completeOneLotProjectSprint` uses. A drag
+    // that lands a card in it sets `done_at`; a drag that pulls it back out
+    // clears it — `w.column_id` here is the pre-update value, so both
+    // comparisons see the move's actual before/after, not the new state.
+    const doneColumnIdSql = sql`(SELECT id FROM one_lot_project_board_column WHERE project_id = ${input.projectId} AND is_done = true LIMIT 1)`;
+
     await db.execute(sql`
       UPDATE one_lot_project_work_item AS w
-      SET column_id = c.column_id, board_sort_order = c.board_sort_order, updated_at = now()
+      SET column_id = c.column_id,
+          board_sort_order = c.board_sort_order,
+          done_at = CASE
+            WHEN c.column_id = ${doneColumnIdSql} AND w.column_id IS DISTINCT FROM ${doneColumnIdSql} THEN now()
+            WHEN c.column_id IS DISTINCT FROM ${doneColumnIdSql} AND w.column_id = ${doneColumnIdSql} THEN NULL
+            ELSE w.done_at
+          END,
+          updated_at = now()
       FROM (VALUES ${rows}) AS c(id, column_id, board_sort_order)
       WHERE w.id = c.id AND w.project_id = ${input.projectId}
     `);
@@ -774,11 +815,20 @@ export async function deleteOneLotProjectBoardColumn(input: { id: string; projec
     const project = await assertOneLotProjectContentAccess(input.projectId, actor);
 
     const [column] = await db
-      .select({ id: oneLotProjectBoardColumn.id, name: oneLotProjectBoardColumn.name })
+      .select({ id: oneLotProjectBoardColumn.id, name: oneLotProjectBoardColumn.name, isDone: oneLotProjectBoardColumn.isDone })
       .from(oneLotProjectBoardColumn)
       .where(and(eq(oneLotProjectBoardColumn.id, input.id), eq(oneLotProjectBoardColumn.projectId, input.projectId)))
       .limit(1);
     if (!column) return { ok: false, error: "That column no longer exists." };
+
+    // The done column is the only reference `completeOneLotProjectSprint`,
+    // the burndown chart, velocity, and the "Completed" stat card have for
+    // what counts as finished — losing it silently breaks all four (see the
+    // doc comment on `oneLotProjectBoardColumn` in schema.ts). It can be
+    // renamed freely; it just can never be deleted.
+    if (column.isDone) {
+      return { ok: false, error: `"${column.name}" is this project's Done column and can't be deleted — rename it instead if you want a different label.` };
+    }
 
     const [{ count }] = await db
       .select({ count: sql<number>`count(*)::int` })
