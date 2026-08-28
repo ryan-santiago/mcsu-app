@@ -19,8 +19,9 @@ export function proxy(request: NextRequest) {
     const loginUrl = new URL("/login", request.url);
     const { pathname, search } = request.nextUrl;
 
-    // Preserve where they were heading so login can send them back.
-    if (pathname !== "/dashboard") {
+    // Preserve where they were heading so login can send them back — except
+    // the default post-login landing page itself, which needs no "next".
+    if (pathname !== "/announcements") {
       loginUrl.searchParams.set("next", `${pathname}${search}`);
     }
 
@@ -31,5 +32,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/admin/:path*"],
+  matcher: ["/dashboard/:path*", "/announcements/:path*", "/admin/:path*"],
 };

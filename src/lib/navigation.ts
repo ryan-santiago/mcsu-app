@@ -90,12 +90,6 @@ export const NAVIGATION: readonly NavGroup[] = [
 		title: null,
 		items: [
 			{
-				title: 'Dashboard',
-				href: '/dashboard',
-				icon: 'dashboard',
-				permissions: ['dashboard:read'],
-			},
-			{
 				title: 'Announcements',
 				href: '/announcements',
 				icon: 'announcements',

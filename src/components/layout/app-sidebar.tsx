@@ -40,7 +40,7 @@ export function AppSidebar({ groups, user, dynamicNav, navBadges }: AppSidebarPr
   return (
     <aside className="bg-sidebar border-sidebar-border hidden w-64 shrink-0 flex-col border-r lg:flex">
       <div className="border-sidebar-border flex h-16 items-center border-b px-5">
-        <Link href="/dashboard" aria-label="MCSU Console — Dashboard">
+        <Link href="/announcements" aria-label="MCSU Console — Announcements">
           <Logo height={26} priority />
         </Link>
       </div>

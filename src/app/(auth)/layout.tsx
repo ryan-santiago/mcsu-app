@@ -15,7 +15,7 @@ export default async function AuthLayout({ children }: LayoutProps<"/">) {
   const user = await getCurrentUser();
 
   // Someone with a live session has no business on the login screen.
-  if (user && user.status === "active") redirect("/dashboard");
+  if (user && user.status === "active") redirect("/announcements");
 
   return (
     <div className="grid min-h-svh lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">

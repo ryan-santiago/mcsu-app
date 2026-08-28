@@ -20,7 +20,7 @@ export default function Forbidden() {
       </div>
 
       <Button asChild>
-        <Link href="/dashboard">Back to dashboard</Link>
+        <Link href="/announcements">Back to Announcements</Link>
       </Button>
     </div>
   );

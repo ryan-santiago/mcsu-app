@@ -36,8 +36,8 @@ const SUSPENDED_HINT = /suspended/i;
  * screen into an open redirect.
  */
 function safeRedirect(next: string | null): string {
-  if (!next) return "/dashboard";
-  if (!next.startsWith("/") || next.startsWith("//")) return "/dashboard";
+  if (!next) return "/announcements";
+  if (!next.startsWith("/") || next.startsWith("//")) return "/announcements";
   return next;
 }
 
