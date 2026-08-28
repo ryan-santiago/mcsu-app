@@ -40,10 +40,10 @@ Delete/All matrix per module. No deploy required to change what a role can do.
 | **Department Head** | 38 | yes | Every permission (seeded admin-equivalent — `drizzle/0027_seed_dept_head_unit_manager_roles.sql`) |
 | **Unit Manager** | 35 | yes | Every permission (seeded admin-equivalent — same migration) |
 | **Talent Acquisition Manager** | 32 | yes (`drizzle/0061_employees_read_all_and_role_updates.sql`) | Talent Acquisition: full + approve · Employee Recommendation: read + generate_erf · Employees: read + read_all (org-wide view, not edit — see below) |
-| **Team Lead/Manager** (id `manager`, relabeled from "Manager" — same migration) | 30 | yes | Dashboard, Employees & Projects: full · Users & Access: read + edit · Maintenance/Device Inventory/Audit Trail/Settings/Access Control: read only |
+| **Team Lead/Manager** (id `manager`, relabeled from "Manager" — same migration) | 30 | yes | Employees & Projects: full · Announcements: read · Users & Access: read + edit · Maintenance/Device Inventory/Audit Trail/Settings/Access Control: read only |
 | **Talent Acquisition Staff** | 22 | no | Talent Acquisition: read/write/edit (no approve/finalize/migrate) |
-| **Engineer** | 20 | no | Dashboard: read only |
-| **Viewer** | 10 | no | Dashboard: read only |
+| **Engineer** | 20 | no | Announcements: read only |
+| **Viewer** | 10 | no | Announcements: read only |
 
 **Department Head and Unit Manager** exist for approval workflows above
 Manager but below Administrator — the first consumer is the planned Employee
@@ -113,7 +113,6 @@ deploy.
 `src/lib/rbac.ts`), whether or not every cell is wired to a real guard yet:
 
 ```
-dashboard      read / write / edit / delete   (only `read` has a guard today)
 users          read / write / edit / delete   (edit covers approve/reject,
                                                  suspend/reinstate, role change)
 employees      read / write / edit / delete   (read includes salary visibility)

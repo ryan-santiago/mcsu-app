@@ -13,7 +13,9 @@ What is built, what is deliberately missing, and what to build next.
 - RBAC: admin-editable roles and permissions (Access Control), rank rules,
   guards on layout, page, action and query — see [RBAC.md](./RBAC.md)
 - App shell: RBAC-filtered sidebar, topbar, mobile drawer, light/dark/system
-- Dashboard (intentionally empty — the frame and guard are in place)
+- Announcements — the post-login landing page (the earlier single generic
+  Dashboard was retired in favor of per-menu-group dashboards; Workforce's
+  shipped, see below)
 - User Management: search, status filters, approve with role assignment,
   reject, role change, suspend/reinstate, remove
 - Employees: directory, profile, employment and deployment history
@@ -66,12 +68,18 @@ In value order:
 3. **Playwright** (already a devDependency) for register → pending → approve →
    sign in.
 
-### 3. Finish the dashboard
+### 3. Dashboards, per menu group
 
-The frame exists; it needs content. Likely first cards: open tickets by
-severity, service availability this month, pending access requests, recent audit
-activity. The `dataviz` conventions in [DESIGN.md](./DESIGN.md) cover chart
-colour — series 1 is brand blue, series 2 brand orange.
+The single generic `/dashboard` was removed — an empty placeholder with no
+content plan, and login now lands on Announcements instead. The replacement
+is a dashboard per menu group, built against that group's own data as each
+domain matures: Workforce's shipped (`/workforce-dashboard` — headcount,
+sprint/recommendation activity, team workload; see
+`src/server/workforce-dashboard/`). Talent Acquisition, Engagement, and
+Administration are natural next candidates once there's enough real data in
+each to make one worth building. The `dataviz` conventions in
+[DESIGN.md](./DESIGN.md) cover chart colour — series 1 is brand blue, series 2
+brand orange.
 
 ### 4. User profile screen
 
@@ -111,8 +119,8 @@ next domains, roughly in dependency order:
 2. **Assets / Inventory** — the subscriptions, instances and licences under
    management.
 3. **Tickets & Requests** — the actual operational work, linked to clients.
-4. **SLA tracking** — response and resolution against contract, the thing the
-   dashboard should really be about.
+4. **SLA tracking** — response and resolution against contract, the thing a
+   future dashboard for this domain should really be about.
 5. **Reports** — monthly service reviews, generated rather than assembled by
    hand.
 

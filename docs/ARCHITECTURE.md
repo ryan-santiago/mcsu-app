@@ -27,7 +27,7 @@ src/
   app/
     (auth)/            Split-panel shell — login, register, pending, forgot-password
     (app)/             Authenticated shell — sidebar + topbar
-      dashboard/
+      announcements/     Post-login landing page
       employees/       Directory, add, view/edit
       projects/        S3P directory, add, view/edit
       admin/users/

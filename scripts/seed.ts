@@ -102,7 +102,6 @@ const DEMO_USERS: Array<{
 const DEMO_PASSWORD = 'testpassword1234'
 
 const ALL_MODULES = [
-	'dashboard',
 	'users',
 	'employees',
 	'projects',
@@ -149,7 +148,8 @@ const DEFAULT_ROLES: Array<{
 		rank: 30,
 		isSystem: true,
 		permissions: [
-			...permissionsFor(['dashboard', 'employees', 'projects']),
+			...permissionsFor(['employees', 'projects']),
+			'announcements:read',
 			'users:read',
 			'users:edit',
 			'maintenance:read',
@@ -165,15 +165,15 @@ const DEFAULT_ROLES: Array<{
 		description: 'Delivers services day to day.',
 		rank: 20,
 		isSystem: false,
-		permissions: ['dashboard:read'] as Permission[],
+		permissions: ['announcements:read'] as Permission[],
 	},
 	{
 		id: 'viewer',
 		label: 'Viewer',
-		description: 'Read-only access to dashboards.',
+		description: 'Read-only access to Announcements.',
 		rank: 10,
 		isSystem: false,
-		permissions: ['dashboard:read'] as Permission[],
+		permissions: ['announcements:read'] as Permission[],
 	},
 ]
 

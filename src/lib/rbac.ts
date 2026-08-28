@@ -17,11 +17,6 @@ import type { UserStatus } from "@/db/schema";
  * constant — see docs/RBAC.md.
  */
 export const PERMISSIONS = [
-  "dashboard:read",
-  "dashboard:write",
-  "dashboard:edit",
-  "dashboard:delete",
-
   "announcements:read",
   "announcements:write",
   "announcements:edit",
@@ -140,7 +135,6 @@ export type Permission = (typeof PERMISSIONS)[number];
  * `settings` has no sidebar entry yet, so it stays last.
  */
 export const MODULES = [
-  { id: "dashboard", label: "Dashboard" },
   { id: "announcements", label: "Announcements" },
   { id: "employees", label: "Employees" },
   { id: "projects", label: "Projects" },
