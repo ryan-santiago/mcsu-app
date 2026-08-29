@@ -167,6 +167,13 @@ export const NAVIGATION: readonly NavGroup[] = [
 		title: 'Engagement',
 		items: [
 			{
+				title: 'Dashboard',
+				href: '/engagement-dashboard',
+				icon: 'dashboard',
+				permissions: ['staff_augmentation:read', 'one_lot_projects:read'],
+				matchNested: true,
+			},
+			{
 				title: 'Staff Augmentation',
 				href: '/staff-augmentation',
 				icon: 'staff-augmentation',
