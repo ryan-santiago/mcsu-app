@@ -205,6 +205,13 @@ export const NAVIGATION: readonly NavGroup[] = [
 		title: 'Productivity',
 		items: [
 			{
+				title: 'Dashboard',
+				href: '/productivity-dashboard',
+				icon: 'dashboard',
+				permissions: ['activity_reports:read_all', 'certifications:read_all'],
+				matchNested: true,
+			},
+			{
 				title: 'Activity Report',
 				href: '/activity-reports',
 				icon: 'activity-report',

@@ -105,7 +105,7 @@ function EmployeesSection({ data, loading }: { data: NonNullable<WorkforceDashbo
           <CardTitle>Headcount Trend</CardTitle>
         </CardHeader>
         <CardContent>
-          <TrendLineChart points={data.headcountTrend} />
+          <TrendLineChart points={data.headcountTrend} ariaLabel="Headcount trend chart" />
         </CardContent>
       </Card>
 

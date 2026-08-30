@@ -11,7 +11,7 @@ const PAD_TOP = 16;
 const PAD_BOTTOM = 24;
 
 /** Same hand-rolled SVG line-chart technique as the One-Lot Projects sprint burndown (`one-lot-project-active-sprint-burndown.tsx`) — no charting library in this app yet, and one series over a handful of points doesn't need one. */
-export function TrendLineChart({ points }: { points: TrendPoint[] }) {
+export function TrendLineChart({ points, ariaLabel = "Trend chart" }: { points: TrendPoint[]; ariaLabel?: string }) {
   if (points.length === 0) {
     return <p className="text-muted-foreground py-8 text-center text-sm">No data in this range.</p>;
   }
@@ -31,7 +31,7 @@ export function TrendLineChart({ points }: { points: TrendPoint[] }) {
   const labelEvery = Math.max(1, Math.ceil(n / 8));
 
   return (
-    <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label="Headcount trend chart" className="w-full">
+    <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label={ariaLabel} className="w-full">
       {[0, 0.5, 1].map((frac) => (
         <line key={frac} x1={PAD_LEFT} x2={WIDTH - PAD_RIGHT} y1={scaleY(maxY * frac)} y2={scaleY(maxY * frac)} stroke="var(--border)" strokeWidth={1} />
       ))}

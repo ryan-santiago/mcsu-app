@@ -8,6 +8,8 @@ type KpiCardProps = {
   value: number;
   hint?: string;
   tone?: "default" | "success" | "warning";
+  /** Appended directly after the formatted value, e.g. "%" — for a rate/ratio KPI rather than a plain count. */
+  suffix?: string;
 };
 
 const TONE_CLASSNAME: Record<NonNullable<KpiCardProps["tone"]>, string> = {
@@ -17,14 +19,17 @@ const TONE_CLASSNAME: Record<NonNullable<KpiCardProps["tone"]>, string> = {
 };
 
 /** One number, one label, one small icon — the smallest unit of this dashboard, repeated across every section. */
-export function KpiCard({ icon: Icon, label, value, hint, tone = "default" }: KpiCardProps) {
+export function KpiCard({ icon: Icon, label, value, hint, tone = "default", suffix }: KpiCardProps) {
   return (
     <div className="bg-card space-y-1 rounded-xl border p-4">
       <div className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium">
         <Icon className="size-3.5 shrink-0" aria-hidden />
         {label}
       </div>
-      <p className={cn("text-2xl font-semibold tabular-nums", TONE_CLASSNAME[tone])}>{value.toLocaleString()}</p>
+      <p className={cn("text-2xl font-semibold tabular-nums", TONE_CLASSNAME[tone])}>
+        {value.toLocaleString()}
+        {suffix}
+      </p>
       {hint ? <p className="text-muted-foreground text-xs">{hint}</p> : null}
     </div>
   );
