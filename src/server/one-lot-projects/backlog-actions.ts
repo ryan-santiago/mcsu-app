@@ -1,5 +1,6 @@
 "use server";
 
+import { parseISO } from "date-fns";
 import { and, eq, ilike, inArray, ne, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -35,10 +36,11 @@ import {
 import { assertOneLotProjectContentAccess } from "./queries";
 import {
   getOneLotProjectBacklogBoard,
+  getOneLotProjectCalendarMonth,
   getOneLotProjectKanbanBoard,
   getOneLotProjectWorkItemDetail,
 } from "./backlog-queries";
-import type { BacklogBoardData, KanbanBoardData, WorkItemDetailRow } from "./backlog-types";
+import type { BacklogBoardData, CalendarBoardData, KanbanBoardData, WorkItemDetailRow } from "./backlog-types";
 
 async function run<T>(fn: () => Promise<ActionResult<T>>): Promise<ActionResult<T>> {
   try {
@@ -56,6 +58,7 @@ async function run<T>(fn: () => Promise<ActionResult<T>>): Promise<ActionResult<
 function revalidateBoard(projectId: string) {
   revalidatePath(`/one-lot-projects/${projectId}/list`);
   revalidatePath(`/one-lot-projects/${projectId}/kanban`);
+  revalidatePath(`/one-lot-projects/${projectId}/calendar`);
 }
 
 /**
@@ -90,6 +93,12 @@ export async function fetchOneLotProjectWorkItemDetail(
 export async function fetchOneLotProjectKanbanBoard(projectId: string): Promise<KanbanBoardData> {
   const actor = await authorizeActiveUser();
   return getOneLotProjectKanbanBoard(projectId, actor);
+}
+
+/** `monthStart` crosses the server-action boundary as an ISO `yyyy-MM-dd` string, same convention every other date value in this module follows. */
+export async function fetchOneLotProjectCalendarMonth(projectId: string, monthStart: string): Promise<CalendarBoardData> {
+  const actor = await authorizeActiveUser();
+  return getOneLotProjectCalendarMonth(projectId, actor, parseISO(monthStart));
 }
 
 // ---------------------------------------------------------------------------

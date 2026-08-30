@@ -1,7 +1,19 @@
 import "server-only";
 
-import { addDays, differenceInCalendarDays, format, parseISO, startOfDay, subDays, subMonths } from "date-fns";
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import {
+  addDays,
+  differenceInCalendarDays,
+  endOfMonth,
+  endOfWeek,
+  format,
+  parseISO,
+  startOfDay,
+  startOfMonth,
+  startOfWeek,
+  subDays,
+  subMonths,
+} from "date-fns";
+import { and, asc, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import {
@@ -20,6 +32,8 @@ import type {
   BreakdownRow,
   BurndownData,
   BurndownPoint,
+  CalendarBoardData,
+  CalendarItemRow,
   CommentRow,
   CompletedSprintRow,
   KanbanBoardData,
@@ -304,6 +318,88 @@ export async function getOneLotProjectKanbanBoard(projectId: string, actor: Curr
   }
 
   return { columns, activeSprint, itemsByColumn, members };
+}
+
+/**
+ * One month's worth of calendar data — items with a `dueDate` and sprints
+ * whose date range overlaps the grid, padded to whole weeks so the leading/
+ * trailing days from adjacent months (which a 7xN grid always shows) get
+ * their chips too. Includes subtasks — a subtask can carry its own `dueDate`
+ * independent of its parent, and a chip needs no parent context, only the
+ * detail sheet does once opened.
+ */
+export async function getOneLotProjectCalendarMonth(
+  projectId: string,
+  actor: CurrentUser,
+  monthStart: Date,
+): Promise<CalendarBoardData> {
+  await assertOneLotProjectContentAccess(projectId, actor);
+
+  const gridStart = format(startOfWeek(startOfMonth(monthStart)), "yyyy-MM-dd");
+  const gridEnd = format(endOfWeek(endOfMonth(monthStart)), "yyyy-MM-dd");
+
+  const [members, columns, itemRows, sprintRows] = await Promise.all([
+    listOneLotProjectMembers(projectId),
+    getOneLotProjectBoardColumns(projectId),
+    db
+      .select({
+        id: oneLotProjectWorkItem.id,
+        code: oneLotProjectWorkItem.code,
+        type: oneLotProjectWorkItem.type,
+        title: oneLotProjectWorkItem.title,
+        columnId: oneLotProjectWorkItem.columnId,
+        priority: oneLotProjectWorkItem.priority,
+        dueDate: oneLotProjectWorkItem.dueDate,
+        coverColor: oneLotProjectWorkItem.coverColor,
+        sprintId: oneLotProjectWorkItem.sprintId,
+        assignee: ASSIGNEE_SELECTION,
+      })
+      .from(oneLotProjectWorkItem)
+      .leftJoin(user, eq(user.id, oneLotProjectWorkItem.assigneeId))
+      // `gte`/`lte` against a null `dueDate` evaluate to NULL (excluded by
+      // WHERE), so this already only matches rows with a due date — no
+      // separate `is not null` check needed.
+      .where(
+        and(
+          eq(oneLotProjectWorkItem.projectId, projectId),
+          gte(oneLotProjectWorkItem.dueDate, gridStart),
+          lte(oneLotProjectWorkItem.dueDate, gridEnd),
+        ),
+      ),
+    db
+      .select({
+        id: oneLotProjectSprint.id,
+        name: oneLotProjectSprint.name,
+        itemCode: oneLotProjectSprint.itemCode,
+        startDate: oneLotProjectSprint.startDate,
+        endDate: oneLotProjectSprint.endDate,
+        status: oneLotProjectSprint.status,
+      })
+      .from(oneLotProjectSprint)
+      .where(
+        and(
+          eq(oneLotProjectSprint.projectId, projectId),
+          // Interval overlap: the sprint starts on/before the grid ends, and ends on/after the grid starts.
+          lte(oneLotProjectSprint.startDate, gridEnd),
+          gte(oneLotProjectSprint.endDate, gridStart),
+        ),
+      ),
+  ]);
+
+  const items: CalendarItemRow[] = itemRows.map((row) => ({
+    id: row.id,
+    code: row.code,
+    type: row.type,
+    title: row.title,
+    columnId: row.columnId,
+    priority: row.priority,
+    assignee: toAssignee(row.assignee),
+    dueDate: row.dueDate as string,
+    coverColor: row.coverColor as CalendarItemRow["coverColor"],
+    sprintId: row.sprintId,
+  }));
+
+  return { columns, members, items, sprints: sprintRows };
 }
 
 export async function getOneLotProjectWorkItemDetail(

@@ -132,3 +132,35 @@ export type BurndownData = {
   /** Empty when there's no active sprint, or it has no start/end date yet. */
   points: BurndownPoint[];
 };
+
+/** One chip's worth of data — deliberately lean (no storyPoints/subtasks/commentCount); the detail sheet does its own fetch on click, same as a Kanban card. */
+export type CalendarItemRow = {
+  id: string;
+  code: string;
+  type: WorkItemTypeValue;
+  title: string;
+  columnId: string;
+  priority: WorkItemPriorityValue;
+  assignee: WorkItemAssignee;
+  /** Non-null by construction — `getOneLotProjectCalendarMonth` only selects rows that have one. */
+  dueDate: string;
+  coverColor: WorkItemCoverColorValue | null;
+  sprintId: string | null;
+};
+
+export type CalendarSprintRow = {
+  id: string;
+  name: string;
+  itemCode: string;
+  startDate: string | null;
+  endDate: string | null;
+  status: SprintStatusValue;
+};
+
+export type CalendarBoardData = {
+  columns: BoardColumnRow[];
+  members: OneLotProjectMemberRow[];
+  items: CalendarItemRow[];
+  /** Sprints whose date range overlaps the fetched grid window — not every sprint in the project. */
+  sprints: CalendarSprintRow[];
+};

@@ -31,6 +31,8 @@ type CreateWorkItemDialogProps = {
   open: boolean;
   members: OneLotProjectMemberRow[];
   destinationLabel: string;
+  /** Prefills the Due date field — the Calendar's quick-add uses this; every other caller omits it. */
+  initialDueDate?: string;
   pending: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (values: WorkItemFormInput) => void;
@@ -40,6 +42,7 @@ export function CreateWorkItemDialog({
   open,
   members,
   destinationLabel,
+  initialDueDate,
   pending,
   onOpenChange,
   onSubmit,
@@ -51,6 +54,7 @@ export function CreateWorkItemDialog({
           <WorkItemForm
             members={members}
             destinationLabel={destinationLabel}
+            initialDueDate={initialDueDate}
             pending={pending}
             onOpenChange={onOpenChange}
             onSubmit={onSubmit}
@@ -64,12 +68,14 @@ export function CreateWorkItemDialog({
 function WorkItemForm({
   members,
   destinationLabel,
+  initialDueDate,
   pending,
   onOpenChange,
   onSubmit,
 }: {
   members: OneLotProjectMemberRow[];
   destinationLabel: string;
+  initialDueDate?: string;
   pending: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (values: WorkItemFormInput) => void;
@@ -82,7 +88,7 @@ function WorkItemForm({
       description: "",
       assigneeId: "",
       priority: "medium",
-      dueDate: "",
+      dueDate: initialDueDate ?? "",
       storyPoints: "",
       subtasks: [],
     },
