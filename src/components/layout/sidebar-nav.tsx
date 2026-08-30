@@ -22,12 +22,15 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import * as React from "react";
 
 import { EngagementNavGroup } from "@/components/layout/engagement-nav-group";
+import { PinToggleButton } from "@/components/layout/pin-toggle-button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { usePinnedNavSections } from "@/hooks/use-pinned-nav-sections";
 import { cn } from "@/lib/utils";
-import { isNavItemActive, type NavGroup, type NavIconKey } from "@/lib/navigation";
-import type { EngagementNavData } from "@/server/engagement/nav";
+import { isNavItemActive, type NavGroup, type NavIconKey, type NavItem } from "@/lib/navigation";
+import type { EngagementNavData, EngagementNavGroupData } from "@/server/engagement/nav";
 
 /** Resolves the serializable icon key from `lib/navigation.ts` to a component. */
 const NAV_ICONS: Record<NavIconKey, LucideIcon> = {
@@ -68,6 +71,7 @@ type SidebarNavProps = {
  */
 export function SidebarNav({ groups, dynamicNav, navBadges, onNavigate }: SidebarNavProps) {
   const pathname = usePathname();
+  const { isPinned, togglePin } = usePinnedNavSections();
 
   return (
     <nav aria-label="Main" className="flex flex-col gap-6 px-3">
@@ -118,21 +122,15 @@ export function SidebarNav({ groups, dynamicNav, navBadges, onNavigate }: Sideba
               return (
                 <li key={item.href}>
                   {dynamicGroup ? (
-                    <Collapsible defaultOpen>
-                      <div className="flex items-center gap-0.5">
-                        <CollapsibleTrigger
-                          aria-label={`Toggle ${item.title}`}
-                          className="text-muted-foreground hover:text-sidebar-accent-foreground shrink-0 rounded-md p-1.5 transition-colors [&[data-state=open]>svg]:rotate-90"
-                        >
-                          <ChevronRight className="size-3.5 transition-transform" aria-hidden />
-                        </CollapsibleTrigger>
-                        {link}
-                      </div>
-
-                      <CollapsibleContent>
-                        <EngagementNavGroup data={dynamicGroup} pathname={pathname} onNavigate={onNavigate} />
-                      </CollapsibleContent>
-                    </Collapsible>
+                    <DynamicNavRow
+                      item={item}
+                      link={link}
+                      dynamicGroup={dynamicGroup}
+                      pathname={pathname}
+                      onNavigate={onNavigate}
+                      pinned={isPinned(item.href)}
+                      onTogglePin={() => togglePin(item.href)}
+                    />
                   ) : (
                     link
                   )}
@@ -143,5 +141,47 @@ export function SidebarNav({ groups, dynamicNav, navBadges, onNavigate }: Sideba
         </div>
       ))}
     </nav>
+  );
+}
+
+type DynamicNavRowProps = {
+  item: NavItem;
+  link: React.ReactNode;
+  dynamicGroup: EngagementNavGroupData;
+  pathname: string;
+  onNavigate?: () => void;
+  pinned: boolean;
+  onTogglePin: () => void;
+};
+
+/**
+ * Own component (not inlined in the `.map()` above) so each row's "has the
+ * user manually toggled this open/closed this session" state gets its own
+ * `useState` — Rules of Hooks forbids calling hooks per-iteration inline.
+ * Closed by default; pinning (persisted, see `usePinnedNavSections`) opens
+ * it immediately and makes it open-by-default on future visits, but the
+ * chevron stays freely togglable afterward regardless of pin state.
+ */
+function DynamicNavRow({ item, link, dynamicGroup, pathname, onNavigate, pinned, onTogglePin }: DynamicNavRowProps) {
+  const [manualOverride, setManualOverride] = React.useState<boolean | null>(null);
+  const open = manualOverride ?? pinned;
+
+  return (
+    <Collapsible open={open} onOpenChange={setManualOverride}>
+      <div className="group/navrow flex items-center gap-0.5">
+        <CollapsibleTrigger
+          aria-label={`Toggle ${item.title}`}
+          className="text-muted-foreground hover:text-sidebar-accent-foreground shrink-0 rounded-md p-1.5 transition-colors [&[data-state=open]>svg]:rotate-90"
+        >
+          <ChevronRight className="size-3.5 transition-transform" aria-hidden />
+        </CollapsibleTrigger>
+        {link}
+        <PinToggleButton pinned={pinned} onToggle={onTogglePin} label={item.title} />
+      </div>
+
+      <CollapsibleContent>
+        <EngagementNavGroup data={dynamicGroup} pathname={pathname} onNavigate={onNavigate} />
+      </CollapsibleContent>
+    </Collapsible>
   );
 }

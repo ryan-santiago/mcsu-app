@@ -2,8 +2,11 @@
 
 import { ChevronRight, Plus } from "lucide-react";
 import Link from "next/link";
+import * as React from "react";
 
+import { PinToggleButton } from "@/components/layout/pin-toggle-button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { usePinnedNavSections } from "@/hooks/use-pinned-nav-sections";
 import { cn } from "@/lib/utils";
 import type { EngagementNavGroupData, EngagementNavItem } from "@/server/engagement/nav";
 
@@ -78,18 +81,52 @@ function EngagementNavRow({
     );
   }
 
-  const isActiveGroup = item.children.some((child) => pathname === child.href);
+  return <EngagementNavRowWithChildren item={item} pathname={pathname} onNavigate={onNavigate} />;
+}
+
+/**
+ * Own component (not a branch inside `EngagementNavRow`) so its pin/manual-
+ * toggle state hooks aren't called conditionally — `EngagementNavRow`'s
+ * childless branch returns early before ever reaching them, which Rules of
+ * Hooks forbids if they lived in the same component.
+ */
+function EngagementNavRowWithChildren({
+  item,
+  pathname,
+  onNavigate,
+}: {
+  item: EngagementNavItem;
+  pathname: string;
+  onNavigate?: () => void;
+}) {
+  // The caller (`EngagementNavRow`) only reaches this component once it's
+  // already confirmed `item.children` is set — TypeScript can't carry that
+  // narrowing across the component boundary, so this falls back safely
+  // rather than asserting it.
+  const children = item.children ?? [];
+  const isActiveGroup = children.some((child) => pathname === child.href);
+  const { isPinned, togglePin } = usePinnedNavSections();
+  const pinned = isPinned(item.href);
+  const [manualOverride, setManualOverride] = React.useState<boolean | null>(null);
+  // Untouched this session -> follow pin/active-page; once the user has
+  // explicitly toggled the chevron, that wins outright until the row
+  // remounts (e.g. navigating to a different project) — same pattern
+  // `DynamicNavRow` in `sidebar-nav.tsx` uses.
+  const open = manualOverride ?? (pinned || isActiveGroup);
 
   return (
     <li>
-      <Collapsible defaultOpen={isActiveGroup}>
-        <CollapsibleTrigger className="text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground flex w-full items-center gap-1 rounded-md px-2 py-1.5 text-sm transition-colors [&[data-state=open]>svg]:rotate-90">
-          <ChevronRight className="size-3.5 shrink-0 transition-transform" aria-hidden />
-          <span className="truncate">{item.label}</span>
-        </CollapsibleTrigger>
+      <Collapsible open={open} onOpenChange={setManualOverride}>
+        <div className="group/navrow flex items-center gap-0.5">
+          <CollapsibleTrigger className="text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground flex min-w-0 flex-1 items-center gap-1 rounded-md px-2 py-1.5 text-sm transition-colors [&[data-state=open]>svg]:rotate-90">
+            <ChevronRight className="size-3.5 shrink-0 transition-transform" aria-hidden />
+            <span className="truncate">{item.label}</span>
+          </CollapsibleTrigger>
+          <PinToggleButton pinned={pinned} onToggle={() => togglePin(item.href)} label={item.label} />
+        </div>
 
         <CollapsibleContent className="mt-0.5 ml-3 space-y-0.5 border-l pl-2">
-          {item.children.map((child) => {
+          {children.map((child) => {
             const active = pathname === child.href;
             return (
               <Link

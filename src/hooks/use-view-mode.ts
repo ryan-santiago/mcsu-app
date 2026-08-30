@@ -9,8 +9,9 @@ export type ViewMode = "table" | "card";
 /**
  * A device preference, not a per-module one — Employees and Projects (the
  * Workforce modules) share this key, so switching to Card in one carries
- * over to the other. The only `localStorage` usage in the app; `next-themes`
- * is the sole other persisted-preference precedent, and it's theme-specific.
+ * over to the other. `use-pinned-nav-sections.ts` is the other `localStorage`
+ * usage in the app, same pattern; `next-themes` is the only non-`useSyncExternalStore`
+ * persisted-preference precedent, and it's theme-specific.
  */
 const STORAGE_KEY = "mcsu:view-mode";
 
