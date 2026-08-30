@@ -3,14 +3,18 @@ import "server-only";
 import { and, asc, count, desc, eq, gte, inArray, lte, type SQL } from "drizzle-orm";
 
 import { db } from "@/db";
-import { activityReport, activityReportItem, client } from "@/db/schema";
+import { activityReport, activityReportItem, client, employee, team } from "@/db/schema";
 import { formatTimeOfDay } from "@/lib/activity-report-format";
+import { formatEmployeeDisplayName } from "@/lib/employee-format";
+import { authorize } from "@/lib/session";
 import { requireActiveUser } from "@/server/settings/queries";
 
 import type {
   ActivityReportDetail,
   ActivityReportFilters,
   ActivityReportListResult,
+  ActivityReportMonitoringFilters,
+  ActivityReportMonitoringListResult,
   ClientOption,
 } from "./types";
 
@@ -208,4 +212,148 @@ export async function listActiveClientOptions(): Promise<ClientOption[]> {
     .from(client)
     .where(eq(client.isActive, true))
     .orderBy(asc(client.name));
+}
+
+/** The maximum rows `listActivityReportsForMonitoringExport` will return in one call — see its own comment. */
+export const MONITORING_EXPORT_ROW_LIMIT = 5000;
+
+function buildMonitoringWhere(filters: Omit<ActivityReportMonitoringFilters, "page" | "pageSize">): SQL | undefined {
+  const clauses: SQL[] = [];
+  if (filters.employeeId) clauses.push(eq(activityReport.employeeId, filters.employeeId));
+  if (filters.status) clauses.push(eq(activityReport.status, filters.status));
+  if (filters.from) clauses.push(gte(activityReport.date, filters.from));
+  if (filters.to) clauses.push(lte(activityReport.date, filters.to));
+  if (clauses.length === 0) return undefined;
+  return clauses.length === 1 ? clauses[0] : and(...clauses);
+}
+
+/**
+ * Org-wide monitoring list — every employee's reports, not just the
+ * caller's own. Gated on `activity_reports:read_all`, unlike every other
+ * function in this file (which only checks `requireActiveUser()`).
+ */
+export async function listActivityReportsForMonitoring(
+  filters: ActivityReportMonitoringFilters = {},
+): Promise<ActivityReportMonitoringListResult> {
+  await authorize("activity_reports:read_all");
+
+  const page = Math.max(1, filters.page ?? 1);
+  const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, filters.pageSize ?? DEFAULT_PAGE_SIZE));
+  const where = buildMonitoringWhere(filters);
+
+  const rows = await db
+    .select({
+      id: activityReport.id,
+      date: activityReport.date,
+      status: activityReport.status,
+      timeIn: activityReport.timeIn,
+      timeOut: activityReport.timeOut,
+      otHours: activityReport.otHours,
+      employeeId: activityReport.employeeId,
+      firstName: employee.firstName,
+      lastName: employee.lastName,
+      teamName: team.name,
+    })
+    .from(activityReport)
+    .innerJoin(employee, eq(employee.id, activityReport.employeeId))
+    .leftJoin(team, eq(team.id, employee.teamId))
+    .where(where)
+    .orderBy(desc(activityReport.date))
+    .limit(pageSize)
+    .offset((page - 1) * pageSize);
+
+  const [{ value: total }] = await db
+    .select({ value: count() })
+    .from(activityReport)
+    .innerJoin(employee, eq(employee.id, activityReport.employeeId))
+    .where(where);
+
+  const ids = rows.map((row) => row.id);
+  const itemCounts =
+    ids.length > 0
+      ? await db
+          .select({ activityReportId: activityReportItem.activityReportId, value: count() })
+          .from(activityReportItem)
+          .where(inArray(activityReportItem.activityReportId, ids))
+          .groupBy(activityReportItem.activityReportId)
+      : [];
+  const countByReportId = new Map(itemCounts.map((row) => [row.activityReportId, row.value]));
+
+  return {
+    reports: rows.map((row) => ({
+      id: row.id,
+      date: row.date,
+      status: row.status,
+      timeIn: row.timeIn ? formatTimeOfDay(row.timeIn) : null,
+      timeOut: row.timeOut ? formatTimeOfDay(row.timeOut) : null,
+      otHours: row.otHours,
+      itemCount: countByReportId.get(row.id) ?? 0,
+      employeeId: row.employeeId,
+      employeeName: formatEmployeeDisplayName(row),
+      teamName: row.teamName,
+    })),
+    total,
+    page,
+    pageSize,
+  };
+}
+
+/**
+ * Unpaginated variant of `listActivityReportsForMonitoring`, for CSV export
+ * — same "bounded, no pagination" convention as `listMyActivityReportsForExport`,
+ * except here the bound is a row cap (`MONITORING_EXPORT_ROW_LIMIT`) rather
+ * than a single calendar month, since a monitor's filters can span an
+ * arbitrary date range. The caller (the action wrapper) is responsible for
+ * rejecting a request that would exceed the cap rather than silently
+ * truncating it.
+ */
+export async function listActivityReportsForMonitoringExport(
+  filters: Omit<ActivityReportMonitoringFilters, "page" | "pageSize">,
+): Promise<ActivityReportMonitoringListResult["reports"]> {
+  await authorize("activity_reports:read_all");
+  const where = buildMonitoringWhere(filters);
+
+  const rows = await db
+    .select({
+      id: activityReport.id,
+      date: activityReport.date,
+      status: activityReport.status,
+      timeIn: activityReport.timeIn,
+      timeOut: activityReport.timeOut,
+      otHours: activityReport.otHours,
+      employeeId: activityReport.employeeId,
+      firstName: employee.firstName,
+      lastName: employee.lastName,
+      teamName: team.name,
+    })
+    .from(activityReport)
+    .innerJoin(employee, eq(employee.id, activityReport.employeeId))
+    .leftJoin(team, eq(team.id, employee.teamId))
+    .where(where)
+    .orderBy(desc(activityReport.date))
+    .limit(MONITORING_EXPORT_ROW_LIMIT + 1);
+
+  const ids = rows.map((row) => row.id);
+  const itemCounts =
+    ids.length > 0
+      ? await db
+          .select({ activityReportId: activityReportItem.activityReportId, value: count() })
+          .from(activityReportItem)
+          .where(inArray(activityReportItem.activityReportId, ids))
+          .groupBy(activityReportItem.activityReportId)
+      : [];
+  const countByReportId = new Map(itemCounts.map((row) => [row.activityReportId, row.value]));
+
+  return rows.map((row) => ({
+    id: row.id,
+    date: row.date,
+    status: row.status,
+    timeIn: row.timeIn ? formatTimeOfDay(row.timeIn) : null,
+    timeOut: row.timeOut ? formatTimeOfDay(row.timeOut) : null,
+    otHours: row.otHours,
+    itemCount: countByReportId.get(row.id) ?? 0,
+    employeeId: row.employeeId,
+    employeeName: formatEmployeeDisplayName(row),
+    teamName: row.teamName,
+  }));
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Award,
   ChevronRight,
   ClipboardList,
   FolderKanban,
@@ -50,6 +51,7 @@ const NAV_ICONS: Record<NavIconKey, LucideIcon> = {
   settings: Settings,
   "staff-augmentation": UserRoundCog,
   "one-lot-projects": Kanban,
+  certifications: Award,
 };
 
 type SidebarNavProps = {

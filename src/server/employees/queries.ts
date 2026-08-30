@@ -16,10 +16,11 @@ import {
   project,
   team,
 } from "@/db/schema";
+import { formatEmployeeDisplayName } from "@/lib/employee-format";
 import { can, hasUnrestrictedAccess } from "@/lib/rbac";
 import { authorize, type CurrentUser } from "@/lib/session";
 
-import type { EmployeeDetail, EmployeeFilters, EmployeeListResult } from "./types";
+import type { EmployeeDetail, EmployeeFilters, EmployeeListResult, EmployeeOption } from "./types";
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
@@ -346,4 +347,32 @@ export async function loadEmployeeDetail(id: string): Promise<EmployeeDetail | n
     employments,
     deployments,
   };
+}
+
+/**
+ * Active (non-resigned) employees with a name/team, for a picker/filter —
+ * ungated, same "just names, no access implication" reasoning as
+ * `listActiveClientOptions` in `src/server/activity-reports/queries.ts`.
+ * Used by Activity Report and Certifications monitoring's employee filter.
+ */
+export async function listActiveEmployeeOptions(): Promise<EmployeeOption[]> {
+  const rows = await db
+    .select({
+      id: employee.id,
+      firstName: employee.firstName,
+      lastName: employee.lastName,
+      teamId: employee.teamId,
+      teamName: team.name,
+    })
+    .from(employee)
+    .leftJoin(team, eq(team.id, employee.teamId))
+    .where(eq(employee.isResigned, false))
+    .orderBy(asc(employee.lastName), asc(employee.firstName));
+
+  return rows.map((row) => ({
+    id: row.id,
+    name: formatEmployeeDisplayName(row),
+    teamId: row.teamId,
+    teamName: row.teamName,
+  }));
 }

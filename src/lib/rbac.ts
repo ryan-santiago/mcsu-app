@@ -125,6 +125,18 @@ export const PERMISSIONS = [
   "one_lot_projects:write",
   "one_lot_projects:edit",
   "one_lot_projects:delete",
+
+  /**
+   * Activity Report has no standard Read/Write/Edit/Delete grid row — every
+   * active user manages their own reports ungated, same as Settings &
+   * Profile (see src/server/activity-reports/queries.ts). This is purely
+   * the org-wide monitoring capability, same "Additional Permissions"
+   * treatment as `employees:read_all` above.
+   */
+  "activity_reports:read_all",
+
+  /** Certifications' equivalent — self-service module, same reasoning. */
+  "certifications:read_all",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -186,6 +198,16 @@ export const EMPLOYEE_RECOMMENDATION_STAGE_PERMISSIONS: readonly { permission: P
 /** Employees' own non-CRUD permission — same "Additional Permissions" treatment as the two above. */
 export const EMPLOYEES_ADDITIONAL_PERMISSIONS: readonly { permission: Permission; label: string }[] = [
   { permission: "employees:read_all", label: "View Employees Org-Wide (not just own team)" },
+];
+
+/** Activity Report's only permission — see the comment on `activity_reports:read_all` above. */
+export const ACTIVITY_REPORTS_ADDITIONAL_PERMISSIONS: readonly { permission: Permission; label: string }[] = [
+  { permission: "activity_reports:read_all", label: "View Activity Reports Org-Wide (Monitoring)" },
+];
+
+/** Certifications' only permission — same "Additional Permissions" treatment as Activity Report's above. */
+export const CERTIFICATIONS_ADDITIONAL_PERMISSIONS: readonly { permission: Permission; label: string }[] = [
+  { permission: "certifications:read_all", label: "View Certifications Org-Wide (Monitoring)" },
 ];
 
 /* -------------------------------------------------------------------------- */

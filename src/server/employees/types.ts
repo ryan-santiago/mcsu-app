@@ -35,6 +35,14 @@ export type EmployeeListResult = {
   pageSize: number;
 };
 
+/** Just enough to render a picker/filter option — Activity Report/Certifications monitoring's employee filter. */
+export type EmployeeOption = {
+  id: string;
+  name: string;
+  teamId: string | null;
+  teamName: string | null;
+};
+
 export type EmployeeAddressDetail = {
   id: string;
   type: EmployeeAddressType;

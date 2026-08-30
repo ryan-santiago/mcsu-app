@@ -16,6 +16,8 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   ACTIONS,
+  ACTIVITY_REPORTS_ADDITIONAL_PERMISSIONS,
+  CERTIFICATIONS_ADDITIONAL_PERMISSIONS,
   EMPLOYEE_RECOMMENDATION_STAGE_PERMISSIONS,
   EMPLOYEES_ADDITIONAL_PERMISSIONS,
   MODULES,
@@ -172,74 +174,51 @@ function MatrixBody({
         </Table>
       </div>
 
-      <div className="space-y-2">
-        <p className="text-muted-foreground text-sm font-medium">Employees — Additional Permissions</p>
-        <div className="overflow-x-auto rounded-lg border">
-          <Table>
-            <TableBody>
-              {EMPLOYEES_ADDITIONAL_PERMISSIONS.map(({ permission, label }) => (
-                <TableRow key={permission}>
-                  <TableCell className="font-medium">{label}</TableCell>
-                  <TableCell className="w-16 text-center">
-                    <Checkbox
-                      checked={locked || granted.has(permission)}
-                      disabled={readOnly || pending}
-                      onCheckedChange={(checked) => toggle(permission, checked === true)}
-                      aria-label={label}
-                    />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <p className="text-muted-foreground text-sm font-medium">Talent Acquisition — Additional Permissions</p>
-        <div className="overflow-x-auto rounded-lg border">
-          <Table>
-            <TableBody>
-              {TALENT_ACQUISITION_STAGE_PERMISSIONS.map(({ permission, label }) => (
-                <TableRow key={permission}>
-                  <TableCell className="font-medium">{label}</TableCell>
-                  <TableCell className="w-16 text-center">
-                    <Checkbox
-                      checked={locked || granted.has(permission)}
-                      disabled={readOnly || pending}
-                      onCheckedChange={(checked) => toggle(permission, checked === true)}
-                      aria-label={label}
-                    />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <p className="text-muted-foreground text-sm font-medium">Employee Recommendation — Additional Permissions</p>
-        <div className="overflow-x-auto rounded-lg border">
-          <Table>
-            <TableBody>
-              {EMPLOYEE_RECOMMENDATION_STAGE_PERMISSIONS.map(({ permission, label }) => (
-                <TableRow key={permission}>
-                  <TableCell className="font-medium">{label}</TableCell>
-                  <TableCell className="w-16 text-center">
-                    <Checkbox
-                      checked={locked || granted.has(permission)}
-                      disabled={readOnly || pending}
-                      onCheckedChange={(checked) => toggle(permission, checked === true)}
-                      aria-label={label}
-                    />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      </div>
+      <AdditionalPermissionsSection
+        title="Employees — Additional Permissions"
+        entries={EMPLOYEES_ADDITIONAL_PERMISSIONS}
+        locked={locked}
+        readOnly={readOnly}
+        pending={pending}
+        granted={granted}
+        toggle={toggle}
+      />
+      <AdditionalPermissionsSection
+        title="Talent Acquisition — Additional Permissions"
+        entries={TALENT_ACQUISITION_STAGE_PERMISSIONS}
+        locked={locked}
+        readOnly={readOnly}
+        pending={pending}
+        granted={granted}
+        toggle={toggle}
+      />
+      <AdditionalPermissionsSection
+        title="Employee Recommendation — Additional Permissions"
+        entries={EMPLOYEE_RECOMMENDATION_STAGE_PERMISSIONS}
+        locked={locked}
+        readOnly={readOnly}
+        pending={pending}
+        granted={granted}
+        toggle={toggle}
+      />
+      <AdditionalPermissionsSection
+        title="Activity Report — Additional Permissions"
+        entries={ACTIVITY_REPORTS_ADDITIONAL_PERMISSIONS}
+        locked={locked}
+        readOnly={readOnly}
+        pending={pending}
+        granted={granted}
+        toggle={toggle}
+      />
+      <AdditionalPermissionsSection
+        title="Certifications — Additional Permissions"
+        entries={CERTIFICATIONS_ADDITIONAL_PERMISSIONS}
+        locked={locked}
+        readOnly={readOnly}
+        pending={pending}
+        granted={granted}
+        toggle={toggle}
+      />
 
       <DialogFooter>
         <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
@@ -253,5 +232,53 @@ function MatrixBody({
         )}
       </DialogFooter>
     </>
+  );
+}
+
+/**
+ * One module's non-CRUD permissions (see `docs/RBAC.md` "Add a permission")
+ * — extracted once a fourth/fifth copy of this block would've made the
+ * duplication too obvious to keep inlined.
+ */
+function AdditionalPermissionsSection({
+  title,
+  entries,
+  locked,
+  readOnly,
+  pending,
+  granted,
+  toggle,
+}: {
+  title: string;
+  entries: readonly { permission: Permission; label: string }[];
+  locked: boolean;
+  readOnly: boolean;
+  pending: boolean;
+  granted: Set<Permission>;
+  toggle: (permission: Permission, checked: boolean) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <p className="text-muted-foreground text-sm font-medium">{title}</p>
+      <div className="overflow-x-auto rounded-lg border">
+        <Table>
+          <TableBody>
+            {entries.map(({ permission, label }) => (
+              <TableRow key={permission}>
+                <TableCell className="font-medium">{label}</TableCell>
+                <TableCell className="w-16 text-center">
+                  <Checkbox
+                    checked={locked || granted.has(permission)}
+                    disabled={readOnly || pending}
+                    onCheckedChange={(checked) => toggle(permission, checked === true)}
+                    aria-label={label}
+                  />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
   );
 }

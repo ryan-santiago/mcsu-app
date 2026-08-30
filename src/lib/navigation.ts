@@ -27,6 +27,7 @@ export type NavIconKey =
 	| 'settings'
 	| 'staff-augmentation'
 	| 'one-lot-projects'
+	| 'certifications'
 
 /**
  * A known sub-route of a nav item, for the topbar breadcrumb trail —
@@ -210,10 +211,36 @@ export const NAVIGATION: readonly NavGroup[] = [
 				// No `permissions` — every active signed-in user reaches their own
 				// reports, same as Settings & Profile's nav item.
 				matchNested: true,
+				excludeNestedPrefixes: ['/activity-reports/monitoring'],
 				children: [
 					{ title: 'Add report', path: '/activity-reports/new' },
 					{ title: 'View / Edit Report', dynamic: true },
 				],
+			},
+			{
+				title: 'Activity Report Monitoring',
+				href: '/activity-reports/monitoring',
+				icon: 'activity-report',
+				permissions: ['activity_reports:read_all'],
+			},
+			{
+				title: 'Certifications',
+				href: '/certifications',
+				icon: 'certifications',
+				// No `permissions` — every active signed-in user manages their own
+				// certifications, same as Activity Report above.
+				matchNested: true,
+				excludeNestedPrefixes: ['/certifications/monitoring'],
+				children: [
+					{ title: 'Add certification', path: '/certifications/new' },
+					{ title: 'View / Edit Certification', dynamic: true },
+				],
+			},
+			{
+				title: 'Certifications Monitoring',
+				href: '/certifications/monitoring',
+				icon: 'certifications',
+				permissions: ['certifications:read_all'],
 			},
 		],
 	},

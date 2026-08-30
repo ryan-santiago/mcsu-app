@@ -1132,6 +1132,46 @@ export const activityReportItem = pgTable(
   (table) => [index("activity_report_item_report_idx").on(table.activityReportId)],
 );
 
+/**
+ * A self-service record of a badge/certificate an employee has earned — same
+ * access model as `activityReport`: every active user manages their own,
+ * ungated (see `src/server/certifications/queries.ts`). `credentialUrl` and
+ * the uploaded file are independently optional, but the action layer
+ * requires at least one — a bare title+date isn't "proof" of anything.
+ * `storageKey`/`fileName`/`mimeType`/`fileSize` are all null together (no
+ * file attached) or all set together, enforced in the action layer the same
+ * way `activityReport`'s `on_leave` nulls are. `storageKey` is the disk path
+ * under `document-storage.ts`'s storage root — never returned to the client
+ * directly, only reachable through the authenticated download route.
+ */
+export const certification = pgTable(
+  "certification",
+  {
+    id: text("id").primaryKey(),
+    employeeId: text("employee_id")
+      .notNull()
+      .references(() => employee.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    dateAcquired: date("date_acquired").notNull(),
+    credentialUrl: text("credential_url"),
+    storageKey: text("storage_key"),
+    fileName: text("file_name"),
+    mimeType: text("mime_type"),
+    fileSize: integer("file_size"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("certification_employee_idx").on(table.employeeId),
+    index("certification_date_acquired_idx").on(table.dateAcquired),
+  ],
+);
+
 /* -------------------------------------------------------------------------- */
 /*  Engagement — Staff Augmentation & One-Lot Project                        */
 /* -------------------------------------------------------------------------- */
@@ -1828,6 +1868,10 @@ export const activityReportItemRelations = relations(activityReportItem, ({ one 
   report: one(activityReport, { fields: [activityReportItem.activityReportId], references: [activityReport.id] }),
 }));
 
+export const certificationRelations = relations(certification, ({ one }) => ({
+  employee: one(employee, { fields: [certification.employeeId], references: [employee.id] }),
+}));
+
 export const oneLotProjectRelations = relations(oneLotProject, ({ many }) => ({
   members: many(oneLotProjectMember),
   s3pProjects: many(oneLotProjectS3pProject),
@@ -2038,6 +2082,9 @@ export type NewActivityReport = typeof activityReport.$inferInsert;
 export type ActivityReportStatus = (typeof activityReportStatus.enumValues)[number];
 export type ActivityReportItem = typeof activityReportItem.$inferSelect;
 export type NewActivityReportItem = typeof activityReportItem.$inferInsert;
+
+export type Certification = typeof certification.$inferSelect;
+export type NewCertification = typeof certification.$inferInsert;
 
 export type StaffAugmentationEngagement = typeof staffAugmentationEngagement.$inferSelect;
 export type NewStaffAugmentationEngagement = typeof staffAugmentationEngagement.$inferInsert;

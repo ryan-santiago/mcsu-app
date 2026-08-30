@@ -57,3 +57,28 @@ export type ActivityReportExportDefaults = {
   defaultClientName: string;
   defaultProjectName: string;
 };
+
+export type ActivityReportMonitoringFilters = {
+  employeeId?: string;
+  status?: ActivityReportStatus;
+  /** `yyyy-MM-dd`. */
+  from?: string;
+  /** `yyyy-MM-dd`. */
+  to?: string;
+  /** 1-indexed. */
+  page?: number;
+  pageSize?: number;
+};
+
+export type ActivityReportMonitoringRow = ActivityReportRow & {
+  employeeId: string;
+  employeeName: string;
+  teamName: string | null;
+};
+
+export type ActivityReportMonitoringListResult = {
+  reports: ActivityReportMonitoringRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+};

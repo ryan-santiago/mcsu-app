@@ -10,7 +10,7 @@ import type { ActionResult } from "@/lib/action-result";
 import { formatTimeOfDay } from "@/lib/activity-report-format";
 import { diffFields, recordAudit } from "@/lib/audit";
 import { formatEmployeeDisplayName } from "@/lib/employee-format";
-import { AuthorizationError } from "@/lib/session";
+import { authorize, AuthorizationError } from "@/lib/session";
 import {
   activityReportExportInputSchema,
   activityReportFormSchema,
@@ -18,19 +18,27 @@ import {
   type ActivityReportExportInput,
   type ActivityReportFormInput,
 } from "@/lib/validation/activity-report";
+import { listActiveEmployeeOptions } from "@/server/employees/queries";
+import type { EmployeeOption } from "@/server/employees/types";
 import { getMyEmployeeDetail, requireActiveUser } from "@/server/settings/queries";
 
 import {
   getMyActivityReportById,
   listActiveClientOptions,
+  listActivityReportsForMonitoring,
+  listActivityReportsForMonitoringExport,
   listMyActivityReports,
   listMyActivityReportsForExport,
+  MONITORING_EXPORT_ROW_LIMIT,
 } from "./queries";
 import type {
   ActivityReportDetail,
   ActivityReportExportDefaults,
   ActivityReportFilters,
   ActivityReportListResult,
+  ActivityReportMonitoringFilters,
+  ActivityReportMonitoringListResult,
+  ActivityReportMonitoringRow,
 } from "./types";
 
 const idSchema = z.string().min(1, "A report must be selected");
@@ -124,6 +132,38 @@ export async function fetchActivityReportExportData(
 
     const reports = await listMyActivityReportsForExport(from, to);
     return { ok: true, data: { reports }, message: "" };
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Monitoring — requires `activity_reports:read_all`, see queries.ts        */
+/* -------------------------------------------------------------------------- */
+
+export async function fetchActivityReportsForMonitoring(
+  filters: ActivityReportMonitoringFilters,
+): Promise<ActionResult<ActivityReportMonitoringListResult>> {
+  return run(async () => {
+    const data = await listActivityReportsForMonitoring(filters);
+    return { ok: true, data, message: "" };
+  });
+}
+
+export async function fetchActivityReportsForMonitoringExport(
+  filters: Omit<ActivityReportMonitoringFilters, "page" | "pageSize">,
+): Promise<ActionResult<{ rows: ActivityReportMonitoringRow[] }>> {
+  return run(async () => {
+    const rows = await listActivityReportsForMonitoringExport(filters);
+    if (rows.length > MONITORING_EXPORT_ROW_LIMIT) {
+      return { ok: false, error: "That range has too many rows to export at once — narrow it and try again." };
+    }
+    return { ok: true, data: { rows }, message: "" };
+  });
+}
+
+export async function fetchActivityReportMonitoringEmployeeOptions(): Promise<ActionResult<{ options: EmployeeOption[] }>> {
+  return run(async () => {
+    await authorize("activity_reports:read_all");
+    return { ok: true, data: { options: await listActiveEmployeeOptions() }, message: "" };
   });
 }
 

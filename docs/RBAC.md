@@ -70,6 +70,20 @@ added. `employees:write`/`:edit`/`:delete` are unaffected and stay
 team-scoped (`assertEmployeeInScope`) regardless of who holds
 `employees:read_all`.
 
+**`activity_reports:read_all`/`certifications:read_all`** (added 2026-08-30,
+`drizzle/0064_grant_activity_reports_certifications_read_all.sql`) follow the
+same pattern as `employees:read_all` above, for two modules that otherwise
+have **no permission gate at all** — every active user manages their own
+Activity Reports/Certifications ungated (`requireActiveUser()`, not
+`authorize()`, in both modules' queries), same as Settings & Profile. These
+two permissions exist solely to grant a read-only, org-wide **monitoring**
+view (`/activity-reports/monitoring`, `/certifications/monitoring`) on top of
+that — there is no `activity_reports`/`certifications` row in `MODULES` at
+all, since a full Read/Write/Edit/Delete grid would sit on top of code that
+never checks three of those four actions. Seeded to the `manager`,
+`unit_manager` and `department_head` roles by the migration above;
+Administrator gets both automatically via `can()`'s bypass.
+
 **Administrator's permissions are locked** two ways, not just seeded that way:
 `can()` (`src/lib/rbac.ts`) short-circuits to `true` for `principal.roleId ===
 "admin"` regardless of what's stored in its `role.permissions` row, and
