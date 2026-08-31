@@ -4,7 +4,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { count, desc, eq } from "drizzle-orm";
 
 import { db } from "@/db";
-import { client, jobProfile, level, position, taApplication, taRequest, user } from "@/db/schema";
+import { client, employmentType, jobProfile, level, position, taApplication, taRequest, team, user } from "@/db/schema";
 import { authorize } from "@/lib/session";
 
 import type { TaRequestRow } from "./types";
@@ -20,9 +20,12 @@ const REQUEST_SELECTION = {
   jobQualification: jobProfile.jobQualification,
   clientId: taRequest.clientId,
   clientName: client.name,
+  employmentTypeId: taRequest.employmentTypeId,
+  employmentTypeName: employmentType.name,
+  teamId: taRequest.teamId,
+  teamName: team.name,
   headcountNeeded: taRequest.headcountNeeded,
-  workSetup: taRequest.workSetup,
-  workSetupDetail: taRequest.workSetupDetail,
+  workArrangement: taRequest.workArrangement,
   status: taRequest.status,
   notes: taRequest.notes,
   reviewNote: taRequest.reviewNote,
@@ -43,6 +46,8 @@ function baseRequestQuery() {
     .innerJoin(position, eq(jobProfile.positionId, position.id))
     .innerJoin(level, eq(jobProfile.levelId, level.id))
     .innerJoin(client, eq(taRequest.clientId, client.id))
+    .leftJoin(employmentType, eq(taRequest.employmentTypeId, employmentType.id))
+    .leftJoin(team, eq(taRequest.teamId, team.id))
     .leftJoin(user, eq(taRequest.requestedBy, user.id))
     .leftJoin(approver, eq(taRequest.approvedBy, approver.id));
 }
@@ -68,10 +73,13 @@ function toRow(row: Awaited<ReturnType<typeof baseRequestQuery>>[number], filled
     jobQualification: row.jobQualification,
     clientId: row.clientId,
     clientName: row.clientName,
+    employmentTypeId: row.employmentTypeId,
+    employmentTypeName: row.employmentTypeName,
+    teamId: row.teamId,
+    teamName: row.teamName,
     headcountNeeded: row.headcountNeeded,
     headcountFilled: filledMap.get(row.id) ?? 0,
-    workSetup: row.workSetup,
-    workSetupDetail: row.workSetupDetail,
+    workArrangement: row.workArrangement,
     status: row.status,
     notes: row.notes,
     requestedBy: row.requesterId ? { id: row.requesterId, name: row.requesterName ?? "" } : null,

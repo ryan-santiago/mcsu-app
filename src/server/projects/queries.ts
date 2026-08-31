@@ -190,8 +190,11 @@ export async function listProjectOptions(clientId?: string): Promise<ProjectOpti
       clientId: project.clientId,
       startDate: project.startDate,
       endDate: project.endDate,
+      engagementTypeId: project.engagementTypeId,
+      engagementTypeName: engagementType.name,
     })
     .from(project)
+    .leftJoin(engagementType, eq(project.engagementTypeId, engagementType.id))
     .where(clientId ? eq(project.clientId, clientId) : undefined)
     .orderBy(asc(project.name));
 }

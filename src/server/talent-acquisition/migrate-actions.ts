@@ -28,6 +28,8 @@ import type { LookupOption } from "@/server/maintenance/types";
 import { listProjectOptions } from "@/server/projects/queries";
 import type { ProjectOption } from "@/server/projects/types";
 
+import { notifyMigrationCompleted } from "./notifications";
+
 async function run<T>(fn: () => Promise<ActionResult<T>>): Promise<ActionResult<T>> {
   try {
     return await fn();
@@ -90,6 +92,7 @@ const employmentSchema = z
 const migrateInputSchema = z.object({
   applicationId: z.string().min(1),
   requestId: z.string().min(1),
+  targetOnboardDate: z.string().min(1, "Select a target onboard date"),
   profile: z.object({
     code: employeeCodeSchema,
     firstName: nameFieldSchema,
@@ -172,13 +175,13 @@ export async function migrateCandidateToEmployee(input: MigrateCandidateInput): 
     if (!candidate) return { ok: false, error: "That candidate no longer exists." };
     if (candidate.employeeId) return { ok: false, error: "This candidate has already been migrated to Employee." };
 
-    const [jobOfferStage] = await db
+    const [finalInterviewStage] = await db
       .select({ status: taApplicationStage.status })
       .from(taApplicationStage)
-      .where(and(eq(taApplicationStage.applicationId, values.applicationId), eq(taApplicationStage.stage, "job_offer")))
+      .where(and(eq(taApplicationStage.applicationId, values.applicationId), eq(taApplicationStage.stage, "final_interview")))
       .limit(1);
-    if (jobOfferStage?.status !== "passed") {
-      return { ok: false, error: "Job Offer must be marked passed before migrating this candidate." };
+    if (finalInterviewStage?.status !== "passed") {
+      return { ok: false, error: "Final Interview must be marked passed before migrating this candidate." };
     }
 
     const [request] = await db.select().from(taRequest).where(eq(taRequest.id, values.requestId)).limit(1);
@@ -265,7 +268,12 @@ export async function migrateCandidateToEmployee(input: MigrateCandidateInput): 
 
     await db
       .update(taApplication)
-      .set({ status: "hired", statusChangedAt: new Date(), statusChangedBy: actor.id })
+      .set({
+        status: "hired",
+        statusChangedAt: new Date(),
+        statusChangedBy: actor.id,
+        targetOnboardDate: values.targetOnboardDate,
+      })
       .where(eq(taApplication.id, values.applicationId));
 
     const [{ hiredCount }] = await db
@@ -326,6 +334,8 @@ export async function migrateCandidateToEmployee(input: MigrateCandidateInput): 
       actorEmail: actor.email,
       changes: diffFields({ status: "active" }, { status: "hired" }, { status: "Status" }),
     });
+
+    await notifyMigrationCompleted({ requestId: values.requestId, employeeName: label });
 
     revalidatePath(`/talent-acquisition/${values.requestId}`);
     revalidatePath("/employees");

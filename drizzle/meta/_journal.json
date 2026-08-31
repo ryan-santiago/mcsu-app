@@ -463,6 +463,20 @@
       "when": 1788097603279,
       "tag": "0065_add_certification",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1788106088356,
+      "tag": "0066_grant_talent_acquisition_l3_assess",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1788107070527,
+      "tag": "0067_ta_workflow_redesign",
+      "breakpoints": true
     }
   ]
 }

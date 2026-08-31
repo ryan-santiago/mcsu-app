@@ -143,6 +143,13 @@ export const NAVIGATION: readonly NavGroup[] = [
 		title: 'Talent Acquisition',
 		items: [
 			{
+				title: 'Dashboard',
+				href: '/talent-acquisition-dashboard',
+				icon: 'dashboard',
+				permissions: ['talent_acquisition:read'],
+				matchNested: true,
+			},
+			{
 				title: 'Requests',
 				href: '/talent-acquisition',
 				icon: 'talent-acquisition',

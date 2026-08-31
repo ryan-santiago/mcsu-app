@@ -15,8 +15,8 @@ import { AuthorizationError, authorize } from "@/lib/session";
 import { listLookupOptions } from "@/server/maintenance/queries";
 import type { LookupOption } from "@/server/maintenance/types";
 
-import { getTaCandidateProfile, listTaCandidatePool } from "./candidate-queries";
-import type { TaCandidateProfileRow, TaCandidateRow } from "./candidate-types";
+import { getTaCandidateProfile, listTaCandidatePool, listTaCandidatesPage } from "./candidate-queries";
+import type { TaCandidateFilters, TaCandidatePoolResult, TaCandidateProfileRow, TaCandidateRow } from "./candidate-types";
 
 /** A CV doesn't need the 50 MB ceiling project docs get. */
 const MAX_CV_SIZE_BYTES = 10 * 1024 * 1024;
@@ -44,9 +44,20 @@ export async function fetchGenderOptions(): Promise<LookupOption[]> {
   return listLookupOptions("gender");
 }
 
-/** Server-action entry point for the talent pool page, and for "search existing candidates" when adding one to a request. */
+/** For the talent pool list's Source filter — gated on `:read` since it's a viewing-time filter, not a write-time picker. */
+export async function fetchJobPostingSourceOptions(): Promise<LookupOption[]> {
+  await authorize("talent_acquisition:read");
+  return listLookupOptions("job_posting_source");
+}
+
+/** Server-action entry point for "search existing candidates" when adding one to a request — see `listTaCandidatePool`'s own comment for why this stays separate from the full paginated list below. */
 export async function fetchTaCandidatePool(search?: string): Promise<TaCandidateRow[]> {
   return listTaCandidatePool(search);
+}
+
+/** Server-action entry point for the talent pool page's paginated, filterable list. */
+export async function fetchTaCandidatesPage(filters: TaCandidateFilters): Promise<TaCandidatePoolResult> {
+  return listTaCandidatesPage(filters);
 }
 
 /** Server-action entry point for the candidate profile page's TanStack Query `queryFn`. */

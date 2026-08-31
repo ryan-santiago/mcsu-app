@@ -1,4 +1,4 @@
-import type { TaRequestStatus, WorkSetup } from "@/db/schema";
+import type { TaRequestStatus } from "@/db/schema";
 
 export type TaRequestRow = {
   id: string;
@@ -9,11 +9,14 @@ export type TaRequestRow = {
   jobQualification: string | null;
   clientId: string;
   clientName: string;
+  employmentTypeId: string | null;
+  employmentTypeName: string | null;
+  teamId: string | null;
+  teamName: string | null;
   headcountNeeded: number;
   /** Count of this request's applications whose status is `hired`. */
   headcountFilled: number;
-  workSetup: WorkSetup;
-  workSetupDetail: string | null;
+  workArrangement: string | null;
   status: TaRequestStatus;
   notes: string | null;
   requestedBy: { id: string; name: string } | null;
@@ -22,12 +25,6 @@ export type TaRequestRow = {
   reviewNote: string | null;
   createdAt: Date;
   updatedAt: Date;
-};
-
-export const WORK_SETUP_LABELS: Record<WorkSetup, string> = {
-  onsite: "Full Onsite",
-  hybrid: "Hybrid",
-  remote: "Fully Remote",
 };
 
 export const TA_REQUEST_STATUS_LABELS: Record<TaRequestStatus, string> = {

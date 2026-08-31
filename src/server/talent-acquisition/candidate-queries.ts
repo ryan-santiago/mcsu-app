@@ -1,12 +1,31 @@
 import "server-only";
 
-import { desc, eq, ilike, or } from "drizzle-orm";
+import { and, count, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 
 import { db } from "@/db";
-import { client, gender, jobProfile, level, position, taApplication, taCandidate, taRequest } from "@/db/schema";
+import {
+  client,
+  gender,
+  jobPostingSource,
+  jobProfile,
+  level,
+  position,
+  taApplication,
+  taCandidate,
+  taRequest,
+} from "@/db/schema";
 import { authorize } from "@/lib/session";
 
-import type { TaCandidateProfileRow, TaCandidateRow } from "./candidate-types";
+import type {
+  TaCandidateFilters,
+  TaCandidatePoolResult,
+  TaCandidatePoolRow,
+  TaCandidateProfileRow,
+  TaCandidateRow,
+} from "./candidate-types";
+
+const DEFAULT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 100;
 
 const CANDIDATE_SELECTION = {
   id: taCandidate.id,
@@ -27,8 +46,10 @@ const CANDIDATE_SELECTION = {
 
 /**
  * The talent pool, optionally filtered by a name/email/mobile search term —
- * used both by the standalone pool page and by "search existing candidates"
- * when adding someone to a request.
+ * used by "search existing candidates" when adding someone to a request.
+ * Deliberately unpaginated (capped at 50) and without stage/status/source
+ * context — a lightweight picker, not the main list. See
+ * `listTaCandidatesPage` below for the full, paginated, filterable list.
  */
 export async function listTaCandidatePool(search?: string): Promise<TaCandidateRow[]> {
   await authorize("talent_acquisition:read");
@@ -45,6 +66,116 @@ export async function listTaCandidatePool(search?: string): Promise<TaCandidateR
     .where(filter)
     .orderBy(desc(taCandidate.createdAt))
     .limit(50);
+}
+
+/**
+ * Each candidate's "most relevant application right now" — the most recent
+ * *active* one if they have one, else their most recent application overall
+ * (rejected/withdrawn/hired). `null` for a candidate who's never applied to
+ * anything. `DISTINCT ON` per candidate, same idiom as
+ * `latestEmploymentSubquery()` in `src/server/employees/queries.ts`.
+ */
+function latestApplicationSubquery() {
+  return db
+    .selectDistinctOn([taApplication.candidateId], {
+      candidateId: taApplication.candidateId,
+      requestId: taApplication.requestId,
+      status: taApplication.status,
+      currentStage: taApplication.currentStage,
+      sourceId: taApplication.sourceId,
+      sourceName: sql<string | null>`${jobPostingSource.name}`.as("source_name"),
+    })
+    .from(taApplication)
+    .leftJoin(jobPostingSource, eq(taApplication.sourceId, jobPostingSource.id))
+    .orderBy(
+      taApplication.candidateId,
+      sql`${taApplication.status} = 'active' desc`,
+      desc(taApplication.createdAt),
+    )
+    .as("latest_application");
+}
+
+function buildPoolWhere(filters: TaCandidateFilters, latestApplication: ReturnType<typeof latestApplicationSubquery>): SQL | undefined {
+  const clauses: SQL[] = [];
+
+  const term = filters.search?.trim();
+  if (term) {
+    const match = or(
+      ilike(taCandidate.firstName, `%${term}%`),
+      ilike(taCandidate.lastName, `%${term}%`),
+      ilike(taCandidate.personalEmail, `%${term}%`),
+      ilike(taCandidate.mobileNumber, `%${term}%`),
+    );
+    if (match) clauses.push(match);
+  }
+  if (filters.stage) clauses.push(eq(latestApplication.currentStage, filters.stage));
+  if (filters.applicationStatus) clauses.push(eq(latestApplication.status, filters.applicationStatus));
+  if (filters.sourceId) clauses.push(eq(latestApplication.sourceId, filters.sourceId));
+
+  if (clauses.length === 0) return undefined;
+  return clauses.length === 1 ? clauses[0] : and(...clauses);
+}
+
+/**
+ * The full talent pool list — paginated, filterable by stage/application
+ * status/source, carrying each candidate's current pipeline context. This is
+ * what `/talent-acquisition/candidates` renders; `listTaCandidatePool` above
+ * stays the lightweight unpaginated search for the "add existing candidate"
+ * picker.
+ */
+export async function listTaCandidatesPage(filters: TaCandidateFilters = {}): Promise<TaCandidatePoolResult> {
+  await authorize("talent_acquisition:read");
+
+  const page = Math.max(1, filters.page ?? 1);
+  const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, filters.pageSize ?? DEFAULT_PAGE_SIZE));
+
+  const latestApplication = latestApplicationSubquery();
+  const where = buildPoolWhere(filters, latestApplication);
+
+  const rows = await db
+    .select({
+      ...CANDIDATE_SELECTION,
+      requestId: latestApplication.requestId,
+      status: latestApplication.status,
+      currentStage: latestApplication.currentStage,
+      sourceName: latestApplication.sourceName,
+    })
+    .from(taCandidate)
+    .leftJoin(gender, eq(taCandidate.genderId, gender.id))
+    .leftJoin(latestApplication, eq(latestApplication.candidateId, taCandidate.id))
+    .where(where)
+    .orderBy(desc(taCandidate.createdAt))
+    .limit(pageSize)
+    .offset((page - 1) * pageSize);
+
+  const [{ value: total }] = await db
+    .select({ value: count() })
+    .from(taCandidate)
+    .leftJoin(latestApplication, eq(latestApplication.candidateId, taCandidate.id))
+    .where(where);
+
+  const candidates: TaCandidatePoolRow[] = rows.map((row) => ({
+    id: row.id,
+    firstName: row.firstName,
+    middleName: row.middleName,
+    lastName: row.lastName,
+    genderId: row.genderId,
+    genderName: row.genderName,
+    mobileNumber: row.mobileNumber,
+    personalEmail: row.personalEmail,
+    cvFileName: row.cvFileName,
+    cvMimeType: row.cvMimeType,
+    cvSize: row.cvSize,
+    employeeId: row.employeeId,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    currentStage: row.currentStage ?? null,
+    applicationStatus: row.status ?? null,
+    sourceName: row.sourceName ?? null,
+    latestRequestId: row.requestId ?? null,
+  }));
+
+  return { candidates, total, page, pageSize };
 }
 
 /** The durable profile view: contact/CV plus every application this person has ever had, across every request. */

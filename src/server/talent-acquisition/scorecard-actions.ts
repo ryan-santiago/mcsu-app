@@ -32,14 +32,16 @@ const STAGE_PERMISSION: Record<TaStage, Permission> = {
   l1_assessment: "talent_acquisition:l1_assess",
   l2_assessment: "talent_acquisition:l2_assess",
   client_interview: "talent_acquisition:l2_assess",
+  l3_assessment: "talent_acquisition:l3_assess",
   final_interview: "talent_acquisition:finalize",
+  /** Retired stage (see schema.ts's `taStage` comment) — kept only because `Record<TaStage, Permission>` still requires every enum key. */
   job_offer: "talent_acquisition:finalize",
 };
 
 const scorecardInputSchema = z.object({
   applicationStageId: z.string().min(1),
   requestId: z.string().min(1),
-  stage: z.enum(["l1_assessment", "l2_assessment", "client_interview", "final_interview", "job_offer"]),
+  stage: z.enum(["l1_assessment", "l2_assessment", "client_interview", "l3_assessment", "final_interview", "job_offer"]),
   rating: z.enum(["strong_yes", "yes", "no", "strong_no"]),
   comments: z.string().max(2000, "That's too long").optional(),
 });

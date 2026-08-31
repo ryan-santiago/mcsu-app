@@ -76,6 +76,7 @@ const employmentSchema = z
   });
 
 const migrateFormSchema = z.object({
+  targetOnboardDate: z.string().min(1, "Select a target onboard date"),
   profile: z.object({
     code: employeeCodeSchema,
     firstName: nameFieldSchema,
@@ -148,6 +149,7 @@ export function MigrateToEmployeeForm({
   const form = useForm<MigrateFormInput>({
     resolver: zodResolver(migrateFormSchema),
     defaultValues: {
+      targetOnboardDate: today,
       profile: {
         code: "",
         firstName: application.firstName,
@@ -177,6 +179,8 @@ export function MigrateToEmployeeForm({
   const isSubmitting = form.formState.isSubmitting;
   const watchedEmploymentTypeId = useWatch({ control: form.control, name: "employment.employmentTypeId" });
   const endDateRequired = CONTRACT_END_DATE_REQUIRED_TYPES.has(watchedEmploymentTypeId);
+  const watchedProjectId = useWatch({ control: form.control, name: "deployment.projectId" });
+  const selectedProject = projectOptions.data?.find((option) => option.id === watchedProjectId) ?? null;
 
   async function onSubmit(values: MigrateFormInput) {
     const result = await migrateCandidateToEmployee({ applicationId: application.id, requestId, ...values });
@@ -485,9 +489,15 @@ export function MigrateToEmployeeForm({
 
         <div className="bg-card space-y-4 rounded-xl border p-6">
           <h3 className="text-sm font-semibold">Deployment</h3>
-          <div className="text-sm">
-            <p className="text-muted-foreground text-xs">Client</p>
-            <p className="mt-0.5">{clientName}</p>
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <p className="text-muted-foreground text-xs">Client</p>
+              <p className="mt-0.5">{clientName}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground text-xs">Engagement type</p>
+              <p className="mt-0.5">{selectedProject?.engagementTypeName ?? "—"}</p>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -534,6 +544,20 @@ export function MigrateToEmployeeForm({
               )}
             />
           </div>
+
+          <FormField
+            control={form.control}
+            name="targetOnboardDate"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Target onboard date</FormLabel>
+                <FormControl>
+                  <DatePicker value={field.value} onChange={field.onChange} disabled={isSubmitting} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
         </div>
 
         <div className="bg-card space-y-4 rounded-xl border p-6">

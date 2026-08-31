@@ -41,9 +41,9 @@ export default async function TaRequestDetailPage({ params }: TaRequestDetailPag
           canWrite={can(actor, "talent_acquisition:write")}
           canEdit={can(actor, "talent_acquisition:edit")}
           canDelete={can(actor, "talent_acquisition:delete")}
-          canApprove={can(actor, "talent_acquisition:approve")}
           canL1Assess={can(actor, "talent_acquisition:l1_assess")}
           canL2Assess={can(actor, "talent_acquisition:l2_assess")}
+          canL3Assess={can(actor, "talent_acquisition:l3_assess")}
           canFinalize={can(actor, "talent_acquisition:finalize")}
           canMigrate={can(actor, "talent_acquisition:migrate")}
           currentUserId={actor.id}

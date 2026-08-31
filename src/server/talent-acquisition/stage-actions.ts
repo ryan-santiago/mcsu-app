@@ -12,8 +12,15 @@ import { formatEmployeeDisplayName } from "@/lib/employee-format";
 import { hasUnrestrictedAccess } from "@/lib/rbac";
 import { AuthorizationError, authorize } from "@/lib/session";
 
+import { notifyFinalInterviewersNeeded, notifyL2ReviewersNeeded, notifyL3AssessorsNeeded } from "./notifications";
 import { listTaApplicationStages, listUsersWithPermission } from "./stage-queries";
 import { TA_STAGE_LABELS, type TaApplicationStageRow, type UserOption } from "./stage-types";
+
+const moneySchema = z
+  .string()
+  .trim()
+  .min(1, "Required")
+  .refine((value) => Number.isFinite(Number(value)) && Number(value) >= 0, "Enter a valid amount");
 
 async function run<T>(fn: () => Promise<ActionResult<T>>): Promise<ActionResult<T>> {
   try {
@@ -191,6 +198,11 @@ export async function completeL1Assessment(input: {
       candidateName: application.candidateName,
     });
 
+    if (input.passed) {
+      await advanceToStage(input.applicationId, "l2_assessment");
+      await notifyL2ReviewersNeeded({ requestId: input.requestId, candidateName: application.candidateName });
+    }
+
     return { ok: true, data: undefined, message: `L1 Assessment marked ${input.passed ? "passed" : "failed"}.` };
   });
 }
@@ -295,7 +307,8 @@ export async function completeL2Assessment(input: {
       if (input.clientInterviewRequired) {
         await advanceToStage(input.applicationId, "client_interview", stageRow.assigneeId);
       } else {
-        await advanceToStage(input.applicationId, "final_interview");
+        await advanceToStage(input.applicationId, "l3_assessment");
+        await notifyL3AssessorsNeeded({ requestId: input.requestId, candidateName: application.candidateName });
       }
     }
 
@@ -304,9 +317,10 @@ export async function completeL2Assessment(input: {
 }
 
 // ---------------------------------------------------------------------------
-// Client Interview — optional, only opened when flagged required. No
-// dedicated permission: the gate is purely "you're the assignee inherited
-// from L2" (or an admin override), same reviewer who ran L2.
+// Client Interview — optional, only opened when flagged required. Folded
+// into the `l2_assess` permission tier (same reviewer tier the label already
+// says — "L2 Assessment / Client Interview"), gated further by "you're the
+// assignee inherited from L2" (or an admin override).
 // ---------------------------------------------------------------------------
 
 export async function completeClientInterview(input: {
@@ -314,10 +328,12 @@ export async function completeClientInterview(input: {
   requestId: string;
   passed: boolean;
   notes?: string;
+  clientFeedback?: string;
 }): Promise<ActionResult> {
   return run(async () => {
-    const actor = await authorize("talent_acquisition:read");
+    const actor = await authorize("talent_acquisition:l2_assess");
     const notes = notesSchema.parse(input.notes)?.trim() || null;
+    const clientFeedback = notesSchema.parse(input.clientFeedback)?.trim() || null;
     const application = await getApplication(input.applicationId);
     if (!application) return { ok: false, error: "That candidate no longer exists." };
 
@@ -329,6 +345,8 @@ export async function completeClientInterview(input: {
     if (stageRow.assigneeId !== actor.id && !hasUnrestrictedAccess(actor)) {
       return { ok: false, error: "Only the assigned reviewer can complete this candidate's Client Interview." };
     }
+
+    await db.update(taApplicationStage).set({ clientFeedback }).where(eq(taApplicationStage.id, stageRow.id));
 
     await recordStageResult({
       applicationId: input.applicationId,
@@ -342,93 +360,133 @@ export async function completeClientInterview(input: {
       candidateName: application.candidateName,
     });
 
-    if (input.passed) await advanceToStage(input.applicationId, "final_interview");
+    if (input.passed) {
+      await advanceToStage(input.applicationId, "l3_assessment");
+      await notifyL3AssessorsNeeded({ requestId: input.requestId, candidateName: application.candidateName });
+    }
 
     return { ok: true, data: undefined, message: `Client Interview marked ${input.passed ? "passed" : "failed"}.` };
   });
 }
 
 // ---------------------------------------------------------------------------
-// Final Interview and Job Offer — Unit Manager tier, folded into the same
-// `finalize` permission (see the comment in `src/lib/rbac.ts`). Neither has
-// an assignee requirement.
+// L3 Interview & Assessment — Talent Acquisition Staff/Manager tier (incl.
+// background check), same "no assignee" model as L1: anyone holding the
+// permission may complete it.
 // ---------------------------------------------------------------------------
+
+export async function completeL3Assessment(input: {
+  applicationId: string;
+  requestId: string;
+  passed: boolean;
+  notes?: string;
+}): Promise<ActionResult> {
+  return run(async () => {
+    const actor = await authorize("talent_acquisition:l3_assess");
+    const notes = notesSchema.parse(input.notes)?.trim() || null;
+    const application = await getApplication(input.applicationId);
+    if (!application) return { ok: false, error: "That candidate no longer exists." };
+
+    const stageRow = await getStageRow(input.applicationId, "l3_assessment");
+    if (!stageRow) return { ok: false, error: "Complete the prior stage before L3." };
+    if (stageRow.status === "passed" || stageRow.status === "failed") {
+      return { ok: false, error: "L3 Interview & Assessment is already complete." };
+    }
+
+    await recordStageResult({
+      applicationId: input.applicationId,
+      requestId: input.requestId,
+      stage: "l3_assessment",
+      stageRowId: stageRow.id,
+      previousStatus: stageRow.status,
+      status: input.passed ? "passed" : "failed",
+      notes,
+      actor,
+      candidateName: application.candidateName,
+    });
+
+    if (input.passed) {
+      await advanceToStage(input.applicationId, "final_interview");
+      await notifyFinalInterviewersNeeded({ requestId: input.requestId, candidateName: application.candidateName });
+    }
+
+    return { ok: true, data: undefined, message: `L3 Interview & Assessment marked ${input.passed ? "passed" : "failed"}.` };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Final Interview — Unit Manager tier (`finalize`), the pipeline's last
+// stage. No assignee requirement. Passing requires the proposed comp
+// package (Salary/Communication Allowance/Transportation Allowance).
+// ---------------------------------------------------------------------------
+
+const finalInterviewInputSchema = z
+  .object({
+    applicationId: z.string().min(1),
+    requestId: z.string().min(1),
+    passed: z.boolean(),
+    notes: z.string().max(2000, "That's too long").optional(),
+    proposedSalary: z.string().optional(),
+    proposedCommunicationAllowance: z.string().optional(),
+    proposedTransportationAllowance: z.string().optional(),
+  })
+  .refine((data) => !data.passed || moneySchema.safeParse(data.proposedSalary).success, {
+    message: "Enter the proposed salary",
+    path: ["proposedSalary"],
+  })
+  .refine((data) => !data.passed || moneySchema.safeParse(data.proposedCommunicationAllowance).success, {
+    message: "Enter the proposed communication allowance (0 if none)",
+    path: ["proposedCommunicationAllowance"],
+  })
+  .refine((data) => !data.passed || moneySchema.safeParse(data.proposedTransportationAllowance).success, {
+    message: "Enter the proposed transportation allowance (0 if none)",
+    path: ["proposedTransportationAllowance"],
+  });
 
 export async function completeFinalInterview(input: {
   applicationId: string;
   requestId: string;
   passed: boolean;
   notes?: string;
+  proposedSalary?: string;
+  proposedCommunicationAllowance?: string;
+  proposedTransportationAllowance?: string;
 }): Promise<ActionResult> {
   return run(async () => {
     const actor = await authorize("talent_acquisition:finalize");
-    const notes = notesSchema.parse(input.notes)?.trim() || null;
-    const application = await getApplication(input.applicationId);
+    const values = finalInterviewInputSchema.parse(input);
+    const notes = notesSchema.parse(values.notes)?.trim() || null;
+    const application = await getApplication(values.applicationId);
     if (!application) return { ok: false, error: "That candidate no longer exists." };
 
-    const stageRow = await getStageRow(input.applicationId, "final_interview");
+    const stageRow = await getStageRow(values.applicationId, "final_interview");
     if (!stageRow) return { ok: false, error: "Complete the prior stage before Final Interview." };
     if (stageRow.status === "passed" || stageRow.status === "failed") {
       return { ok: false, error: "Final Interview is already complete." };
     }
 
+    await db
+      .update(taApplicationStage)
+      .set({
+        proposedSalary: values.passed ? (values.proposedSalary ?? null) : null,
+        proposedCommunicationAllowance: values.passed ? (values.proposedCommunicationAllowance ?? null) : null,
+        proposedTransportationAllowance: values.passed ? (values.proposedTransportationAllowance ?? null) : null,
+      })
+      .where(eq(taApplicationStage.id, stageRow.id));
+
     await recordStageResult({
-      applicationId: input.applicationId,
-      requestId: input.requestId,
+      applicationId: values.applicationId,
+      requestId: values.requestId,
       stage: "final_interview",
       stageRowId: stageRow.id,
       previousStatus: stageRow.status,
-      status: input.passed ? "passed" : "failed",
+      status: values.passed ? "passed" : "failed",
       notes,
       actor,
       candidateName: application.candidateName,
     });
 
-    if (input.passed) await advanceToStage(input.applicationId, "job_offer");
-
-    return { ok: true, data: undefined, message: `Final Interview marked ${input.passed ? "passed" : "failed"}.` };
-  });
-}
-
-export async function completeJobOffer(input: {
-  applicationId: string;
-  requestId: string;
-  passed: boolean;
-  notes?: string;
-  targetOnboardDate?: string;
-}): Promise<ActionResult> {
-  return run(async () => {
-    const actor = await authorize("talent_acquisition:finalize");
-    const notes = notesSchema.parse(input.notes)?.trim() || null;
-    const application = await getApplication(input.applicationId);
-    if (!application) return { ok: false, error: "That candidate no longer exists." };
-
-    const stageRow = await getStageRow(input.applicationId, "job_offer");
-    if (!stageRow) return { ok: false, error: "Complete Final Interview before Job Offer." };
-    if (stageRow.status === "passed" || stageRow.status === "failed") {
-      return { ok: false, error: "Job Offer is already complete." };
-    }
-
-    await recordStageResult({
-      applicationId: input.applicationId,
-      requestId: input.requestId,
-      stage: "job_offer",
-      stageRowId: stageRow.id,
-      previousStatus: stageRow.status,
-      status: input.passed ? "passed" : "failed",
-      notes,
-      actor,
-      candidateName: application.candidateName,
-    });
-
-    if (input.passed && input.targetOnboardDate) {
-      await db
-        .update(taApplication)
-        .set({ targetOnboardDate: input.targetOnboardDate })
-        .where(eq(taApplication.id, input.applicationId));
-    }
-
-    return { ok: true, data: undefined, message: `Job Offer marked ${input.passed ? "passed" : "failed"}.` };
+    return { ok: true, data: undefined, message: `Final Interview marked ${values.passed ? "passed" : "failed"}.` };
   });
 }
 

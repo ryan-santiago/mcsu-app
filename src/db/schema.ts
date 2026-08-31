@@ -382,7 +382,13 @@ export const jobProfile = pgTable(
 /*  Talent Acquisition                                                        */
 /* -------------------------------------------------------------------------- */
 
-export const workSetup = pgEnum("work_setup", ["onsite", "hybrid", "remote"]);
+/**
+ * `pending_approval` is retired — requests used to need Dept Head/Unit
+ * Manager approval before becoming sourceable; that step was dropped, so new
+ * requests start straight at `open` (see `taRequest.status`'s default). The
+ * value stays in the enum for old rows and because Postgres can't cleanly
+ * shrink an enum, but the app never assigns it again.
+ */
 export const taRequestStatus = pgEnum("ta_request_status", [
   "pending_approval",
   "open",
@@ -396,11 +402,19 @@ export const taApplicationStatus = pgEnum("ta_application_status", [
   "rejected",
   "withdrawn",
 ]);
-/** `client_interview` only applies when `taApplication.clientInterviewRequired` is set. */
+/**
+ * `client_interview` only applies when `taApplication.clientInterviewRequired`
+ * is set. `job_offer` is retired — the pipeline used to end L2 → (Client
+ * Interview) → Final Interview → Job Offer → Migrate; Job Offer was dropped
+ * (Final Interview is now terminal, Migrate reads its `targetOnboardDate`
+ * straight onto `taApplication` instead). Kept in the enum for the same
+ * reason `pending_approval` above is — never assigned to a new row again.
+ */
 export const taStage = pgEnum("ta_stage", [
   "l1_assessment",
   "l2_assessment",
   "client_interview",
+  "l3_assessment",
   "final_interview",
   "job_offer",
 ]);
@@ -414,11 +428,15 @@ export const taStageStatus = pgEnum("ta_stage_status", [
 export const taScorecardRating = pgEnum("ta_scorecard_rating", ["strong_yes", "yes", "no", "strong_no"]);
 
 /**
- * A Manager's headcount request — Position/Level comes from a `jobProfile`
- * (never duplicated here as raw `positionId`/`levelId`), so the request
- * carries whatever job description/qualification the profile already has.
- * Starts `pending_approval`; a Dept Head/Unit Manager must approve it
- * (`approvedBy`/`approvedAt`) before it becomes sourceable.
+ * A Request for Resource — Position/Level comes from a `jobProfile` (never
+ * duplicated here as raw `positionId`/`levelId`), so the request carries
+ * whatever job description/qualification the profile already has.
+ * `employmentTypeId`/`teamId` are nullable at the DB level even though the
+ * create form requires both going forward — old rows predate these columns
+ * and have no value to backfill. Starts `open` immediately — the old
+ * `pending_approval` gate (a Dept Head/Unit Manager had to approve before a
+ * request became sourceable) was dropped; `approvedBy`/`approvedAt`/
+ * `reviewNote` are unused by any code path now but kept for old rows' history.
  */
 export const taRequest = pgTable(
   "ta_request",
@@ -430,11 +448,12 @@ export const taRequest = pgTable(
     clientId: text("client_id")
       .notNull()
       .references(() => client.id, { onDelete: "restrict" }),
+    employmentTypeId: text("employment_type_id").references(() => employmentType.id, { onDelete: "restrict" }),
+    teamId: text("team_id").references(() => team.id, { onDelete: "restrict" }),
     headcountNeeded: integer("headcount_needed").notNull(),
-    workSetup: workSetup("work_setup").notNull(),
-    /** Onsite location, or a description of the hybrid schedule. Null for fully remote. */
-    workSetupDetail: text("work_setup_detail"),
-    status: taRequestStatus("status").notNull().default("pending_approval"),
+    /** Free text, e.g. "Hybrid — onsite Mon/Wed, remote the rest of the week". Replaces the old `workSetup` enum + detail pair. */
+    workArrangement: text("work_arrangement"),
+    status: taRequestStatus("status").notNull().default("open"),
     notes: text("notes"),
     requestedBy: text("requested_by").references(() => user.id, { onDelete: "set null" }),
     approvedBy: text("approved_by").references(() => user.id, { onDelete: "set null" }),
@@ -557,6 +576,12 @@ export const taApplicationStage = pgTable(
     status: taStageStatus("status").notNull().default("pending"),
     assigneeId: text("assignee_id").references(() => user.id, { onDelete: "set null" }),
     notes: text("notes"),
+    /** `client_interview` only — the client's own feedback, distinct from the reviewer's `notes`. */
+    clientFeedback: text("client_feedback"),
+    /** `final_interview` only — the proposed comp package, captured at Final Interview time rather than only later at Migrate. */
+    proposedSalary: numeric("proposed_salary", { precision: 12, scale: 2 }),
+    proposedCommunicationAllowance: numeric("proposed_communication_allowance", { precision: 12, scale: 2 }),
+    proposedTransportationAllowance: numeric("proposed_transportation_allowance", { precision: 12, scale: 2 }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .$defaultFn(() => new Date())
@@ -1953,6 +1978,8 @@ export const jobProfileRelations = relations(jobProfile, ({ one }) => ({
 export const taRequestRelations = relations(taRequest, ({ one, many }) => ({
   jobProfile: one(jobProfile, { fields: [taRequest.jobProfileId], references: [jobProfile.id] }),
   client: one(client, { fields: [taRequest.clientId], references: [client.id] }),
+  employmentType: one(employmentType, { fields: [taRequest.employmentTypeId], references: [employmentType.id] }),
+  team: one(team, { fields: [taRequest.teamId], references: [team.id] }),
   requester: one(user, { fields: [taRequest.requestedBy], references: [user.id] }),
   approver: one(user, { fields: [taRequest.approvedBy], references: [user.id] }),
   applications: many(taApplication),
@@ -2121,7 +2148,6 @@ export type NewJobProfile = typeof jobProfile.$inferInsert;
 
 export type JobPostingSource = typeof jobPostingSource.$inferSelect;
 
-export type WorkSetup = (typeof workSetup.enumValues)[number];
 export type TaRequest = typeof taRequest.$inferSelect;
 export type NewTaRequest = typeof taRequest.$inferInsert;
 export type TaRequestStatus = (typeof taRequestStatus.enumValues)[number];

@@ -4,24 +4,30 @@ import type { Metadata } from "next";
 import { PageHeader } from "@/components/layout/page-header";
 import { CandidatePoolView } from "@/components/talent-acquisition/candidate-pool-view";
 import { requirePermission } from "@/lib/session";
-import { fetchTaCandidatePool } from "@/server/talent-acquisition/candidate-actions";
+import { fetchTaCandidatesPage } from "@/server/talent-acquisition/candidate-actions";
+import type { TaCandidateFilters } from "@/server/talent-acquisition/candidate-types";
 
 export const metadata: Metadata = {
   title: "Talent Pool",
 };
 
+const INITIAL_FILTERS: TaCandidateFilters = {};
+
 export default async function TalentAcquisitionCandidatesPage() {
   await requirePermission("talent_acquisition:read");
 
   const queryClient = new QueryClient();
-  await queryClient.prefetchQuery({ queryKey: ["ta-candidate-pool", ""], queryFn: () => fetchTaCandidatePool("") });
+  await queryClient.prefetchQuery({
+    queryKey: ["ta-candidate-pool", INITIAL_FILTERS],
+    queryFn: () => fetchTaCandidatesPage(INITIAL_FILTERS),
+  });
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-6">
+    <div className="mx-auto w-full max-w-6xl space-y-6">
       <PageHeader title="Talent Pool" description="Every candidate ever sourced, independent of any single request." />
 
       <HydrationBoundary state={dehydrate(queryClient)}>
-        <CandidatePoolView />
+        <CandidatePoolView initialFilters={INITIAL_FILTERS} />
       </HydrationBoundary>
     </div>
   );

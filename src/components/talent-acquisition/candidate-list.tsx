@@ -42,6 +42,7 @@ type CandidateListProps = {
   canDelete: boolean;
   canL1Assess: boolean;
   canL2Assess: boolean;
+  canL3Assess: boolean;
   canFinalize: boolean;
   canMigrate: boolean;
   currentUserId: string;
@@ -63,6 +64,7 @@ export function CandidateList({
   canDelete,
   canL1Assess,
   canL2Assess,
+  canL3Assess,
   canFinalize,
   canMigrate,
   currentUserId,
@@ -194,6 +196,7 @@ export function CandidateList({
         canDelete={canDelete}
         canL1Assess={canL1Assess}
         canL2Assess={canL2Assess}
+        canL3Assess={canL3Assess}
         canFinalize={canFinalize}
         canMigrate={canMigrate}
         currentUserId={currentUserId}

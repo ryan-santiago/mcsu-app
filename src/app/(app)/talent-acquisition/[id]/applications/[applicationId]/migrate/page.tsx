@@ -34,7 +34,7 @@ export default async function MigrateToEmployeePage({ params }: MigratePageProps
   if (!application || !request || application.requestId !== requestId) notFound();
 
   const fullName = formatEmployeeDisplayName(application);
-  const jobOfferPassed = stages.some((stage) => stage.stage === "job_offer" && stage.status === "passed");
+  const finalInterviewPassed = stages.some((stage) => stage.stage === "final_interview" && stage.status === "passed");
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6">
@@ -54,11 +54,11 @@ export default async function MigrateToEmployeePage({ params }: MigratePageProps
             </Button>
           }
         />
-      ) : !jobOfferPassed ? (
+      ) : !finalInterviewPassed ? (
         <EmptyState
           icon={UserCheck}
           title="Not ready to migrate yet"
-          description="Job Offer must be marked passed for this candidate before they can be migrated to Employee."
+          description="Final Interview must be marked passed for this candidate before they can be migrated to Employee."
           action={
             <Button asChild size="sm">
               <Link href={`/talent-acquisition/${requestId}`}>Back to request</Link>

@@ -83,12 +83,12 @@ export const PERMISSIONS = [
   "talent_acquisition:l1_assess",
   /** Be assignable to, and complete, L2 Assessment — Client Interview (if flagged) inherits the same assignee. */
   "talent_acquisition:l2_assess",
-  /** Final Interview and Job Offer — folded into one permission, same grantee tier for both. */
+  /** Mark L3 Interview/Assessment (incl. background check) passed/failed — same grantee tier as l1_assess. */
+  "talent_acquisition:l3_assess",
+  /** Final Interview — the pipeline's last stage. */
   "talent_acquisition:finalize",
   /** Migrate a candidate into the Employee module. */
   "talent_acquisition:migrate",
-  /** Approve or reject a pending request before it becomes sourceable. */
-  "talent_acquisition:approve",
 
   "maintenance:read",
   "maintenance:write",
@@ -182,10 +182,10 @@ export function permissionFor(moduleId: ModuleId, action: Action): Permission {
  * follow the same shape without touching the main grid.
  */
 export const TALENT_ACQUISITION_STAGE_PERMISSIONS: readonly { permission: Permission; label: string }[] = [
-  { permission: "talent_acquisition:approve", label: "Approve / Reject Request" },
   { permission: "talent_acquisition:l1_assess", label: "L1 Assessment" },
   { permission: "talent_acquisition:l2_assess", label: "L2 Assessment / Client Interview" },
-  { permission: "talent_acquisition:finalize", label: "Final Interview / Job Offer" },
+  { permission: "talent_acquisition:l3_assess", label: "L3 Interview / Assessment" },
+  { permission: "talent_acquisition:finalize", label: "Final Interview" },
   { permission: "talent_acquisition:migrate", label: "Migrate to Employee" },
 ];
 

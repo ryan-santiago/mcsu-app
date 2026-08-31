@@ -70,6 +70,8 @@ export type ProjectOption = {
   clientId: string;
   startDate: string | null;
   endDate: string | null;
+  engagementTypeId: string | null;
+  engagementTypeName: string | null;
 };
 
 /**

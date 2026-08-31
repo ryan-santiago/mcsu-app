@@ -12,7 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fetchTaRequests } from "@/server/talent-acquisition/actions";
 import { taRequestsQueryKey } from "@/server/talent-acquisition/query-key";
-import { TA_REQUEST_STATUS_LABELS, WORK_SETUP_LABELS, type TaRequestRow } from "@/server/talent-acquisition/types";
+import { TA_REQUEST_STATUS_LABELS, type TaRequestRow } from "@/server/talent-acquisition/types";
 
 type TaRequestsViewProps = {
   canWrite: boolean;
@@ -55,8 +55,8 @@ export function TaRequestsView({ canWrite }: TaRequestsViewProps) {
               <TableRow className="hover:bg-transparent">
                 <TableHead>Position / Level</TableHead>
                 <TableHead>Client</TableHead>
+                <TableHead>Team</TableHead>
                 <TableHead className="w-28">Headcount</TableHead>
-                <TableHead>Work Setup</TableHead>
                 <TableHead className="w-36">Status</TableHead>
               </TableRow>
             </TableHeader>
@@ -113,10 +113,10 @@ export function TaRequestsView({ canWrite }: TaRequestsViewProps) {
                       </Link>
                     </TableCell>
                     <TableCell>{request.clientName}</TableCell>
+                    <TableCell>{request.teamName ?? "—"}</TableCell>
                     <TableCell className="tabular-nums">
                       {request.headcountFilled} / {request.headcountNeeded}
                     </TableCell>
-                    <TableCell>{WORK_SETUP_LABELS[request.workSetup]}</TableCell>
                     <TableCell>
                       <Badge variant={STATUS_BADGE_VARIANT[request.status]} className="font-normal">
                         {TA_REQUEST_STATUS_LABELS[request.status]}

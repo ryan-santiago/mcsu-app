@@ -37,6 +37,7 @@ type ApplicationDetailSheetProps = {
   canDelete: boolean;
   canL1Assess: boolean;
   canL2Assess: boolean;
+  canL3Assess: boolean;
   canFinalize: boolean;
   canMigrate: boolean;
   currentUserId: string;
@@ -54,6 +55,7 @@ export function ApplicationDetailSheet({
   canDelete,
   canL1Assess,
   canL2Assess,
+  canL3Assess,
   canFinalize,
   canMigrate,
   currentUserId,
@@ -75,6 +77,7 @@ export function ApplicationDetailSheet({
             canDelete={canDelete}
             canL1Assess={canL1Assess}
             canL2Assess={canL2Assess}
+            canL3Assess={canL3Assess}
             canFinalize={canFinalize}
             canMigrate={canMigrate}
             currentUserId={currentUserId}
@@ -96,6 +99,7 @@ function ApplicationDetailContent({
   canDelete,
   canL1Assess,
   canL2Assess,
+  canL3Assess,
   canFinalize,
   canMigrate,
   currentUserId,
@@ -294,6 +298,7 @@ function ApplicationDetailContent({
           canL1Assess={canL1Assess}
           canAssignL2={canEdit}
           canL2Assess={canL2Assess}
+          canL3Assess={canL3Assess}
           canFinalize={canFinalize}
           canMove={canEdit}
         />

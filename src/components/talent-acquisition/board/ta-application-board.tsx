@@ -8,10 +8,9 @@ import type { TaStage } from "@/db/schema";
 import { taApplicationsQueryKey } from "@/server/talent-acquisition/application-query-key";
 import type { TaApplicationRow } from "@/server/talent-acquisition/application-types";
 import { moveApplicationStage } from "@/server/talent-acquisition/stage-actions";
+import { TA_STAGE_ORDER } from "@/server/talent-acquisition/stage-order";
 
 import { TaApplicationColumn } from "./ta-application-column";
-
-const BOARD_STAGES: TaStage[] = ["l1_assessment", "l2_assessment", "client_interview", "final_interview", "job_offer"];
 
 type TaApplicationBoardProps = {
   requestId: string;
@@ -64,7 +63,7 @@ export function TaApplicationBoard({ requestId, applications, canMove, onCardCli
   return (
     <DndContext id={`ta-application-board-${requestId}`} sensors={sensors} onDragEnd={handleDragEnd}>
       <div className="flex items-start gap-4 overflow-x-auto pb-2">
-        {BOARD_STAGES.map((stage) => (
+        {TA_STAGE_ORDER.map((stage) => (
           <TaApplicationColumn
             key={stage}
             stage={stage}

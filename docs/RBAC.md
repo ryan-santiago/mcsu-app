@@ -39,9 +39,9 @@ Delete/All matrix per module. No deploy required to change what a role can do.
 | **Administrator** | 40 | yes, **locked** | Every permission, forever — see below |
 | **Department Head** | 38 | yes | Every permission (seeded admin-equivalent — `drizzle/0027_seed_dept_head_unit_manager_roles.sql`) |
 | **Unit Manager** | 35 | yes | Every permission (seeded admin-equivalent — same migration) |
-| **Talent Acquisition Manager** | 32 | yes (`drizzle/0061_employees_read_all_and_role_updates.sql`) | Talent Acquisition: full + approve · Employee Recommendation: read + generate_erf · Employees: read + read_all (org-wide view, not edit — see below) |
-| **Team Lead/Manager** (id `manager`, relabeled from "Manager" — same migration) | 30 | yes | Employees & Projects: full · Announcements: read · Users & Access: read + edit · Maintenance/Device Inventory/Audit Trail/Settings/Access Control: read only |
-| **Talent Acquisition Staff** | 22 | no | Talent Acquisition: read/write/edit (no approve/finalize/migrate) |
+| **Talent Acquisition Manager** | 32 | yes (`drizzle/0061_employees_read_all_and_role_updates.sql`) | Talent Acquisition: full + l1_assess + l3_assess + migrate · Employee Recommendation: read + generate_erf · Employees: read + read_all (org-wide view, not edit — see below) |
+| **Team Lead/Manager** (id `manager`, relabeled from "Manager" — same migration) | 30 | yes | Employees & Projects: full · Talent Acquisition: read/write + l2_assess · Announcements: read · Users & Access: read + edit · Maintenance/Device Inventory/Audit Trail/Settings/Access Control: read only |
+| **Talent Acquisition Staff** | 22 | no | Talent Acquisition: read/write/edit + l1_assess + l3_assess (no finalize/migrate) |
 | **Engineer** | 20 | no | Announcements: read only |
 | **Viewer** | 10 | no | Announcements: read only |
 
@@ -83,6 +83,25 @@ all, since a full Read/Write/Edit/Delete grid would sit on top of code that
 never checks three of those four actions. Seeded to the `manager`,
 `unit_manager` and `department_head` roles by the migration above;
 Administrator gets both automatically via `can()`'s bypass.
+
+**Talent Acquisition's `talent_acquisition:approve` was removed** (2026-08-31,
+workflow redesign — see `docs/RBAC.md`'s "Add a permission" recipe run in
+reverse) — the Request-approval gate it protected (a Dept Head/Unit Manager
+had to sign off before a request became sourceable) was dropped; new
+requests now go straight to `open`. Since `Permission` is a TypeScript union
+derived from `PERMISSIONS`, deleting the string is a real, compiler-checked
+removal — every stale reference (the old approve/reject actions, the
+`canApprove` prop chain) became a build error, which is how the removal was
+verified complete. The `ta_request_status` enum's `pending_approval` value
+and `taApplicationStage`'s (now-unused) `job_offer`/`ta_stage` value are
+**not** similarly removed — Postgres can't cleanly shrink an enum, so those
+stay defined but simply never assigned to a new row again.
+
+**`talent_acquisition:l3_assess`** (added the same day,
+`drizzle/0066_grant_talent_acquisition_l3_assess.sql`) is the new L3
+Interview & Assessment stage inserted between Client Interview and Final
+Interview — granted to the same roles `l1_assess` already has (Talent
+Acquisition Staff/Manager), same tier doing both.
 
 **Administrator's permissions are locked** two ways, not just seeded that way:
 `can()` (`src/lib/rbac.ts`) short-circuits to `true` for `principal.roleId ===
