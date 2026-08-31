@@ -90,6 +90,7 @@ export const AUDIT_ACTIONS = [
   { value: "document_uploaded", label: "Document uploaded" },
   { value: "document_renamed", label: "Document renamed" },
   { value: "document_deleted", label: "Document deleted" },
+  { value: "document_moved", label: "Document moved" },
   { value: "candidate_added", label: "Candidate added" },
   { value: "candidate_updated", label: "Candidate updated" },
   { value: "cv_uploaded", label: "CV uploaded" },

@@ -1,21 +1,18 @@
 import "server-only";
 
+import { graphFetch, isGraphConfigured } from "@/lib/graph-client";
+
 /**
- * Whether outbound email is actually wired up. False until the
- * MS_GRAPH_* env vars below are set — see docs/EMPLOYEE_RECOMMENDATION.md
- * §13 "Email notifications" for the Entra ID app registration this needs
- * (Microsoft Graph, `Mail.Send` application permission) and the IT ask.
- * Same shape as `isDocumentStorageAvailable()` in `document-storage.ts`:
- * one guard, checked once, everything downstream degrades quietly instead
- * of half-working.
+ * Whether outbound email is actually wired up — `isGraphConfigured()` plus
+ * the sender mailbox. See docs/EMPLOYEE_RECOMMENDATION.md §13 for the Entra
+ * ID app registration this needs (Microsoft Graph, `Mail.Send` application
+ * permission, restricted via an Exchange Application Access Policy to only
+ * `MS_SENDER_EMAIL`). Same shape as `isDocumentStorageAvailable()` in
+ * `document-storage.ts`: one guard, checked once, everything downstream
+ * degrades quietly instead of half-working.
  */
 export function isEmailAvailable(): boolean {
-  return Boolean(
-    process.env.MS_GRAPH_CLIENT_ID &&
-      process.env.MS_GRAPH_TENANT_ID &&
-      process.env.MS_GRAPH_CLIENT_SECRET &&
-      process.env.MS_GRAPH_SENDER_EMAIL,
-  );
+  return isGraphConfigured() && Boolean(process.env.MS_SENDER_EMAIL);
 }
 
 type SendEmailInput = {
@@ -26,12 +23,11 @@ type SendEmailInput = {
 
 /**
  * Redirects every outbound email to one address instead of its real
- * recipients — set while developing/testing against real accounts so
- * approval/rejection emails don't land in coworkers' real inboxes before
- * this is actually ready to go live. The real recipients are preserved in
- * the subject and a banner in the body, so nothing about who it was
- * "really" for gets lost. Unset in any environment where email should
- * reach its real recipients.
+ * recipients — set in every non-production environment so that real
+ * employee emails (used to simulate the actual workflow) don't land in
+ * coworkers' inboxes before this is actually ready to go live. The real
+ * recipients are preserved in the subject and a banner in the body, so
+ * nothing about who it was "really" for gets lost. Unset ONLY in production.
  */
 function overrideRecipient(): string | undefined {
   return process.env.EMAIL_OVERRIDE_TO || undefined;
@@ -45,12 +41,6 @@ function overrideRecipient(): string | undefined {
  * risking the underlying action (submit, approve, reject...) on email
  * delivery. Never throws, by design: a broken notification must not break
  * the recommendation it's about.
- *
- * TODO(once MS_GRAPH_* is configured): acquire an app-only token via the
- * client-credentials flow against
- * `https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token`
- * (scope `https://graph.microsoft.com/.default`), then POST to
- * `https://graph.microsoft.com/v1.0/users/{MS_GRAPH_SENDER_EMAIL}/sendMail`.
  */
 export async function sendEmail({ to, subject, html }: SendEmailInput): Promise<boolean> {
   if (to.length === 0) return true;
@@ -72,13 +62,25 @@ export async function sendEmail({ to, subject, html }: SendEmailInput): Promise<
   }
 
   try {
-    // Real Microsoft Graph call goes here once credentials exist.
-    console.warn("[email] MS_GRAPH_* is set but sendEmail() isn't implemented yet:", {
-      to: finalTo,
-      subject: finalSubject,
-      htmlLength: finalHtml.length,
+    const sender = process.env.MS_SENDER_EMAIL!;
+    const response = await graphFetch(`/users/${encodeURIComponent(sender)}/sendMail`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: {
+          subject: finalSubject,
+          body: { contentType: "HTML", content: finalHtml },
+          toRecipients: finalTo.map((address) => ({ emailAddress: { address } })),
+        },
+        saveToSentItems: false,
+      }),
     });
-    return false;
+
+    if (!response.ok) {
+      console.error("[email] Graph sendMail failed", { status: response.status, body: await response.text() });
+      return false;
+    }
+    return true;
   } catch (error) {
     console.error("[email] send failed", error);
     return false;

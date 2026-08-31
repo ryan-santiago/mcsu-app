@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, FolderOpen, FolderPlus, Loader2, Upload } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronRight, Download, FolderOpen, FolderPlus, Loader2, Search, Trash2, Upload, X } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 
@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -26,17 +27,23 @@ import {
   createOneLotProjectDocumentFolder,
   deleteOneLotProjectDocument,
   fetchOneLotProjectDocumentFolder,
+  moveOneLotProjectDocument,
   renameOneLotProjectDocument,
   uploadOneLotProjectDocument,
 } from "@/server/one-lot-projects/document-actions";
 import type { DocumentFolderData, DocumentRow as DocumentRowData } from "@/server/one-lot-projects/document-types";
 
-import { DocumentRow } from "./document-row";
+import { DOCUMENT_DRAG_MIME, DocumentRow } from "./document-row";
 
 type OneLotProjectDocumentsExplorerProps = {
   projectId: string;
   initialFolder: DocumentFolderData;
 };
+
+type SortKey = "name" | "modified" | "size";
+type SortDir = "asc" | "desc";
+
+const ROOT_DROP_ID = "__root__";
 
 export function OneLotProjectDocumentsExplorer({ projectId, initialFolder }: OneLotProjectDocumentsExplorerProps) {
   const [folderId, setFolderId] = React.useState<string | null>(initialFolder.currentFolderId);
@@ -44,6 +51,14 @@ export function OneLotProjectDocumentsExplorer({ projectId, initialFolder }: One
   const [creatingFolder, setCreatingFolder] = React.useState(false);
   const [renaming, setRenaming] = React.useState<DocumentRowData | null>(null);
   const [deleting, setDeleting] = React.useState<DocumentRowData | null>(null);
+  const [bulkDeleting, setBulkDeleting] = React.useState(false);
+  const [bulkDeletePending, setBulkDeletePending] = React.useState(false);
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
+  const [search, setSearch] = React.useState("");
+  const [sortKey, setSortKey] = React.useState<SortKey>("name");
+  const [sortDir, setSortDir] = React.useState<SortDir>("asc");
+  const [movingId, setMovingId] = React.useState<string | null>(null);
+  const [dropTargetId, setDropTargetId] = React.useState<string | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const dragCounter = React.useRef(0);
   const queryClient = useQueryClient();
@@ -56,6 +71,18 @@ export function OneLotProjectDocumentsExplorer({ projectId, initialFolder }: One
   });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["one-lot-project-documents", projectId] });
+
+  // Resets selection/search when navigating to a different folder. Adjusting
+  // state during render (rather than in an effect) is the pattern React
+  // recommends for "derived state that resets when a prop changes" — see
+  // https://react.dev/learn/you-might-not-need-an-effect — and is required
+  // here since this project's lint config forbids setState inside effects.
+  const [resetKey, setResetKey] = React.useState(folderId);
+  if (resetKey !== folderId) {
+    setResetKey(folderId);
+    setSelectedIds(new Set());
+    setSearch("");
+  }
 
   const createFolderMutation = useMutation({
     mutationFn: (name: string) => createOneLotProjectDocumentFolder({ projectId, parentId: folderId, name }),
@@ -114,6 +141,20 @@ export function OneLotProjectDocumentsExplorer({ projectId, initialFolder }: One
     onError: () => toast.error("Something went wrong. Please try again."),
   });
 
+  const moveMutation = useMutation({
+    mutationFn: (input: { id: string; targetParentId: string | null }) =>
+      moveOneLotProjectDocument({ projectId, id: input.id, targetParentId: input.targetParentId }),
+    onSuccess: (result) => {
+      if (result.ok) {
+        toast.success(result.message);
+        invalidate();
+      } else {
+        toast.error(result.error);
+      }
+    },
+    onError: () => toast.error("Something went wrong. Please try again."),
+  });
+
   function uploadFiles(files: FileList | File[]) {
     const list = Array.from(files);
     if (list.length === 0) return;
@@ -138,34 +179,114 @@ export function OneLotProjectDocumentsExplorer({ projectId, initialFolder }: One
     window.open(`/api/one-lot-projects/${projectId}/documents/${document.id}?download=1`, "_blank", "noopener,noreferrer");
   }
 
+  async function handleBulkDelete() {
+    setBulkDeletePending(true);
+    const ids = Array.from(selectedIds);
+    const results = await Promise.all(ids.map((id) => deleteOneLotProjectDocument({ projectId, id })));
+    const failed = results.filter((result) => !result.ok);
+    if (failed.length === 0) {
+      toast.success(`${ids.length} item${ids.length === 1 ? "" : "s"} deleted.`);
+    } else {
+      toast.error(`${failed.length} of ${ids.length} item(s) couldn't be deleted.`);
+    }
+    setBulkDeletePending(false);
+    setBulkDeleting(false);
+    setSelectedIds(new Set());
+    invalidate();
+  }
+
+  function bulkDownload() {
+    const files = sortedItems.filter((document) => selectedIds.has(document.id) && document.type === "file");
+    files.forEach((document) => downloadDocument(document));
+  }
+
+  function moveItemTo(draggedId: string, targetParentId: string | null) {
+    if (draggedId === targetParentId) return;
+    moveMutation.mutate({ id: draggedId, targetParentId });
+  }
+
   const items = folder?.items ?? initialFolder.items;
   const breadcrumbs = folder?.breadcrumbs ?? initialFolder.breadcrumbs;
+
+  const searchQuery = search.trim().toLowerCase();
+  const filteredItems = searchQuery
+    ? items.filter((document) => document.name.toLowerCase().includes(searchQuery))
+    : items;
+  const itemCompare = compareByKey(sortKey, sortDir);
+  const sortedItems = [
+    ...filteredItems.filter((document) => document.type === "folder").sort(itemCompare),
+    ...filteredItems.filter((document) => document.type === "file").sort(itemCompare),
+  ];
+
+  const allVisibleSelected = sortedItems.length > 0 && sortedItems.every((document) => selectedIds.has(document.id));
+  const someVisibleSelected = sortedItems.some((document) => selectedIds.has(document.id));
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((dir) => (dir === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
 
   return (
     <Card>
       <CardContent className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <Breadcrumbs breadcrumbs={breadcrumbs} onNavigate={setFolderId} />
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => setCreatingFolder(true)}>
-              <FolderPlus className="size-4" aria-hidden />
-              New folder
-            </Button>
-            <Button size="sm" onClick={() => fileInputRef.current?.click()}>
-              <Upload className="size-4" aria-hidden />
-              Upload
-            </Button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              className="hidden"
-              onChange={(event) => {
-                if (event.target.files) uploadFiles(event.target.files);
-                event.target.value = "";
-              }}
-            />
-          </div>
+          <Breadcrumbs
+            breadcrumbs={breadcrumbs}
+            onNavigate={setFolderId}
+            dropTargetId={dropTargetId}
+            onDropTargetChange={setDropTargetId}
+            onDropItem={moveItemTo}
+          />
+          {selectedIds.size > 0 ? (
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground text-sm">{selectedIds.size} selected</span>
+              <Button variant="outline" size="sm" onClick={bulkDownload}>
+                <Download className="size-4" aria-hidden />
+                Download
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setBulkDeleting(true)}>
+                <Trash2 className="size-4" aria-hidden />
+                Delete
+              </Button>
+              <Button variant="ghost" size="icon-sm" aria-label="Clear selection" onClick={() => setSelectedIds(new Set())}>
+                <X className="size-4" aria-hidden />
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" aria-hidden />
+                <Input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search this folder"
+                  className="h-8 w-40 pl-8 text-sm"
+                />
+              </div>
+              <Button variant="outline" size="sm" onClick={() => setCreatingFolder(true)}>
+                <FolderPlus className="size-4" aria-hidden />
+                New folder
+              </Button>
+              <Button size="sm" onClick={() => fileInputRef.current?.click()}>
+                <Upload className="size-4" aria-hidden />
+                Upload
+              </Button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(event) => {
+                  if (event.target.files) uploadFiles(event.target.files);
+                  event.target.value = "";
+                }}
+              />
+            </div>
+          )}
         </div>
 
         <div
@@ -174,17 +295,23 @@ export function OneLotProjectDocumentsExplorer({ projectId, initialFolder }: One
             dragActive && "border-brand bg-brand/5 ring-brand/20 ring-2",
           )}
           onDragEnter={(event) => {
+            if (event.dataTransfer.types.includes(DOCUMENT_DRAG_MIME)) return;
             event.preventDefault();
             dragCounter.current += 1;
             setDragActive(true);
           }}
-          onDragOver={(event) => event.preventDefault()}
+          onDragOver={(event) => {
+            if (event.dataTransfer.types.includes(DOCUMENT_DRAG_MIME)) return;
+            event.preventDefault();
+          }}
           onDragLeave={(event) => {
+            if (event.dataTransfer.types.includes(DOCUMENT_DRAG_MIME)) return;
             event.preventDefault();
             dragCounter.current -= 1;
             if (dragCounter.current <= 0) setDragActive(false);
           }}
           onDrop={(event) => {
+            if (event.dataTransfer.types.includes(DOCUMENT_DRAG_MIME)) return;
             event.preventDefault();
             dragCounter.current = 0;
             setDragActive(false);
@@ -202,32 +329,58 @@ export function OneLotProjectDocumentsExplorer({ projectId, initialFolder }: One
             <div className="flex h-40 items-center justify-center">
               <Loader2 className="text-muted-foreground size-5 animate-spin" aria-hidden />
             </div>
-          ) : items.length === 0 ? (
+          ) : sortedItems.length === 0 ? (
             <EmptyState
               icon={FolderOpen}
-              title="This folder is empty"
-              description="Drag files here, or use Upload above."
+              title={search ? "No matches" : "This folder is empty"}
+              description={search ? "Try a different search." : "Drag files here, or use Upload above."}
             />
           ) : (
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead>Name</TableHead>
-                  <TableHead>Modified</TableHead>
-                  <TableHead>Size</TableHead>
+                  <TableHead className="w-8">
+                    <Checkbox
+                      checked={allVisibleSelected ? true : someVisibleSelected ? "indeterminate" : false}
+                      onCheckedChange={(checked) =>
+                        setSelectedIds(checked ? new Set(sortedItems.map((document) => document.id)) : new Set())
+                      }
+                      aria-label="Select all"
+                    />
+                  </TableHead>
+                  <SortableHead label="Name" sortKey="name" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+                  <SortableHead label="Modified" sortKey="modified" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+                  <SortableHead label="Size" sortKey="size" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
                   <TableHead>Uploaded by</TableHead>
                   <TableHead className="w-10" aria-label="Actions" />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {items.map((document) => (
+                {sortedItems.map((document) => (
                   <DocumentRow
                     key={document.id}
                     document={document}
+                    selected={selectedIds.has(document.id)}
+                    isDropTarget={dropTargetId === document.id}
+                    onSelectChange={(checked) =>
+                      setSelectedIds((prev) => {
+                        const next = new Set(prev);
+                        if (checked) next.add(document.id);
+                        else next.delete(document.id);
+                        return next;
+                      })
+                    }
                     onOpen={() => openDocument(document)}
                     onDownload={() => downloadDocument(document)}
                     onRename={() => setRenaming(document)}
                     onDelete={() => setDeleting(document)}
+                    onDragStart={() => setMovingId(document.id)}
+                    onDragEnd={() => {
+                      setMovingId(null);
+                      setDropTargetId(null);
+                    }}
+                    onDropTargetChange={(isOver) => setDropTargetId(isOver ? document.id : null)}
+                    onDropItem={(draggedId) => moveItemTo(draggedId, document.id)}
                   />
                 ))}
               </TableBody>
@@ -240,6 +393,9 @@ export function OneLotProjectDocumentsExplorer({ projectId, initialFolder }: One
             <Loader2 className="size-3.5 animate-spin" aria-hidden />
             Uploading…
           </p>
+        ) : null}
+        {movingId ? (
+          <p className="text-muted-foreground text-xs">Drop on a folder, or on a breadcrumb, to move it there.</p>
         ) : null}
       </CardContent>
 
@@ -293,17 +449,118 @@ export function OneLotProjectDocumentsExplorer({ projectId, initialFolder }: One
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AlertDialog open={bulkDeleting} onOpenChange={(open) => !open && setBulkDeleting(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedIds.size} item{selectedIds.size === 1 ? "" : "s"}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Any selected folders will also delete everything inside them. This can&apos;t be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkDeletePending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={bulkDeletePending}
+              onClick={(event) => {
+                event.preventDefault();
+                void handleBulkDelete();
+              }}
+            >
+              {bulkDeletePending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
+  );
+}
+
+function compareByKey(key: SortKey, dir: SortDir) {
+  const multiplier = dir === "asc" ? 1 : -1;
+  return (a: DocumentRowData, b: DocumentRowData) => {
+    switch (key) {
+      case "modified":
+        return multiplier * (new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime());
+      case "size":
+        return multiplier * ((a.size ?? 0) - (b.size ?? 0));
+      case "name":
+      default:
+        return multiplier * a.name.localeCompare(b.name);
+    }
+  };
+}
+
+function SortableHead({
+  label,
+  sortKey,
+  activeKey,
+  dir,
+  onSort,
+}: {
+  label: string;
+  sortKey: SortKey;
+  activeKey: SortKey;
+  dir: SortDir;
+  onSort: (key: SortKey) => void;
+}) {
+  const active = sortKey === activeKey;
+  const Icon = dir === "asc" ? ArrowUp : ArrowDown;
+  return (
+    <TableHead>
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className={cn(
+          "flex items-center gap-1 text-xs font-medium tracking-wide uppercase transition-colors",
+          active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+        )}
+      >
+        {label}
+        {active ? <Icon className="size-3" aria-hidden /> : null}
+      </button>
+    </TableHead>
   );
 }
 
 function Breadcrumbs({
   breadcrumbs,
   onNavigate,
+  dropTargetId,
+  onDropTargetChange,
+  onDropItem,
 }: {
   breadcrumbs: { id: string; name: string }[];
   onNavigate: (id: string | null) => void;
+  dropTargetId: string | null;
+  onDropTargetChange: (id: string | null) => void;
+  onDropItem: (draggedId: string, targetParentId: string | null) => void;
 }) {
+  function dropHandlers(id: string | null, dropId: string) {
+    return {
+      onDragOver: (event: React.DragEvent) => {
+        if (!event.dataTransfer.types.includes(DOCUMENT_DRAG_MIME)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+      },
+      onDragEnter: (event: React.DragEvent) => {
+        if (!event.dataTransfer.types.includes(DOCUMENT_DRAG_MIME)) return;
+        event.preventDefault();
+        onDropTargetChange(dropId);
+      },
+      onDragLeave: () => onDropTargetChange(null),
+      onDrop: (event: React.DragEvent) => {
+        if (!event.dataTransfer.types.includes(DOCUMENT_DRAG_MIME)) return;
+        event.preventDefault();
+        onDropTargetChange(null);
+        const draggedId = event.dataTransfer.getData(DOCUMENT_DRAG_MIME);
+        if (draggedId) onDropItem(draggedId, id);
+      },
+    };
+  }
+
   return (
     <nav aria-label="Folder path" className="flex min-w-0 flex-1 items-center gap-1 text-sm">
       <button
@@ -312,7 +569,9 @@ function Breadcrumbs({
         className={cn(
           "shrink-0 rounded px-1.5 py-0.5 font-medium transition-colors",
           breadcrumbs.length === 0 ? "text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-accent",
+          dropTargetId === ROOT_DROP_ID && "bg-brand/10 ring-brand/30 ring-1",
         )}
+        {...dropHandlers(null, ROOT_DROP_ID)}
       >
         Documents
       </button>
@@ -328,7 +587,9 @@ function Breadcrumbs({
               className={cn(
                 "min-w-0 truncate rounded px-1.5 py-0.5 font-medium transition-colors",
                 isLast ? "text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-accent",
+                dropTargetId === crumb.id && "bg-brand/10 ring-brand/30 ring-1",
               )}
+              {...dropHandlers(crumb.id, crumb.id)}
             >
               {crumb.name}
             </button>

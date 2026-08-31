@@ -1,79 +1,80 @@
-# One-Lot Project Docs — architecture and SharePoint migration
+# One-Lot Project Docs — architecture and SharePoint integration
 
-A file-explorer tab (upload, folders, rename, delete, preview) on each
-One-Lot Project. Storage is a **stand-in** — a fixed integration point is
-already reserved for a future SharePoint document library. Read this before
-touching `src/lib/document-storage.ts`, `src/server/one-lot-projects/document-*`,
-or the SharePoint integration itself.
+A file-explorer tab (upload, folders, rename, delete, move via drag-and-drop,
+multi-select, sort, search, preview) on each One-Lot Project. Storage is
+**SharePoint (Microsoft Graph), DONE as of 2026-08-31** — see "SharePoint
+implementation" below. Read this before touching `src/lib/document-storage.ts`,
+`src/server/one-lot-projects/document-*`, or the Graph client itself.
 
 ---
 
-## Current state: local disk, not SharePoint, not Vercel Blob
+## SharePoint implementation — DONE (2026-08-31)
 
-Files live on local disk, under a directory shaped like the eventual
-SharePoint path (see below). This was a deliberate, considered choice, not
-the default — two things ruled out the alternatives:
+`src/lib/document-storage.ts` is Graph-backed, sharing its app-only token
+helper (`src/lib/graph-client.ts`) with the email integration
+(`docs/EMPLOYEE_RECOMMENDATION.md` §13) — same Entra ID app registration,
+`Sites.Selected` scoped to one site. A connectivity probe (token → resolve
+site → resolve drive → create nested folders → upload → read back → delete)
+ran clean against the real DEV site before this was marked done, confirming
+in particular that Graph's simple `PUT .../content` does **not** auto-create
+missing intermediate folders — `saveDocumentFile()` walks and creates each
+missing folder segment first (`ensureFoldersExist()` / `createFolderIfMissing()`),
+tolerating a 409 `nameAlreadyExists` from a racing request.
 
-- **Not SharePoint yet** — no Entra ID app registration, no Graph API
-  credentials, no agreed site/library exist yet. See "What to get from IT"
-  below for exactly what unblocks this.
-- **Not Vercel Blob** — the first implementation of this feature used it
-  (browser uploads directly to Blob storage, `access: "private"`, streamed
-  back through an authenticated route handler). It was torn out because this
-  app's current deployment target may move off Vercel to a persistent host
-  (self-hosted or EC2) before SharePoint is ready, and local disk is simpler
-  and free until that's settled. If Vercel is confirmed as the long-term
-  target instead, that implementation is the one to resurrect — the
-  `document-storage.ts` abstraction below is exactly the seam for it.
-
-**This only works on a persistent filesystem.** Vercel serverless functions
-don't persist local writes between requests or across instances — anything
-written to disk (`public/` included) vanishes unpredictably. Every read/write
-path in this feature checks `isDocumentStorageAvailable()`
-(`src/lib/document-storage.ts`) first:
-
-```ts
-export function isDocumentStorageAvailable(): boolean {
-  return !process.env.VERCEL;
-}
-```
-
-`process.env.VERCEL` is set automatically in every Vercel runtime, so this
-needs no configuration — it just refuses (page shows an explanatory
-`EmptyState`, actions return a plain error) rather than silently losing an
-upload. **If this app is deployed to Vercel while still on local disk, Docs
-degrades to "not available here" instead of eating files.** Don't remove this
-guard without replacing the storage backend first.
+- `isDocumentStorageAvailable()` now checks Graph is configured
+  (`AZURE_TENANT_ID`/`AZURE_CLIENT_ID`/`AZURE_CLIENT_SECRET`) and a site is
+  resolvable (`SHAREPOINT_SITE_ID`, or `SHAREPOINT_SITE_HOSTNAME` +
+  `SHAREPOINT_SITE_PATH`) — no longer `!process.env.VERCEL`. Local disk is
+  fully retired, not kept as a fallback.
+- The site's drive is matched by `SHAREPOINT_DRIVE_NAME` (default
+  `"Documents"`) against `/sites/{id}/drives`, falling back to the site's
+  default drive if no name matches.
+- `storageKey`'s leading `Documents/` segment is stripped before building a
+  Graph-relative path — the resolved drive's root already **is** that
+  library's root, so keeping the prefix would nest a redundant `Documents/`
+  folder inside the `Documents` library. The DB column and its value are
+  unchanged; only the Graph-facing translation knows about this.
+  `sanitizeDocumentName()` also strips SharePoint's reserved filename
+  characters (`" * : < > ? |`), on top of `/` and `\`.
+- Files ≤4MB use a simple `PUT .../root:/{path}:/content`; larger files
+  (up to `MAX_FILE_SIZE_BYTES` = 50MB) use `createUploadSession` + chunked
+  `PUT`s (10MB chunks, a multiple of 320 KiB) — the returned `uploadUrl` is
+  pre-authenticated by Graph and deliberately bypasses this app's Bearer
+  token (see `graph-client.ts`'s `graphFetch()` doc comment).
+- Downloads stream through `GET .../root:/{path}:/content`, letting `fetch`
+  follow Graph's redirect to the actual (pre-signed) content URL.
 
 ### Why not literally `public/`
 
-The user's original request was to store files under `Public/Documents/...`.
-The actual storage root is `storage/Documents/...` — one directory up from
-`public/` — on purpose: Next.js serves everything under `public/` statically,
-with **no auth check at all**. Putting real documents there would mean anyone
-who saw or guessed a file's path could read it, bypassing this app's RBAC
-entirely. Keeping the real files outside `public/` and only ever reaching
-them through the authenticated route handler
-(`src/app/api/one-lot-projects/[id]/documents/[documentId]/route.ts`) means
-every single access re-checks the caller's session and project content
-access, same guarantee every other page/action in this app gets from
-`assertOneLotProjectContentAccess`.
+The storage root conceptually maps to `<SharePoint Site>/Documents/...`,
+never `public/`: Next.js serves everything under `public/` statically with
+**no auth check at all**. Every access instead goes through the
+authenticated route handler
+(`src/app/api/one-lot-projects/[id]/documents/[documentId]/route.ts`), which
+re-checks the caller's session and project content access on every request —
+same guarantee every other page/action in this app gets from
+`assertOneLotProjectContentAccess`. SharePoint's own permission model on the
+document library is not relied on for this — the app-only Graph credential
+has blanket access to the site, and RBAC is enforced entirely on this app's
+side, same as it always was.
 
 ---
 
-## Path convention (matches the SharePoint plan exactly)
+## Path convention
+
+`storageKey` (`oneLotProjectDocument.storageKey`, produced by
+`buildDocumentStorageKey()` in `one-lot-project-document-format.ts`):
 
 ```
-storage/Documents/One-Lot Project/{projectId}/documents/{documentId}-{fileName}
-         └──────────────────────────────────────────────────────────────────┘
-         This half is the part that's supposed to survive the migration —
-         see `projectDocumentsPrefix()` in one-lot-project-document-format.ts.
+Documents/One-Lot Project/{projectId}/documents/{documentId}-{fileName}
 ```
 
-The plan this is standing in for:
+`Documents/` is the SharePoint library itself, stripped by
+`document-storage.ts`'s `toGraphPath()` before every Graph call (see
+"SharePoint implementation" above) — the actual location on the site is:
 
 ```
-<SharePoint Site>/Documents/One-Lot Project/{projectId}/documents
+<SharePoint Site>/Documents/One-Lot Project/{projectId}/documents/{documentId}-{fileName}
 ```
 
 `documentId` prefixes the stored filename so two same-named files (different
@@ -104,13 +105,15 @@ same convention `backlog-actions.ts` uses for sprint item codes — Postgres
 would treat every `parentId IS NULL` row as distinct from every other, so a
 plain unique index wouldn't even catch duplicate names at the document root.
 
-**Folders are pure metadata.** There's no real directory created on disk per
-folder — the physical storage is flat (every file sits directly under
-`.../documents/`), and the folder hierarchy the user sees is entirely a
-`parentId` chain in the database. Deleting a folder cascades the DB rows
-(`onDelete: "cascade"`) and then walks the resulting subtree
-(`listDescendantFiles` in `document-queries.ts`) to clean up the
-corresponding on-disk files, which the cascade itself doesn't know about.
+**Folders are pure metadata.** There's no real SharePoint folder created per
+DB folder — physical storage is flat (every file sits directly under
+`.../documents/` in the SharePoint library), and the folder hierarchy the
+user sees (including drag-and-drop move between folders) is entirely a
+`parentId` chain in the database, never reflected in SharePoint's own folder
+tree. Deleting a folder cascades the DB rows (`onDelete: "cascade"`) and
+then walks the resulting subtree (`listDescendantFiles` in
+`document-queries.ts`) to clean up the corresponding SharePoint files, which
+the cascade itself doesn't know about.
 
 ---
 
@@ -119,38 +122,41 @@ corresponding on-disk files, which the cascade itself doesn't know about.
 ### Upload
 
 ```
-Browser → <input type=file> → FormData(projectId, parentId, file)
+Browser → <input type=file> (or drag-drop) → FormData(projectId, parentId, file)
         → uploadOneLotProjectDocument()   server action, "use server"
         → authorizeActiveUser() + assertOneLotProjectContentAccess()
         → buildDocumentStorageKey()       one-lot-project-document-format.ts
-        → saveDocumentFile()              document-storage.ts — writes to disk
+        → saveDocumentFile()              document-storage.ts — uploads to SharePoint via Graph
         → db.insert(oneLotProjectDocument)
         → recordAudit() + revalidatePath()
 ```
 
-Uploads go through a plain Server Action, not a Route Handler — safe only
-because this feature never runs on Vercel (see the guard above). Next.js
-caps Server Action bodies at **1MB by default regardless of host** (not a
-Vercel-specific limit), so `next.config.ts` raises it:
+Uploads go through a plain Server Action, not a Route Handler. Next.js caps
+Server Action bodies at **1MB by default regardless of host**, so
+`next.config.ts` raises it:
 
 ```ts
 experimental: { serverActions: { bodySizeLimit: "50mb" } }
 ```
 
-matching `MAX_FILE_SIZE_BYTES` in `document-actions.ts`. If this were ever
-deployed to real Vercel serverless functions, uploads would additionally hit
-Vercel's own ~4.5MB *request body* limit, which `next.config.ts` cannot
-override — that's the actual reason the first implementation had to bounce
-the file straight from the browser to Vercel Blob instead of through a
-server function at all. Resurrect that pattern if the deployment target
-becomes Vercel for real; don't just raise this number and assume it's fixed.
+matching `MAX_FILE_SIZE_BYTES` in `document-actions.ts`. Storage no longer
+depends on a persistent local filesystem, so this feature is no longer
+Vercel-incompatible on that front — but if this app is ever deployed to
+real Vercel serverless functions, uploads would still hit Vercel's own
+~4.5MB *request body* limit on the function itself, which `next.config.ts`
+cannot override. That would need bouncing the file straight from the
+browser to storage (a Graph upload session's `uploadUrl` can be handed to
+the browser directly, same shape as the Vercel Blob approach this feature's
+first implementation used and tore out) instead of routing every byte
+through a server function. Not built until that's an actual deployment
+target.
 
 ### Download / preview
 
 ```
 Browser → GET /api/one-lot-projects/{id}/documents/{documentId}
         → getCurrentUser() + getOneLotProjectDocumentById()   re-checks access, every request
-        → readDocumentFile()                                  document-storage.ts — streams from disk
+        → readDocumentFile()                                  document-storage.ts — streams from SharePoint via Graph
         → Response(stream, { Content-Type, Content-Disposition })
 ```
 
@@ -181,69 +187,61 @@ decides what to do with it:
 
 ---
 
-## What changes when SharePoint integration lands
+## Explorer-like UI — DONE (2026-08-31)
 
-The seam is intentionally narrow. Everything **outside** these two files
-should need zero changes:
+On top of the original upload/folder/rename/delete/preview set, the Docs
+tab (`one-lot-project-documents-explorer.tsx`, `document-row.tsx`) now has:
 
-| Stays the same | Changes |
-| --- | --- |
-| `oneLotProjectDocument` schema, `parentId` tree | `storageKey`'s meaning: relative disk path → SharePoint drive-item ID or path |
-| `document-queries.ts` (folder listing, breadcrumbs) | `src/lib/document-storage.ts`'s implementation — swap `fs/promises` calls for Graph API calls |
-| `document-actions.ts`'s auth/validation/audit logic | The download route handler's file-read step — swap `readDocumentFile()` for a Graph API content stream |
-| The whole UI (`documents/` component folder) | `isDocumentStorageAvailable()` — becomes "is the Graph API credential configured," not "are we off Vercel" |
+- **Multi-select** — row checkboxes plus a header select-all
+  (checked/indeterminate/unchecked), with a bulk action bar (Download,
+  Delete) replacing the New folder/Upload controls while any selection is
+  active.
+- **Move via drag-and-drop** — dragging a row onto a folder row, or onto any
+  breadcrumb (including the "Documents" root), calls the new
+  `moveOneLotProjectDocument` server action. Guards against dropping a
+  folder into itself or one of its own descendants
+  (`isSelfOrAncestor()` in `document-actions.ts`) and against a name
+  collision at the destination (`assertNameAvailable`, same check upload/
+  rename/create-folder already use). Internal drags are scoped to a private
+  `application/x-mcsu-document-id` DataTransfer type so they never trip the
+  existing OS-file drag-and-drop-to-upload handling on the same table.
+- **Column sorting** — click Name/Modified/Size to sort; folders always
+  group before files regardless of sort column, matching the convention
+  `document-queries.ts`'s default ordering already used.
+- **Search** — a client-side name filter scoped to the current folder's
+  already-fetched items (no new query).
 
-Rename `storageKey` to something SharePoint-shaped only if it stops being a
-plain relative path (e.g. becomes a drive-item ID) — otherwise the column
-and the concept survive unchanged.
+`document_moved` was added to `audit-registry.ts` alongside the other
+`one_lot_projects` document actions so moves show up in Audit Trail
+automatically, same as every other Edit/Delete in this feature.
 
 ---
 
-## What to get from your Internal IT team
+## IT asks — fulfilled (2026-08-31)
 
-Concrete asks, in the order you'll need them:
+What was requested, and what came back — kept as a record in case a second
+site/environment needs the same asks repeated later:
 
-1. **Confirm the target site and library.** The exact SharePoint site URL
-   (e.g. `https://questronix.sharepoint.com/sites/MCSU`) and confirmation
-   that a **"Documents" library** with a **"One-Lot Project" folder** at its
-   root is the agreed structure — or get them to create it if not. Ask
-   whether they want a *separate* site collection for this vs. reusing an
-   existing team site's default library.
-
-2. **An Entra ID (Azure AD) app registration**, specifically:
-   - **Client ID** (Application ID) and **Tenant ID**.
-   - **Client secret** or (better, for anything long-lived) a **certificate**
-     for authentication — client secrets expire and need manual rotation;
-     ask IT which their policy allows.
-   - **API permissions**: Microsoft Graph, **application** permissions (not
-     delegated — this is a backend service acting on its own, not on behalf
-     of a signed-in user). At minimum `Sites.Selected`, scoped by an admin to
-     *only* the MCSU site above — ask specifically for `Sites.Selected`
-     rather than `Sites.ReadWrite.All`, which grants access to every
-     SharePoint site in the tenant and is far more than this needs.
-   - **Admin consent granted** on those permissions — a normal user can't
-     consent to application-level Graph permissions themselves.
-
-3. **Confirm throttling and Conditional Access exposure.** Ask whether any
-   Conditional Access policies (IP allow-listing, MFA-for-apps) would block
-   an unattended service principal making Graph API calls from this app's
-   hosting environment, and what Graph API throttling limits apply to the
-   tenant (matters once uploads/downloads are frequent).
-
-4. **Confirm compliance/retention settings already on that site** —
-   versioning policy, retention labels, DLP rules — that this integration
-   needs to respect rather than fight. In particular: SharePoint's total URL
-   path length limit (~400 characters) is worth checking against
-   `Documents/One-Lot Project/{projectId}/documents/{documentId}-{fileName}`
-   for your longest realistic project names/filenames.
-
-5. **A non-production site or library to develop against first** — so the
-   integration can be built and tested without touching whatever the real
-   MCSU SharePoint site ends up holding.
-
-Once those five are in hand, the actual code change is: implement
-`saveDocumentFile` / `deleteDocumentFile` / `readDocumentFile` in
-`document-storage.ts` against Microsoft Graph's
-`/sites/{site-id}/drive/root:/{path}:/content` upload/download endpoints
-instead of `node:fs`, and flip `isDocumentStorageAvailable()` to check for
-the Graph credential instead of `!process.env.VERCEL`.
+1. **Site and library.** DEV site
+   `https://questronixcomph.sharepoint.com/sites/MCSUConsoleDev`, default
+   `Documents` library, standard template — no separate site collection.
+2. **Entra ID (Azure AD) app registration** — Client ID, Tenant ID, Client
+   secret (`AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET`).
+   Microsoft Graph **application** permission `Sites.Selected`, with admin
+   consent granted tenant-wide, PLUS a **per-site grant** (via
+   `Grant-PnPAzureADAppSitePermission`) scoping actual access to just this
+   one site — `Sites.Selected` alone grants nothing until that per-site
+   step happens, which is what actually unblocked this (see
+   `sharepoint-integration-status` in project memory for the exact
+   diagnosis, if this needs repeating on a second site).
+3. Same app registration reused for `Mail.Send`
+   (`docs/EMPLOYEE_RECOMMENDATION.md` §13) rather than a second
+   registration — both scopes tightly bounded individually (one site;
+   `mcsu_automations@questronix.com.ph` only), so combining them didn't
+   meaningfully raise the blast radius of a leaked secret.
+4. Confirmed via the connectivity probe run before this was marked done,
+   not asked about separately: no Conditional Access policy blocked the
+   app-only calls from this dev machine, and no throttling was hit.
+5. Compliance/retention and the SharePoint path-length limit: not yet
+   separately confirmed with IT — worth a follow-up before production
+   rollout, but nothing in dev usage has hit either.

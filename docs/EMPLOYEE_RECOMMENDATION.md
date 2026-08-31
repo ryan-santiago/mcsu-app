@@ -3,8 +3,8 @@
 Status: **Everything in this document is built and browser-verified —
 Phases 1–6 (see §12), §12 step 7 in full (data layer + the unified
 `/admin/approvals` inbox UI, both 2026-08-27), this feature's own
-email-notification trigger wiring (§13, 2026-08-27, though it can't
-actually send anything until Microsoft Graph credentials exist), and the
+email notifications (§13, trigger wiring 2026-08-27, actually sending via
+Microsoft Graph since 2026-08-31), and the
 related Talent Acquisition fix in §14 (2026-08-27).** The only work left
 un-started is a change-request notification-bell source (§12 step 7's tail
 note) and resolving §2's open questions with real usage feedback — neither
@@ -1154,23 +1154,29 @@ predetermined future contract end date.
 (`endDate: values.employment.endDate || null`) — no other change to the
 migrate flow.
 
-## 13. Email notifications
+## 13. Email notifications — DONE (2026-08-31)
 
-**Trigger wiring DONE (2026-08-27); the actual send is a deliberate no-op
-until Microsoft Graph credentials exist.** The user doesn't yet have the
-Entra ID app registration this needs (Client ID / Tenant ID / Client
-Secret), so rather than skip the phase entirely, it split into two
-independent pieces — build the part that doesn't need credentials now,
-leave one function to fill in later:
+**Fully implemented, sending real mail via Microsoft Graph.** The Entra ID
+app registration (shared with the SharePoint integration in
+`docs/DOCUMENTS.md` — same Client ID/Tenant ID, `Mail.Send` granted
+alongside `Sites.Selected`) landed, and a connectivity probe (token →
+`/users/{sender}/sendMail`) confirmed it actually delivers before this was
+marked done.
 
-- **`src/lib/email.ts`** — `isEmailAvailable()` (checks four `MS_GRAPH_*`
-  env vars, all unset today → `false`) and `sendEmail({ to, subject, html
-})`. When unavailable, `sendEmail` logs what it *would* have sent and
-  returns `false` — never throws, so nothing that calls it can be broken by
-  email being unconfigured. Once the env vars exist, only this one
-  function's body needs a real implementation (Microsoft Graph
-  `/users/{sender}/sendMail`, app-only client-credentials auth) — every
-  call site and every trigger point is already correct and doesn't change.
+- **`src/lib/graph-client.ts`** — the shared app-only (client-credentials)
+  token helper, used by both this and `document-storage.ts`. Reads
+  `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET`.
+- **`src/lib/email.ts`** — `isEmailAvailable()` (Graph configured + a
+  `MS_SENDER_EMAIL`) and `sendEmail({ to, subject, html })`, which calls
+  Graph's `/users/{sender}/sendMail`. When unavailable, `sendEmail` logs
+  what it *would* have sent and returns `false` — never throws, so nothing
+  that calls it can be broken by email being unconfigured.
+- **`EMAIL_OVERRIDE_TO`** — set in every non-production environment.
+  Redirects every outbound email to that one address instead of its real
+  recipients (subject/body note who it was "really" for), since the
+  underlying trigger logic uses real employee emails to simulate the actual
+  workflow. Unset ONLY in production — this is the entire dev/prod switch,
+  no code change needed.
 - **`src/server/employee-recommendations/notifications.ts`** — the actual
   trigger logic: who gets emailed, and with what, for each lifecycle event.
   Wired into `src/server/employee-recommendations/actions.ts`:
@@ -1193,25 +1199,19 @@ leave one function to fill in later:
   attached to, since `sendEmail()` only ever returns `false` or resolves —
   it doesn't throw.
 
-**What's still needed from IT before this actually sends anything** — same
-shape as `docs/DOCUMENTS.md`'s SharePoint ask, different Graph scope:
-1. An **Entra ID (Azure AD) app registration** — Client ID, Tenant ID, and
-   a Client Secret (or certificate, per IT's rotation policy).
-2. **API permissions**: Microsoft Graph, **application** permission
-   `Mail.Send` (not delegated — this is an unattended backend service, not
-   acting on behalf of a signed-in user), with **admin consent granted**.
-3. **A sending mailbox** — the address `Mail.Send` is scoped to send as
-   (`MS_GRAPH_SENDER_EMAIL`), e.g. a shared mailbox like
-   `mcsu-console@questronix.com.ph` rather than a real person's inbox.
-4. Confirm whether this can reuse the **same app registration** as the
-   SharePoint work in `docs/DOCUMENTS.md` (same Client ID/Tenant ID, just
-   an additional `Mail.Send` permission grant alongside `Sites.Selected`)
-   or whether IT prefers two separate registrations — either works, this
-   app doesn't care.
+**What IT provided** — same shape as `docs/DOCUMENTS.md`'s SharePoint ask,
+different Graph scope, same app registration:
+1. **Entra ID (Azure AD) app registration** — Client ID, Tenant ID, Client
+   Secret (`AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET`).
+2. **API permission**: Microsoft Graph, **application** permission
+   `Mail.Send`, admin consent granted.
+3. **Sending mailbox**: `mcsu_automations@questronix.com.ph`
+   (`MS_SENDER_EMAIL`) — an Exchange Application Access Policy restricts
+   the app to send as only this mailbox, not tenant-wide.
 
-Once those exist, set the four `MS_GRAPH_*` variables (`.env.example` has
-the full list) and implement `sendEmail()`'s body in `src/lib/email.ts` —
-that's the entire remaining scope, nothing else in this feature changes.
+`.env.example` has the full variable list. `MS_TEST_RECIPIENT` is a
+separate, optional default for any future admin-facing "send a test email"
+action — not required for the notification triggers above.
 
 **`EMAIL_OVERRIDE_TO` (added 2026-08-27)**: while developing/testing against
 real accounts on the shared dev database, every outbound email redirects to

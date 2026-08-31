@@ -200,6 +200,65 @@ export async function renameOneLotProjectDocument(input: {
   });
 }
 
+/** True if `candidateAncestorId` is `folderId` itself or one of its ancestors — walked via the `parentId` chain. Guards against moving a folder into itself or one of its own descendants, which would orphan it. */
+async function isSelfOrAncestor(projectId: string, folderId: string, candidateAncestorId: string | null): Promise<boolean> {
+  let currentId = candidateAncestorId;
+  while (currentId) {
+    if (currentId === folderId) return true;
+    const [row] = await db
+      .select({ parentId: oneLotProjectDocument.parentId })
+      .from(oneLotProjectDocument)
+      .where(and(eq(oneLotProjectDocument.id, currentId), eq(oneLotProjectDocument.projectId, projectId)))
+      .limit(1);
+    currentId = row?.parentId ?? null;
+  }
+  return false;
+}
+
+export async function moveOneLotProjectDocument(input: {
+  projectId: string;
+  id: string;
+  targetParentId: string | null;
+}): Promise<ActionResult> {
+  return run(async () => {
+    const actor = await authorizeActiveUser();
+    const project = await assertOneLotProjectContentAccess(input.projectId, actor);
+
+    const target = await getOneLotProjectDocumentById(input.projectId, input.id, actor);
+    if (input.targetParentId === target.parentId) {
+      return { ok: true, data: undefined, message: `"${target.name}" is already there.` };
+    }
+
+    if (input.targetParentId) {
+      if (target.type === "folder" && (await isSelfOrAncestor(input.projectId, target.id, input.targetParentId))) {
+        throw new Error("Can't move a folder into itself or one of its subfolders.");
+      }
+      const destination = await getOneLotProjectDocumentById(input.projectId, input.targetParentId, actor);
+      if (destination.type !== "folder") throw new Error("That destination isn't a folder.");
+    }
+
+    await assertNameAvailable(input.projectId, input.targetParentId, target.name, input.id);
+
+    await db
+      .update(oneLotProjectDocument)
+      .set({ parentId: input.targetParentId })
+      .where(and(eq(oneLotProjectDocument.id, input.id), eq(oneLotProjectDocument.projectId, input.projectId)));
+
+    await recordAudit({
+      module: "one_lot_projects",
+      action: "document_moved",
+      entityId: input.projectId,
+      entityLabel: project.name,
+      actorId: actor.id,
+      actorEmail: actor.email,
+      changes: diffFields(null, { item: target.name }, { item: target.type === "folder" ? "Folder" : "Document" }),
+    });
+
+    revalidateDocuments(input.projectId);
+    return { ok: true, data: undefined, message: `"${target.name}" moved.` };
+  });
+}
+
 export async function deleteOneLotProjectDocument(input: { projectId: string; id: string }): Promise<ActionResult> {
   return run(async () => {
     const actor = await authorizeActiveUser();

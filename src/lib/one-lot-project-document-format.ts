@@ -103,14 +103,16 @@ export function projectDocumentsPrefix(projectId: string): string {
 const CONTROL_CHAR_MAX_CODE = 31;
 
 /**
- * Strips path separators and control characters so a user-typed file/folder
- * name can never introduce an extra path segment into the stored key — the
- * one thing standing between a user-supplied name and a real path-traversal
- * bug now that storage is an actual filesystem, not an opaque blob key.
+ * Strips path separators, control characters, and SharePoint's reserved
+ * filename characters (`" * : < > ? |`, on top of `/` and `\`) so a
+ * user-typed file/folder name can never introduce an extra path segment
+ * into the stored key, or get rejected outright by Graph once it's the
+ * storage backend. This is also a correctness fix on Windows, where the
+ * same reserved-character set is invalid regardless of SharePoint.
  * Ordinary spaces, hyphens, and unicode in the visible name are left alone.
  */
 export function sanitizeDocumentName(name: string): string {
-  return Array.from(name.replace(/[/\\]/g, "-"))
+  return Array.from(name.replace(/[/\\"*:<>?|]/g, "-"))
     .filter((char) => char.charCodeAt(0) > CONTROL_CHAR_MAX_CODE)
     .join("")
     .trim();
