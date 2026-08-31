@@ -15,10 +15,21 @@ export function isEmailAvailable(): boolean {
   return isGraphConfigured() && Boolean(process.env.MS_SENDER_EMAIL);
 }
 
+type EmailAttachment = {
+  /** Referenced from the HTML body as `cid:{contentId}` when `isInline` is true. */
+  contentId: string;
+  contentType: string;
+  /** Base64-encoded file content. */
+  contentBytes: string;
+  name: string;
+  isInline?: boolean;
+};
+
 type SendEmailInput = {
   to: readonly string[];
   subject: string;
   html: string;
+  attachments?: readonly EmailAttachment[];
 };
 
 /**
@@ -34,6 +45,19 @@ function overrideRecipient(): string | undefined {
 }
 
 /**
+ * Inserts the dev-redirect banner right after `<body>` for a full HTML
+ * document, or at the very start for a bare fragment — prepending it
+ * unconditionally would land content before `<!DOCTYPE html>` on a full
+ * document, which some clients render incorrectly.
+ */
+function injectDevBanner(html: string, banner: string): string {
+  const bodyMatch = /<body[^>]*>/i.exec(html);
+  if (!bodyMatch) return banner + html;
+  const insertAt = bodyMatch.index + bodyMatch[0].length;
+  return html.slice(0, insertAt) + banner + html.slice(insertAt);
+}
+
+/**
  * Sends one email via Microsoft Graph (`/users/{sender}/sendMail`, app-only
  * auth) once `isEmailAvailable()` is true. Until then, this is a deliberate
  * no-op — logs what would have been sent and returns `false` — so every
@@ -42,14 +66,17 @@ function overrideRecipient(): string | undefined {
  * delivery. Never throws, by design: a broken notification must not break
  * the recommendation it's about.
  */
-export async function sendEmail({ to, subject, html }: SendEmailInput): Promise<boolean> {
+export async function sendEmail({ to, subject, html, attachments }: SendEmailInput): Promise<boolean> {
   if (to.length === 0) return true;
 
   const override = overrideRecipient();
   const finalTo = override ? [override] : [...to];
   const finalSubject = override ? `[Dev — originally to: ${to.join(", ")}] ${subject}` : subject;
   const finalHtml = override
-    ? `<p style="background:#fef3c7;border:1px solid #f59e0b;padding:8px 12px;border-radius:6px;font-size:12px;">Development redirect — this would have gone to: <strong>${to.join(", ")}</strong></p>${html}`
+    ? injectDevBanner(
+        html,
+        `<p style="background:#fef3c7;border:1px solid #f59e0b;padding:8px 12px;border-radius:6px;font-size:12px;">Development redirect — this would have gone to: <strong>${to.join(", ")}</strong></p>`,
+      )
     : html;
 
   if (!isEmailAvailable()) {
@@ -71,6 +98,14 @@ export async function sendEmail({ to, subject, html }: SendEmailInput): Promise<
           subject: finalSubject,
           body: { contentType: "HTML", content: finalHtml },
           toRecipients: finalTo.map((address) => ({ emailAddress: { address } })),
+          attachments: attachments?.map((attachment) => ({
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            name: attachment.name,
+            contentType: attachment.contentType,
+            contentBytes: attachment.contentBytes,
+            contentId: attachment.contentId,
+            isInline: attachment.isInline ?? false,
+          })),
         },
         saveToSentItems: false,
       }),

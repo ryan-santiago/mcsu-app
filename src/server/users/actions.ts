@@ -7,6 +7,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { role, session, user, userStatus } from "@/db/schema";
 import { diffFields, recordAudit } from "@/lib/audit";
+import { auth } from "@/lib/auth";
 import { assignableRoles, denyReasonForActingOn } from "@/lib/rbac";
 import { authorize, AuthorizationError, type CurrentUser } from "@/lib/session";
 import { listRoleOptions } from "@/server/roles/queries";
@@ -268,6 +269,35 @@ export async function changeUserRole(input: { userId: string; role: string }): P
       data: undefined,
       message: `${target.name} is now ${chosenRole.label}. They'll need to sign in again.`,
     };
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Password reset                                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Triggers the same reset-link email as self-service forgot-password, on an
+ * admin's behalf — never sets or reveals a password directly.
+ */
+export async function requestPasswordResetForUser(input: { userId: string }): Promise<ActionResult> {
+  return run(async () => {
+    const actor = await authorize("users:edit");
+    const userId = idSchema.parse(input.userId);
+    const target = await loadTarget(actor, userId);
+
+    await auth.api.requestPasswordReset({ body: { email: target.email } });
+
+    await recordAudit({
+      module: "users",
+      action: "password_reset_requested",
+      entityId: userId,
+      entityLabel: target.name,
+      actorId: actor.id,
+      actorEmail: actor.email,
+    });
+
+    return { ok: true, data: undefined, message: `Password reset link sent to ${target.email}.` };
   });
 }
 

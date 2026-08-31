@@ -112,6 +112,8 @@ export const AUDIT_ACTIONS = [
   { value: "recommendation_applied", label: "Recommendation applied to employment history" },
   { value: "deleted", label: "Deleted" },
   { value: "login", label: "Signed in" },
+  { value: "password_reset", label: "Password reset" },
+  { value: "password_reset_requested", label: "Password reset requested" },
 ] as const;
 
 /**

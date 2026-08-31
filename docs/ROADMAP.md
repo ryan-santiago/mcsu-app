@@ -9,6 +9,8 @@ What is built, what is deliberately missing, and what to build next.
 - Split-panel login, registration and pending-approval screens
 - BetterAuth email/password with sessions, sign-in blocked for
   pending/suspended accounts
+- Self-service password reset — request link, emailed via Microsoft Graph,
+  consumes a token, revokes the account's other sessions
 - Drizzle schema on Neon: user, session, account, verification, audit_log
 - RBAC: admin-editable roles and permissions (Access Control), rank rules,
   guards on layout, page, action and query — see [RBAC.md](./RBAC.md)
@@ -38,8 +40,7 @@ Each of these is a decision, not an oversight.
 
 | Gap | Why | Cost to add |
 | --- | --- | ----------- |
-| Email verification | No transactional sender configured; verification links would strand users. Admin approval is the gate instead. | ~half a day with Resend |
-| Password reset | Same reason. `/forgot-password` says so plainly rather than pretending. | Ships with the email provider |
+| Email verification | Admin approval is the sign-up gate instead — a verification link wouldn't remove that step. | ~half a day |
 | Sign-in rate limiting | Internal-only for now | ~1 hour — BetterAuth's `rateLimit` option |
 | Two-factor auth | Not requested | ~1 day — BetterAuth `twoFactor` plugin |
 | Tests | Speed of the first milestone | See below |
@@ -49,14 +50,7 @@ Each of these is a decision, not an oversight.
 
 ## Next up
 
-### 1. Email provider — unblocks three things at once
-
-Wire [Resend](https://resend.com) into BetterAuth's `sendResetPassword` and
-`sendVerificationEmail`. That gives you password reset, email verification, and
-a channel to tell someone their access was approved — right now they have to
-guess and try signing in.
-
-### 2. Tests
+### 1. Tests
 
 In value order:
 
@@ -68,7 +62,7 @@ In value order:
 3. **Playwright** (already a devDependency) for register → pending → approve →
    sign in.
 
-### 3. Dashboards, per menu group
+### 2. Dashboards, per menu group
 
 The single generic `/dashboard` was removed — an empty placeholder with no
 content plan, and login now lands on Announcements instead. The replacement
@@ -81,9 +75,10 @@ each to make one worth building. The `dataviz` conventions in
 [DESIGN.md](./DESIGN.md) cover chart colour — series 1 is brand blue, series 2
 brand orange.
 
-### 4. User profile screen
+### 3. User profile screen
 
-Users currently cannot change their own name, avatar or password. `users:update`
+Users currently cannot change their own name or avatar (password already has
+a self-service flow — Settings, plus forgot-password). `users:update`
 exists; the screen does not. Note the rank rule bars acting on your *own*
 account through the admin tools — this is the intended escape hatch.
 

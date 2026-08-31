@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CircleSlash,
+  KeyRound,
   MoreHorizontal,
   RotateCcw,
   Search,
@@ -71,6 +72,7 @@ import {
   deleteUser,
   fetchUsers,
   rejectUser,
+  requestPasswordResetForUser,
   setUserStatus,
 } from "@/server/users/actions";
 import { usersQueryKey } from "@/server/users/query-key";
@@ -361,6 +363,9 @@ export function UsersView({ actor, roles, initialFilters }: UsersViewProps) {
                           onStatusChange={(next) =>
                             mutation.mutate(() => setUserStatus({ userId: row.id, status: next }))
                           }
+                          onResetPassword={() =>
+                            mutation.mutate(() => requestPasswordResetForUser({ userId: row.id }))
+                          }
                         />
                       </TableCell>
                     </TableRow>
@@ -471,6 +476,7 @@ type RowActionsProps = {
   onDelete: () => void;
   onRoleChange: (role: string) => void;
   onStatusChange: (status: "active" | "suspended") => void;
+  onResetPassword: () => void;
 };
 
 function RowActions({
@@ -484,6 +490,7 @@ function RowActions({
   onDelete,
   onRoleChange,
   onStatusChange,
+  onResetPassword,
 }: RowActionsProps) {
   const { mayEdit, mayDelete } = permissions;
 
@@ -552,6 +559,10 @@ function RowActions({
         {row.status !== "pending" && mayEdit ? (
           <>
             <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={onResetPassword}>
+              <KeyRound className="size-4" aria-hidden />
+              Reset password
+            </DropdownMenuItem>
             {row.status === "active" ? (
               <DropdownMenuItem onSelect={() => onStatusChange("suspended")}>
                 <CircleSlash className="size-4" aria-hidden />

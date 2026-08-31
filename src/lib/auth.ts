@@ -10,6 +10,7 @@ import { db } from "@/db";
 import { account, session, user, verification } from "@/db/schema";
 import { env } from "@/env";
 import { diffFields, recordAudit } from "@/lib/audit";
+import { sendPasswordResetEmail } from "@/server/auth/notifications";
 
 /**
  * Shown when a registered-but-unapproved user tries to sign in. The login form
@@ -35,10 +36,25 @@ export const auth = betterAuth({
     enabled: true,
     minPasswordLength: 10,
     maxPasswordLength: 128,
-    // No inbox is wired up yet, so verification links would strand users.
-    // Approval by an administrator is the gate instead. See docs/ROADMAP.md.
+    // Verification links still aren't wired up — approval by an
+    // administrator remains the sign-up gate. See docs/ROADMAP.md.
     requireEmailVerification: false,
     autoSignIn: false,
+    sendResetPassword: async ({ user: resetUser, token }) => {
+      await sendPasswordResetEmail(resetUser, `${env.BETTER_AUTH_URL}/reset-password?token=${token}`);
+    },
+    resetPasswordTokenExpiresIn: 60 * 60, // 1 hour
+    // Mirrors changePassword's `revokeOtherSessions: true` — a password
+    // reset must not leave a stale session usable by whoever was signed in.
+    revokeSessionsOnPasswordReset: true,
+    onPasswordReset: async ({ user: resetUser }) => {
+      await recordAudit({
+        module: "auth",
+        action: "password_reset",
+        entityId: resetUser.id,
+        actorId: resetUser.id,
+      });
+    },
   },
 
   session: {
