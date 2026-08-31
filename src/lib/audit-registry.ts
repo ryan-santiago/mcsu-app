@@ -114,6 +114,8 @@ export const AUDIT_ACTIONS = [
   { value: "login", label: "Signed in" },
   { value: "password_reset", label: "Password reset" },
   { value: "password_reset_requested", label: "Password reset requested" },
+  { value: "avatar_uploaded", label: "Profile picture updated" },
+  { value: "avatar_removed", label: "Profile picture removed" },
 ] as const;
 
 /**

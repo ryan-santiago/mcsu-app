@@ -5,8 +5,10 @@ import { and, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/db";
-import { approvalRequest, approvalStep, employee, employeeAddress, employeeChangeRequest, gender } from "@/db/schema";
+import { approvalRequest, approvalStep, employee, employeeAddress, employeeChangeRequest, gender, user } from "@/db/schema";
 import { diffFields, recordAudit } from "@/lib/audit";
+import { buildAvatarStorageKey } from "@/lib/avatar-format";
+import { deleteDocumentFile, isDocumentStorageAvailable, saveDocumentFile } from "@/lib/document-storage";
 import { formatEmployeeName } from "@/lib/employee-format";
 import { AuthorizationError } from "@/lib/session";
 import { selfServiceFormSchema, type SelfServiceFormInput } from "@/lib/validation/employee";
@@ -218,6 +220,89 @@ export async function cancelMyChangeRequest(input: { id: string }): Promise<Acti
 
     refreshMyProfile();
     return { ok: true, data: undefined, message: "Change request cancelled." };
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Avatar                                                                    */
+/* -------------------------------------------------------------------------- */
+
+const MAX_AVATAR_SIZE_BYTES = 5 * 1024 * 1024;
+const ALLOWED_AVATAR_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+/**
+ * Stores the file and records the SharePoint bookkeeping columns only.
+ * `user.image` (the URL every avatar-rendering component already reads) is
+ * set by the caller afterward via `authClient.updateUser()` — a server
+ * action writing it directly wouldn't invalidate BetterAuth's 5-minute
+ * session `cookieCache` (`src/lib/auth.ts`), so the new photo wouldn't show
+ * up anywhere until that cache expired even after `router.refresh()`.
+ */
+export async function uploadMyAvatar(formData: FormData): Promise<ActionResult<{ imageUrl: string }>> {
+  return run(async () => {
+    if (!isDocumentStorageAvailable()) {
+      return { ok: false, error: "File upload isn't available in this environment yet." };
+    }
+
+    const file = formData.get("file");
+    if (!(file instanceof File)) return { ok: false, error: "No file provided." };
+    if (file.size === 0) return { ok: false, error: "That file is empty." };
+    if (file.size > MAX_AVATAR_SIZE_BYTES) return { ok: false, error: "Images must be 5 MB or smaller." };
+    if (!ALLOWED_AVATAR_MIME_TYPES.has(file.type)) return { ok: false, error: "Use a JPEG, PNG or WEBP image." };
+
+    const actor = await requireActiveUser();
+
+    const [existing] = await db.select({ avatarStorageKey: user.avatarStorageKey }).from(user).where(eq(user.id, actor.id)).limit(1);
+    const previousStorageKey = existing?.avatarStorageKey ?? null;
+
+    const storageKey = buildAvatarStorageKey(actor.id, file.name);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    await saveDocumentFile(storageKey, bytes);
+
+    await db
+      .update(user)
+      .set({ avatarStorageKey: storageKey, avatarMimeType: file.type })
+      .where(eq(user.id, actor.id));
+
+    if (previousStorageKey && previousStorageKey !== storageKey) await deleteDocumentFile(previousStorageKey);
+
+    await recordAudit({
+      module: "users",
+      action: "avatar_uploaded",
+      entityId: actor.id,
+      entityLabel: actor.displayName,
+      actorId: actor.id,
+      actorEmail: actor.email,
+    });
+
+    refreshMyProfile();
+    return { ok: true, data: { imageUrl: `/api/users/${actor.id}/avatar` }, message: "Profile picture updated." };
+  });
+}
+
+export async function removeMyAvatar(): Promise<ActionResult> {
+  return run(async () => {
+    const actor = await requireActiveUser();
+
+    const [existing] = await db.select({ avatarStorageKey: user.avatarStorageKey }).from(user).where(eq(user.id, actor.id)).limit(1);
+    if (!existing?.avatarStorageKey) {
+      return { ok: true, data: undefined, message: "Nothing to remove." };
+    }
+
+    await deleteDocumentFile(existing.avatarStorageKey);
+    await db.update(user).set({ avatarStorageKey: null, avatarMimeType: null }).where(eq(user.id, actor.id));
+
+    await recordAudit({
+      module: "users",
+      action: "avatar_removed",
+      entityId: actor.id,
+      entityLabel: actor.displayName,
+      actorId: actor.id,
+      actorEmail: actor.email,
+    });
+
+    refreshMyProfile();
+    return { ok: true, data: undefined, message: "Profile picture removed." };
   });
 }
 

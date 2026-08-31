@@ -148,6 +148,22 @@ export async function listUsers(filters: UserFilters = {}): Promise<UserListResu
   return { users: rows.map(toManagedUser), counts, total, page, pageSize };
 }
 
+/**
+ * Used only by the avatar route handler — deliberately **not** `users:read`-gated.
+ * Avatars aren't sensitive the way the rest of a user's record is (any active
+ * user may view any other's), so the route handler's own active-session check
+ * is the only gate; this just resolves the storage key/mime type by id.
+ */
+export async function getUserAvatarById(id: string): Promise<{ avatarStorageKey: string; avatarMimeType: string | null } | null> {
+  const [row] = await db
+    .select({ avatarStorageKey: user.avatarStorageKey, avatarMimeType: user.avatarMimeType })
+    .from(user)
+    .where(eq(user.id, id))
+    .limit(1);
+
+  return row?.avatarStorageKey ? { avatarStorageKey: row.avatarStorageKey, avatarMimeType: row.avatarMimeType } : null;
+}
+
 /** Used by the detail dialogs; returns null rather than throwing on a bad id. */
 export async function getUserById(id: string): Promise<ManagedUser | null> {
   await authorize("users:read");

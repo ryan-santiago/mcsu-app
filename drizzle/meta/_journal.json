@@ -477,6 +477,13 @@
       "when": 1788107070527,
       "tag": "0067_ta_workflow_redesign",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1788184872114,
+      "tag": "0068_add_user_avatar",
+      "breakpoints": true
     }
   ]
 }

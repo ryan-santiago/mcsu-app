@@ -96,6 +96,9 @@ export const user = pgTable(
     approvedAt: timestamp("approved_at", { withTimezone: true }),
     approvedBy: text("approved_by"),
     lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+    /** One profile picture on file — reuses the SharePoint storage mechanism, see `src/lib/document-storage.ts`. `image` (above, BetterAuth-owned) holds the servable `/api/users/{id}/avatar` URL. */
+    avatarStorageKey: text("avatar_storage_key"),
+    avatarMimeType: text("avatar_mime_type"),
 
     createdAt: timestamp("created_at", { withTimezone: true })
       .$defaultFn(() => new Date())

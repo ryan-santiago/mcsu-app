@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { DeploymentHistoryTable } from "@/components/employees/deployment-history-table";
 import { EmploymentHistoryTable } from "@/components/employees/employment-history-table";
+import { AvatarUploadForm } from "@/components/settings/avatar-upload-form";
 import { ChangePasswordForm } from "@/components/settings/change-password-form";
 import { SelfProfileForm } from "@/components/settings/self-profile-form";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -75,7 +76,12 @@ function PendingRequestBanner({ request }: { request: MyPendingChangeRequest }) 
   );
 }
 
-export function SettingsView() {
+type SettingsViewProps = {
+  user: { image: string | null; displayName: string };
+  storageAvailable: boolean;
+};
+
+export function SettingsView({ user, storageAvailable }: SettingsViewProps) {
   const employeeQuery = useQuery<EmployeeDetail | null>({
     queryKey: myProfileQueryKey,
     queryFn: () => fetchMyEmployeeDetail(),
@@ -87,6 +93,7 @@ export function SettingsView() {
 
   return (
     <div className="space-y-6">
+      <AvatarUploadForm user={user} storageAvailable={storageAvailable} />
       <ChangePasswordForm />
 
       {employeeQuery.isPending ? (
