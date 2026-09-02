@@ -1,120 +1,130 @@
 import "server-only";
 
-import { eq } from "drizzle-orm";
-
-import { db } from "@/db";
-import { role as roleTable, user } from "@/db/schema";
 import { sendEmail } from "@/lib/email";
-import { can, type Permission } from "@/lib/rbac";
+import { buildEmailSubject, ctaBlock, escapeHtml, logoAttachment, renderBrandedEmail } from "@/lib/email-template";
+import {
+  emailsOfRole,
+  mergeRecipients,
+  taRequestTeamId,
+  teamApproverEmail,
+  teamManagerEmails,
+} from "@/server/shared/notification-recipients";
 
 /**
  * Email notifications for the TA pipeline's stage handoffs — L1 pass →
- * L2 reviewers, L2/Client Interview pass → L3 assessors, L3 pass → Final
- * Interview reviewers, Migrate → Team Lead/Manager and higher. Same shape as
- * `employee-recommendations/notifications.ts`, duplicated locally rather
- * than cross-imported (this module already duplicates other small pieces
- * independently of other modules). Callers `await` these, but `sendEmail()`
- * itself never throws, so a broken/unconfigured mail provider never fails
- * the underlying pipeline action.
+ * the requesting team's manager, L2 pass → TA Manager + team manager, L3
+ * pass → Unit Manager + team manager, Migrate → the whole chain (team
+ * manager, Unit Manager, Department Head, Admin). Callers `await` these,
+ * but `sendEmail()` itself never throws, so a broken/unconfigured mail
+ * provider never fails the underlying pipeline action.
  */
+
+const MODULE_LABEL = "Talent Acquisition";
 
 function taRequestUrl(requestId: string): string {
   const base = process.env.BETTER_AUTH_URL ?? "";
   return `${base}/talent-acquisition/${requestId}`;
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function wrapHtml(bodyHtml: string): string {
-  return `<div style="font-family: Arial, sans-serif; font-size: 14px; color: #1a1a1a;">${bodyHtml}<p style="color:#6b7280; font-size:12px; margin-top:24px;">MCSU Console — Talent Acquisition</p></div>`;
-}
-
-/** Every active user whose role holds any of `permissions` — same join/filter pattern as `employee-recommendations/notifications.ts`'s `emailsOfPermissionHolders`, widened to an OR-list for "Team Lead/Manager and higher" (the union of two permissions). */
-async function emailsOfPermissionHolders(permissions: Permission | Permission[]): Promise<string[]> {
-  const permissionList = Array.isArray(permissions) ? permissions : [permissions];
-
-  const rows = await db
-    .select({ id: user.id, email: user.email, status: user.status, roleId: user.roleId, permissions: roleTable.permissions })
-    .from(user)
-    .innerJoin(roleTable, eq(roleTable.id, user.roleId));
-
-  const emails = rows
-    .filter((row) =>
-      permissionList.some((permission) =>
-        can(
-          { id: row.id, status: row.status, roleId: row.roleId, rank: 0, permissions: (row.permissions ?? []) as Permission[] },
-          permission,
-        ),
-      ),
-    )
-    .map((row) => row.email);
-
-  return Array.from(new Set(emails));
-}
-
-/** Step 3: L1 Assessment passes → notify whoever holds `l2_assess` (Team Lead/Manager tier) that this candidate needs L2. */
+/** Step 3: L1 Assessment passes → notify the requesting team's manager that this candidate needs L2. */
 export async function notifyL2ReviewersNeeded(params: { requestId: string; candidateName: string }): Promise<void> {
-  const emails = await emailsOfPermissionHolders("talent_acquisition:l2_assess");
+  const teamId = await taRequestTeamId(params.requestId);
+  const emails = mergeRecipients(await teamManagerEmails(teamId));
   if (emails.length === 0) return;
 
+  const url = taRequestUrl(params.requestId);
   await sendEmail({
     to: emails,
-    subject: `L2 Assessment needed — ${params.candidateName}`,
-    html: wrapHtml(
-      `<p><strong>${escapeHtml(params.candidateName)}</strong> passed L1 Assessment and is ready for L2 Assessment.</p>` +
-        `<p><a href="${taRequestUrl(params.requestId)}">Open in MCSU Console</a></p>`,
-    ),
+    subject: buildEmailSubject(MODULE_LABEL, "L2 Assessment"),
+    html: renderBrandedEmail({
+      heading: "Ready for L2 Assessment",
+      module: MODULE_LABEL,
+      bodyHtml: `
+        <p style="margin:0 0 16px; font-size:14px; line-height:1.6; color:#3A3D57;">
+          <strong>${escapeHtml(params.candidateName)}</strong> passed L1 Assessment and is ready for L2 Assessment.
+        </p>
+        ${ctaBlock(url, "Review in MCSU Console")}`,
+    }),
+    attachments: await logoAttachment(),
   });
 }
 
-/** Steps 6: L2 Assessment (or L2 + Client Interview) passes → notify whoever holds `l3_assess` (TA Staff/Manager tier). */
+/** Steps 6: L2 Assessment (or L2 + Client Interview) passes → notify the TA Manager and the requesting team's manager. */
 export async function notifyL3AssessorsNeeded(params: { requestId: string; candidateName: string }): Promise<void> {
-  const emails = await emailsOfPermissionHolders("talent_acquisition:l3_assess");
+  const teamId = await taRequestTeamId(params.requestId);
+  const [taManagers, teamManagers] = await Promise.all([emailsOfRole("talent_acquisition_manager"), teamManagerEmails(teamId)]);
+  const emails = mergeRecipients(taManagers, teamManagers);
   if (emails.length === 0) return;
 
+  const url = taRequestUrl(params.requestId);
   await sendEmail({
     to: emails,
-    subject: `L3 Interview & Assessment needed — ${params.candidateName}`,
-    html: wrapHtml(
-      `<p><strong>${escapeHtml(params.candidateName)}</strong> is ready for L3 Interview & Assessment.</p>` +
-        `<p><a href="${taRequestUrl(params.requestId)}">Open in MCSU Console</a></p>`,
-    ),
+    subject: buildEmailSubject(MODULE_LABEL, "L3 Assessment"),
+    html: renderBrandedEmail({
+      heading: "Ready for L3 Interview & Assessment",
+      module: MODULE_LABEL,
+      bodyHtml: `
+        <p style="margin:0 0 16px; font-size:14px; line-height:1.6; color:#3A3D57;">
+          <strong>${escapeHtml(params.candidateName)}</strong> is ready for L3 Interview & Assessment.
+        </p>
+        ${ctaBlock(url, "Review in MCSU Console")}`,
+    }),
+    attachments: await logoAttachment(),
   });
 }
 
-/** Step 8: L3 Assessment passes → notify whoever holds `finalize` (Unit Manager tier). */
+/** Step 8: L3 Assessment passes → notify the requesting team's Unit Manager and the team manager. */
 export async function notifyFinalInterviewersNeeded(params: { requestId: string; candidateName: string }): Promise<void> {
-  const emails = await emailsOfPermissionHolders("talent_acquisition:finalize");
+  const teamId = await taRequestTeamId(params.requestId);
+  const [unitManager, teamManagers] = await Promise.all([
+    teamApproverEmail(teamId, "unit_manager"),
+    teamManagerEmails(teamId),
+  ]);
+  const emails = mergeRecipients(unitManager, teamManagers);
   if (emails.length === 0) return;
 
+  const url = taRequestUrl(params.requestId);
   await sendEmail({
     to: emails,
-    subject: `Final Interview needed — ${params.candidateName}`,
-    html: wrapHtml(
-      `<p><strong>${escapeHtml(params.candidateName)}</strong> is ready for Final Interview.</p>` +
-        `<p><a href="${taRequestUrl(params.requestId)}">Open in MCSU Console</a></p>`,
-    ),
+    subject: buildEmailSubject(MODULE_LABEL, "Final Interview"),
+    html: renderBrandedEmail({
+      heading: "Ready for Final Interview",
+      module: MODULE_LABEL,
+      bodyHtml: `
+        <p style="margin:0 0 16px; font-size:14px; line-height:1.6; color:#3A3D57;">
+          <strong>${escapeHtml(params.candidateName)}</strong> is ready for Final Interview.
+        </p>
+        ${ctaBlock(url, "Review in MCSU Console")}`,
+    }),
+    attachments: await logoAttachment(),
   });
 }
 
-/** Step 11: a candidate is migrated to Employee → notify "Team Lead/Manager and higher" — the union of `l2_assess` (Team Lead/Manager) and `finalize` (Unit Manager/Dept Head/Admin) holders. */
+/** Step 11: a candidate is migrated to Employee → notify the whole chain (team manager, Unit Manager, Department Head, Admin). */
 export async function notifyMigrationCompleted(params: { requestId: string; employeeName: string }): Promise<void> {
-  const emails = await emailsOfPermissionHolders(["talent_acquisition:l2_assess", "talent_acquisition:finalize"]);
+  const teamId = await taRequestTeamId(params.requestId);
+  const [teamManagers, unitManager, departmentHead, admins] = await Promise.all([
+    teamManagerEmails(teamId),
+    teamApproverEmail(teamId, "unit_manager"),
+    teamApproverEmail(teamId, "department_head"),
+    emailsOfRole("admin"),
+  ]);
+  const emails = mergeRecipients(teamManagers, unitManager, departmentHead, admins);
   if (emails.length === 0) return;
 
+  const url = taRequestUrl(params.requestId);
   await sendEmail({
     to: emails,
-    subject: `Migrated to Employee — ${params.employeeName}`,
-    html: wrapHtml(
-      `<p><strong>${escapeHtml(params.employeeName)}</strong> has been migrated to the Employee module.</p>` +
-        `<p><a href="${taRequestUrl(params.requestId)}">Open in MCSU Console</a></p>`,
-    ),
+    subject: buildEmailSubject(MODULE_LABEL, "Migrated to Employee"),
+    html: renderBrandedEmail({
+      heading: "Migrated to Employee",
+      module: MODULE_LABEL,
+      bodyHtml: `
+        <p style="margin:0 0 16px; font-size:14px; line-height:1.6; color:#3A3D57;">
+          <strong>${escapeHtml(params.employeeName)}</strong> has been migrated to the Employee module.
+        </p>
+        ${ctaBlock(url, "Open in MCSU Console")}`,
+    }),
+    attachments: await logoAttachment(),
   });
 }

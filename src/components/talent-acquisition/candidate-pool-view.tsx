@@ -1,20 +1,27 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Download, Search, UserCheck, UserRoundX } from "lucide-react";
+import { Download, Plus, Search, UserCheck, UserRoundX } from "lucide-react";
 import Link from "next/link";
 import * as React from "react";
+import { toast } from "sonner";
 
 import { EmptyState } from "@/components/layout/empty-state";
 import { PaginationFooter } from "@/components/layout/pagination-footer";
+import { CandidatePoolFormDialog, type CandidatePoolFormValues } from "@/components/talent-acquisition/candidate-pool-form-dialog";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatEmployeeDisplayName } from "@/lib/employee-format";
-import { fetchJobPostingSourceOptions, fetchTaCandidatesPage } from "@/server/talent-acquisition/candidate-actions";
+import {
+  createTaCandidate,
+  fetchJobPostingSourceOptions,
+  fetchTaCandidatesPage,
+} from "@/server/talent-acquisition/candidate-actions";
 import type { TaCandidateFilters, TaCandidatePoolResult, TaCandidatePoolRow } from "@/server/talent-acquisition/candidate-types";
 import { TA_APPLICATION_STATUS_LABELS } from "@/server/talent-acquisition/application-types";
 import { TA_STAGE_LABELS } from "@/server/talent-acquisition/stage-types";
@@ -31,9 +38,42 @@ const STATUS_BADGE_VARIANT: Record<string, "default" | "secondary" | "outline"> 
 
 type CandidatePoolViewProps = {
   initialFilters: TaCandidateFilters;
+  canWrite: boolean;
 };
 
-export function CandidatePoolView({ initialFilters }: CandidatePoolViewProps) {
+export function CandidatePoolView({ initialFilters, canWrite }: CandidatePoolViewProps) {
+  const queryClient = useQueryClient();
+  const [adding, setAdding] = React.useState(false);
+  // Bumped every time the dialog opens so `CandidatePoolFormDialog` remounts
+  // fresh (its own form/file state resets via remount, not an effect).
+  const [addDialogKey, setAddDialogKey] = React.useState(0);
+
+  const addMutation = useMutation({
+    mutationFn: (formData: FormData) => createTaCandidate(formData),
+    onSuccess: (result) => {
+      if (result.ok) {
+        toast.success(result.message);
+        void queryClient.invalidateQueries({ queryKey: ["ta-candidate-pool"] });
+        setAdding(false);
+      } else {
+        toast.error(result.error);
+      }
+    },
+    onError: () => toast.error("Something went wrong. Please try again."),
+  });
+
+  function handleAddSubmit(values: CandidatePoolFormValues, file: File | null) {
+    const formData = new FormData();
+    formData.set("firstName", values.firstName);
+    formData.set("lastName", values.lastName);
+    if (values.middleName) formData.set("middleName", values.middleName);
+    if (values.genderId) formData.set("genderId", values.genderId);
+    if (values.mobileNumber) formData.set("mobileNumber", values.mobileNumber);
+    if (values.personalEmail) formData.set("personalEmail", values.personalEmail);
+    if (file) formData.set("file", file);
+    addMutation.mutate(formData);
+  }
+
   const [search, setSearch] = React.useState(initialFilters.search ?? "");
   const [debouncedSearch, setDebouncedSearch] = React.useState(initialFilters.search ?? "");
   const [stage, setStage] = React.useState<string>(initialFilters.stage ?? "all");
@@ -78,7 +118,8 @@ export function CandidatePoolView({ initialFilters }: CandidatePoolViewProps) {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
         <div className="relative sm:max-w-xs">
           <Search className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2" aria-hidden />
           <Input
@@ -130,7 +171,28 @@ export function CandidatePoolView({ initialFilters }: CandidatePoolViewProps) {
             ))}
           </SelectContent>
         </Select>
+        </div>
+
+        {canWrite ? (
+          <Button
+            onClick={() => {
+              setAddDialogKey((key) => key + 1);
+              setAdding(true);
+            }}
+          >
+            <Plus className="size-4" aria-hidden />
+            Add candidate
+          </Button>
+        ) : null}
       </div>
+
+      <CandidatePoolFormDialog
+        key={addDialogKey}
+        open={adding}
+        pending={addMutation.isPending}
+        onOpenChange={setAdding}
+        onSubmit={handleAddSubmit}
+      />
 
       <div className="bg-card overflow-hidden rounded-xl border">
         <div className="overflow-x-auto">

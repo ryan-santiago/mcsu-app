@@ -592,7 +592,6 @@ export async function rejectRecommendationStep(input: { approvalRequestId: strin
     });
 
     await notifySubmitterOfRejection({
-      submitterUserId: context.request.requestedBy,
       recommendationId: context.recommendationId,
       employeeName: context.employeeName,
       note: note || null,

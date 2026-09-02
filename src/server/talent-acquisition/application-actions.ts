@@ -8,6 +8,7 @@ import { db } from "@/db";
 import { taApplication, taCandidate, taRequest } from "@/db/schema";
 import type { ActionResult } from "@/lib/action-result";
 import { diffFields, recordAudit } from "@/lib/audit";
+import { isDocumentStorageAvailable } from "@/lib/document-storage";
 import { formatEmployeeDisplayName } from "@/lib/employee-format";
 import { AuthorizationError, authorize } from "@/lib/session";
 import { listLookupOptions } from "@/server/maintenance/queries";
@@ -15,6 +16,10 @@ import type { LookupOption } from "@/server/maintenance/types";
 
 import { getTaApplicationById, listTaApplications } from "./application-queries";
 import type { TaApplicationRow } from "./application-types";
+import { attachCandidateCv } from "./candidate-actions";
+
+/** Own copy — `candidate-actions.ts`'s version can't be exported (see its comment: a `"use server"` file may only export async functions). */
+const MAX_CV_SIZE_BYTES = 10 * 1024 * 1024;
 
 const applicationInputSchema = z.object({
   requestId: z.string().min(1),
@@ -80,10 +85,18 @@ export async function createTaApplication(input: {
   mobileNumber?: string;
   personalEmail?: string;
   sourceId?: string;
-}): Promise<ActionResult<{ id: string }>> {
+  /** Optional CV, attached in the same step — see `attachCandidateCv` in `candidate-actions.ts`. */
+  file?: File;
+}): Promise<ActionResult<{ id: string; candidateId: string }>> {
   return run(async () => {
     const actor = await authorize("talent_acquisition:write");
     const values = applicationInputSchema.parse(input);
+
+    const hasFile = input.file instanceof File && input.file.size > 0;
+    if (hasFile && input.file!.size > MAX_CV_SIZE_BYTES) return { ok: false, error: "CVs must be 10 MB or smaller." };
+    if (hasFile && !isDocumentStorageAvailable()) {
+      return { ok: false, error: "File upload isn't available in this environment yet — you can still add this candidate without a CV." };
+    }
 
     const [request] = await db.select().from(taRequest).where(eq(taRequest.id, values.requestId)).limit(1);
     if (!request) return { ok: false, error: "That request no longer exists." };
@@ -121,6 +134,8 @@ export async function createTaApplication(input: {
       createdBy: actor.id,
     });
 
+    if (hasFile) await attachCandidateCv(candidateId, input.file!, null);
+
     const fullName = formatEmployeeDisplayName(values);
 
     await recordAudit({
@@ -138,7 +153,7 @@ export async function createTaApplication(input: {
     });
 
     revalidatePath(`/talent-acquisition/${values.requestId}`);
-    return { ok: true, data: { id: applicationId }, message: `${fullName} added.` };
+    return { ok: true, data: { id: applicationId, candidateId }, message: `${fullName} added.` };
   });
 }
 

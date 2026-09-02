@@ -100,9 +100,9 @@ export function CandidateList({
   const activeApplications = applications.filter((application) => application.status === "active");
   const closedApplications = applications.filter((application) => application.status !== "active");
 
-  function handleSubmit(values: CandidateFormValues) {
+  function handleSubmit(values: CandidateFormValues, file?: File) {
     if (formTarget === "new") {
-      mutation.mutate(() => createTaApplication({ requestId, ...values }));
+      mutation.mutate(() => createTaApplication({ requestId, ...values, file }));
     } else if (formTarget) {
       mutation.mutate(() => updateTaApplication({ id: formTarget.id, requestId, ...values }));
     }

@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, Search, UserPlus } from "lucide-react";
+import { Loader2, Paperclip, Search, UserPlus, X } from "lucide-react";
 import * as React from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -42,7 +42,8 @@ type CandidateFormDialogProps = {
   target: TaApplicationRow | "new" | null;
   pending: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (values: CandidateFormValues) => void;
+  /** `file` is only ever set for the "new person" form — editing stays CV-free, see `CandidateForm`. */
+  onSubmit: (values: CandidateFormValues, file?: File) => void;
   /** Adding someone already in the talent pool — bypasses the new-person form entirely. */
   onSelectExisting: (candidateId: string) => void;
 };
@@ -102,7 +103,7 @@ function AddCandidateContent({
   sourceOptions: { id: string; name: string }[];
   pending: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (values: CandidateFormValues) => void;
+  onSubmit: (values: CandidateFormValues, file?: File) => void;
   onSelectExisting: (candidateId: string) => void;
 }) {
   const [mode, setMode] = React.useState<"search" | "form">("search");
@@ -211,7 +212,7 @@ function CandidateForm({
   defaultValues: CandidateFormInput;
   pending: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (values: CandidateFormValues) => void;
+  onSubmit: (values: CandidateFormValues, file?: File) => void;
   /** Returns to the pool-search step — only present for the "new" flow. */
   onBack?: () => void;
 }) {
@@ -220,19 +221,34 @@ function CandidateForm({
     defaultValues,
   });
 
+  const [file, setFile] = React.useState<File | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    setFile(event.target.files?.[0] ?? null);
+  }
+
+  function handleRemoveFile() {
+    setFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
   return (
     <>
       <DialogHeader>
         <DialogTitle>{isEdit ? "Edit candidate" : "Add a new person"}</DialogTitle>
         <DialogDescription>
-          {isEdit ? "Update this candidate's details." : "Capture what's known so far — CV and pipeline stages come after."}
+          {isEdit ? "Update this candidate's details." : "Capture what's known so far — pipeline stages come after."}
         </DialogDescription>
       </DialogHeader>
 
       <Form {...form}>
         <form
           onSubmit={form.handleSubmit((values) =>
-            onSubmit({ ...values, firstName: values.firstName.trim(), lastName: values.lastName.trim() }),
+            onSubmit(
+              { ...values, firstName: values.firstName.trim(), lastName: values.lastName.trim() },
+              file ?? undefined,
+            ),
           )}
           className="space-y-4"
           noValidate
@@ -365,6 +381,28 @@ function CandidateForm({
               )}
             />
           </div>
+
+          {!isEdit ? (
+            <div className="space-y-2">
+              <p className="text-sm leading-none font-medium">
+                CV <span className="text-muted-foreground font-normal">(optional)</span>
+              </p>
+              {file ? (
+                <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2">
+                  <div className="flex min-w-0 items-center gap-2 text-sm">
+                    <Paperclip className="text-muted-foreground size-4 shrink-0" aria-hidden />
+                    <span className="truncate">{file.name}</span>
+                  </div>
+                  <Button variant="ghost" size="sm" type="button" disabled={pending} onClick={handleRemoveFile}>
+                    <X className="size-4" aria-hidden />
+                    Remove
+                  </Button>
+                </div>
+              ) : (
+                <Input ref={fileInputRef} type="file" disabled={pending} onChange={handleFileChange} />
+              )}
+            </div>
+          ) : null}
 
           <DialogFooter className={onBack ? "sm:justify-between" : undefined}>
             {onBack ? (

@@ -39,7 +39,11 @@ export default async function CandidateProfilePage({ params }: CandidateProfileP
       <PageHeader title={formatEmployeeDisplayName(profile)} description="Talent pool profile" />
 
       <HydrationBoundary state={dehydrate(queryClient)}>
-        <CandidateProfileView candidateId={candidateId} canComment={can(actor, "talent_acquisition:write")} />
+        <CandidateProfileView
+          candidateId={candidateId}
+          canComment={can(actor, "talent_acquisition:write")}
+          canEditCv={can(actor, "talent_acquisition:edit")}
+        />
       </HydrationBoundary>
     </div>
   );

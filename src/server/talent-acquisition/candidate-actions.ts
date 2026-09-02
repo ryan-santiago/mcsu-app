@@ -18,7 +18,14 @@ import type { LookupOption } from "@/server/maintenance/types";
 import { getTaCandidateProfile, listTaCandidatePool, listTaCandidatesPage } from "./candidate-queries";
 import type { TaCandidateFilters, TaCandidatePoolResult, TaCandidateProfileRow, TaCandidateRow } from "./candidate-types";
 
-/** A CV doesn't need the 50 MB ceiling project docs get. */
+/**
+ * A CV doesn't need the 50 MB ceiling project docs get. Not exported: a
+ * `"use server"` file may only export async functions — every export
+ * becomes a callable server reference, and a plain constant breaks module
+ * evaluation for the whole file (confirmed the hard way: it 500'd every
+ * page and action in this file). `application-actions.ts` keeps its own
+ * copy rather than importing this one.
+ */
 const MAX_CV_SIZE_BYTES = 10 * 1024 * 1024;
 
 async function run<T>(fn: () => Promise<ActionResult<T>>): Promise<ActionResult<T>> {
@@ -36,6 +43,33 @@ async function run<T>(fn: () => Promise<ActionResult<T>>): Promise<ActionResult<
 
 function buildCandidateCvStorageKey(candidateId: string, fileName: string): string {
   return `Documents/Talent Acquisition/Candidates/${candidateId}/cv-${sanitizeDocumentName(fileName)}`;
+}
+
+/**
+ * The write path every CV attachment goes through — a brand-new candidate
+ * (no previous file) or a replace on an existing one. Pulled out once a
+ * second caller (`createTaCandidate`) needed the exact same storage-key
+ * build → save → column update → clean-up-the-old-one sequence
+ * `uploadTaCandidateCv` already had.
+ */
+export async function attachCandidateCv(
+  candidateId: string,
+  file: File,
+  previousStorageKey: string | null,
+): Promise<{ fileName: string }> {
+  const fileName = sanitizeDocumentName(file.name);
+  const storageKey = buildCandidateCvStorageKey(candidateId, fileName);
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  await saveDocumentFile(storageKey, bytes);
+
+  await db
+    .update(taCandidate)
+    .set({ cvStorageKey: storageKey, cvFileName: fileName, cvMimeType: file.type || null, cvSize: file.size })
+    .where(eq(taCandidate.id, candidateId));
+
+  if (previousStorageKey && previousStorageKey !== storageKey) await deleteDocumentFile(previousStorageKey);
+
+  return { fileName };
 }
 
 /** Gated on `talent_acquisition:write`, not `:read` — only someone adding/editing a candidate needs this picker. */
@@ -85,21 +119,7 @@ export async function uploadTaCandidateCv(formData: FormData): Promise<ActionRes
     const [target] = await db.select().from(taCandidate).where(eq(taCandidate.id, candidateId)).limit(1);
     if (!target) return { ok: false, error: "That candidate no longer exists." };
 
-    // Replacing an existing CV — clean up the old file once the new one is safely written.
-    const previousStorageKey = target.cvStorageKey;
-
-    const fileName = sanitizeDocumentName(file.name);
-    const storageKey = buildCandidateCvStorageKey(candidateId, fileName);
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    await saveDocumentFile(storageKey, bytes);
-
-    await db
-      .update(taCandidate)
-      .set({ cvStorageKey: storageKey, cvFileName: fileName, cvMimeType: file.type || null, cvSize: file.size })
-      .where(eq(taCandidate.id, candidateId));
-
-    if (previousStorageKey && previousStorageKey !== storageKey) await deleteDocumentFile(previousStorageKey);
-
+    const { fileName } = await attachCandidateCv(candidateId, file, target.cvStorageKey);
     const fullName = formatEmployeeDisplayName(target);
 
     await recordAudit({
@@ -112,7 +132,85 @@ export async function uploadTaCandidateCv(formData: FormData): Promise<ActionRes
       changes: diffFields({ cv: target.cvFileName }, { cv: fileName }, { cv: "CV" }),
     });
 
-    revalidatePath(`/talent-acquisition/${requestId}`);
+    revalidatePath(`/talent-acquisition/candidates/${candidateId}`);
+    if (requestId) revalidatePath(`/talent-acquisition/${requestId}`);
     return { ok: true, data: undefined, message: "CV uploaded." };
+  });
+}
+
+const createCandidateSchema = z.object({
+  firstName: z.string().trim().min(1, "First name is required").max(100, "That's too long"),
+  middleName: z.string().optional(),
+  lastName: z.string().trim().min(1, "Last name is required").max(100, "That's too long"),
+  genderId: z.string().optional(),
+  mobileNumber: z.string().optional(),
+  personalEmail: z.string().trim().email("Enter a valid email").optional().or(z.literal("")),
+});
+
+/** Adds someone straight to the talent pool, independent of any request — the standalone Candidates page's "Add candidate," unlike `createTaApplication`, which always creates a request-linked application alongside the candidate. Accepts an optional CV in the same step, reusing `attachCandidateCv` — creating with a file is one `write`-gated action; replacing one on an existing candidate stays `edit`-gated via `uploadTaCandidateCv`. */
+export async function createTaCandidate(formData: FormData): Promise<ActionResult<{ id: string }>> {
+  return run(async () => {
+    const actor = await authorize("talent_acquisition:write");
+
+    const values = createCandidateSchema.parse({
+      firstName: String(formData.get("firstName") ?? ""),
+      middleName: formData.get("middleName") ? String(formData.get("middleName")) : undefined,
+      lastName: String(formData.get("lastName") ?? ""),
+      genderId: formData.get("genderId") ? String(formData.get("genderId")) : undefined,
+      mobileNumber: formData.get("mobileNumber") ? String(formData.get("mobileNumber")) : undefined,
+      personalEmail: formData.get("personalEmail") ? String(formData.get("personalEmail")) : undefined,
+    });
+
+    const file = formData.get("file");
+    const hasFile = file instanceof File && file.size > 0;
+    if (hasFile && file.size > MAX_CV_SIZE_BYTES) return { ok: false, error: "CVs must be 10 MB or smaller." };
+    if (hasFile && !isDocumentStorageAvailable()) {
+      return { ok: false, error: "File upload isn't available in this environment yet — you can still add this candidate without a CV." };
+    }
+
+    const candidateId = crypto.randomUUID();
+    const middleName = values.middleName?.trim() || null;
+    const mobileNumber = values.mobileNumber?.trim() || null;
+    const personalEmail = values.personalEmail?.trim() || null;
+    const genderId = values.genderId || null;
+
+    await db.insert(taCandidate).values({
+      id: candidateId,
+      firstName: values.firstName,
+      middleName,
+      lastName: values.lastName,
+      genderId,
+      mobileNumber,
+      personalEmail,
+      createdBy: actor.id,
+    });
+
+    const cvFileName = hasFile ? (await attachCandidateCv(candidateId, file, null)).fileName : null;
+    const fullName = formatEmployeeDisplayName(values);
+
+    await recordAudit({
+      module: "ta_candidates",
+      action: "candidate_added",
+      entityId: candidateId,
+      entityLabel: fullName,
+      actorId: actor.id,
+      actorEmail: actor.email,
+      changes: diffFields(
+        null,
+        { firstName: values.firstName, middleName, lastName: values.lastName, genderId, mobileNumber, personalEmail, cv: cvFileName },
+        {
+          firstName: "First name",
+          middleName: "Middle name",
+          lastName: "Last name",
+          genderId: "Gender",
+          mobileNumber: "Mobile number",
+          personalEmail: "Personal email",
+          cv: "CV",
+        },
+      ),
+    });
+
+    revalidatePath("/talent-acquisition/candidates");
+    return { ok: true, data: { id: candidateId }, message: `${fullName} added to the talent pool.` };
   });
 }

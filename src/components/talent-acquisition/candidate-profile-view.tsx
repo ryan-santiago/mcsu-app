@@ -1,16 +1,19 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import Link from "next/link";
-import { Paperclip } from "lucide-react";
+import { Loader2, Paperclip, Upload } from "lucide-react";
+import * as React from "react";
+import { toast } from "sonner";
 
 import { CandidateComments } from "@/components/talent-acquisition/candidate-comments";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatBytes } from "@/lib/format";
-import { fetchTaCandidateProfile } from "@/server/talent-acquisition/candidate-actions";
+import { fetchTaCandidateProfile, uploadTaCandidateCv } from "@/server/talent-acquisition/candidate-actions";
 import type { TaApplicationRow } from "@/server/talent-acquisition/application-types";
 import { TA_APPLICATION_STATUS_LABELS } from "@/server/talent-acquisition/application-types";
 import { TA_STAGE_LABELS } from "@/server/talent-acquisition/stage-types";
@@ -25,13 +28,42 @@ const STATUS_BADGE_VARIANT: Record<TaApplicationRow["status"], "default" | "seco
 type CandidateProfileViewProps = {
   candidateId: string;
   canComment: boolean;
+  canEditCv: boolean;
 };
 
-export function CandidateProfileView({ candidateId, canComment }: CandidateProfileViewProps) {
+export function CandidateProfileView({ candidateId, canComment, canEditCv }: CandidateProfileViewProps) {
+  const queryClient = useQueryClient();
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
   const { data: profile, isPending } = useQuery({
     queryKey: ["ta-candidate-profile", candidateId],
     queryFn: () => fetchTaCandidateProfile(candidateId),
   });
+
+  const uploadMutation = useMutation({
+    mutationFn: (file: File) => {
+      const formData = new FormData();
+      formData.set("candidateId", candidateId);
+      formData.set("file", file);
+      return uploadTaCandidateCv(formData);
+    },
+    onSuccess: (result) => {
+      if (result.ok) {
+        toast.success(result.message);
+        void queryClient.invalidateQueries({ queryKey: ["ta-candidate-profile", candidateId] });
+        void queryClient.invalidateQueries({ queryKey: ["ta-candidate-pool"] });
+      } else {
+        toast.error(result.error);
+      }
+    },
+    onError: () => toast.error("Something went wrong. Please try again."),
+  });
+
+  function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (file) uploadMutation.mutate(file);
+  }
 
   if (isPending || !profile) {
     return (
@@ -60,20 +92,41 @@ export function CandidateProfileView({ candidateId, canComment }: CandidateProfi
         </div>
         <div>
           <p className="text-muted-foreground text-xs">CV</p>
-          {profile.cvFileName ? (
-            <a
-              href={`/api/talent-acquisition/candidates/${profile.id}/cv`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-brand mt-0.5 inline-flex items-center gap-1 hover:underline"
-            >
-              <Paperclip className="size-3.5 shrink-0" aria-hidden />
-              <span className="max-w-40 truncate">{profile.cvFileName}</span>
-              <span className="text-muted-foreground shrink-0">({formatBytes(profile.cvSize)})</span>
-            </a>
-          ) : (
-            <p className="mt-0.5">—</p>
-          )}
+          <div className="mt-0.5 flex flex-wrap items-center gap-2">
+            {profile.cvFileName ? (
+              <a
+                href={`/api/talent-acquisition/candidates/${profile.id}/cv`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-brand inline-flex items-center gap-1 hover:underline"
+              >
+                <Paperclip className="size-3.5 shrink-0" aria-hidden />
+                <span className="max-w-40 truncate">{profile.cvFileName}</span>
+                <span className="text-muted-foreground shrink-0">({formatBytes(profile.cvSize)})</span>
+              </a>
+            ) : (
+              <span>—</span>
+            )}
+            {canEditCv ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={uploadMutation.isPending}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {uploadMutation.isPending ? (
+                  <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                ) : (
+                  <Upload className="size-3.5" aria-hidden />
+                )}
+                {profile.cvFileName ? "Replace" : "Upload"}
+              </Button>
+            ) : null}
+            {canEditCv ? (
+              <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileChange} />
+            ) : null}
+          </div>
         </div>
         <div>
           <p className="text-muted-foreground text-xs">In the pool since</p>
